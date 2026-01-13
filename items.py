@@ -137,6 +137,13 @@ class StatikkShiv(Item):
         return 0, 0
 
 
+class Stormrazor(Item):
+    def __init__(self):
+        # 스펙: AD 50, AS 20%, 치명타 25%
+        super().__init__("Stormrazor", ad=50, as_percent=0.20, crit=0.25)
+        self.cost = 3200
+
+
 class BladeOfRuinedKing(Item):
     def __init__(self):
         super().__init__("Blade of the Ruined King", ad=40, as_percent=0.25, lifesteal=0.1)
@@ -224,6 +231,43 @@ class GuinsoosRageblade(Item):
         return 0, base_magic
 
 
+class HextechScopeC44(Item):
+    def __init__(self):
+        # AD 50, Crit 25%, 가격 2800
+        super().__init__("Hextech Scope C44", ad=50, crit=0.25)
+        self.cost = 2800
+
+        # 비전 조준 활성화 여부 (필요 시 시뮬레이션 외부에서 True로 변경)
+        self.is_buff_active = False
+
+    def get_damage_modifier(self, target, champion):
+        """
+        확대: 적과의 거리(champion.range)에 따라 최대 10% 증가된 피해
+        - 700 거리일 때 최대 (10%)
+        """
+
+        # 1. 현재 사거리 가져오기
+        # (비전 조준 효과 등으로 champion.range가 이미 변해있다고 가정하거나, 여기서 더해서 계산)
+        current_range = champion.range
+
+        # 만약 아이템 자체적으로 사거리를 늘려주는 효과를 여기서 반영하고 싶다면:
+        if self.is_buff_active:
+            current_range += 100
+
+        # 2. 증폭률 계산 (최대 700 거리 기준)
+        # 거리 700 이상이면 1.0, 그 미만이면 (거리/700) 비율
+        ratio = min(1.0, current_range / 700.0)
+
+        # 3. 최대 10% 증폭
+        modifier = ratio * 0.10
+
+        return modifier
+
+    # 시뮬레이션 중 킬/어시 발생 시 호출하여 사거리를 늘리고 싶을 때 사용
+    def activate_vision_focus(self, champion):
+        self.is_buff_active = True
+
+
 class TheCollector(Item):
     def __init__(self):
         super().__init__("The Collector", ad=50, crit=0.25, lethality=10)
@@ -303,24 +347,51 @@ class MortalReminder(Item):
 
 class Terminus(Item):
     def __init__(self):
+        # 스펙: AD 30, AS 35%
         super().__init__("Terminus", ad=30, as_percent=0.35)
-        self.stack = 0
         self.cost = 3000
 
+        # 상태 관리 변수
+        self.light_stacks = 0  # 빛 스택 (방/마저, 최대 3)
+        self.dark_stacks = 0  # 어둠 스택 (관통력, 최대 3)
+        self.is_light_turn = True  # True면 빛, False면 어둠 차례 (보통 빛부터 시작)
+
     def on_hit(self, target, champion):
-        # 적중 시 30 마법 피해
+        # 1. 적중 시 30 마법 피해 (고정)
         magic_dmg = 30
 
-        # 공격 시 방/마저 or 관통력 중첩
-        if self.stack < 7:  # 가상의 최대 스택
-            if self.stack % 2 == 1:
-                # 8씩 방마저가 증가하는 것으로 했으나, 사실 챔피언 레벨이 1~6이면 6만큼, 7~11이면 7만큼, 12~18이면 8만큼씩 방마저가 증가함.
-                champion.ar += 8
-                champion.mr += 8
-            else:
-                champion.armor_pen_percent += 0.1
-                champion.magic_pen_percent += 0.1
-            self.stack += 1
+        # 2. 빛(방어/마저) 증가량 계산 (레벨 비례)
+        # 구간: 1~6(+6), 7~11(+7), 12~18(+8)
+        resist_gain = 0
+        if champion.level <= 6:
+            resist_gain = 6
+        elif champion.level <= 11:
+            resist_gain = 7
+        else:
+            resist_gain = 8
+
+        # 3. 빛과 어둠 번갈아 적용
+        if self.is_light_turn:
+            # --- [빛] 차례: 방어력/마법 저항력 증가 ---
+            if self.light_stacks < 3:  # 최대 3스택 제한
+                self.light_stacks += 1
+
+                if hasattr(champion, 'af'):
+                    champion.ar += resist_gain
+                if hasattr(champion, 'mr'):
+                    champion.mr += resist_gain
+
+        else:
+            # --- [어둠] 차례: 방어구/마법 관통력 증가 ---
+            if self.dark_stacks < 3:  # 최대 3스택 제한
+                self.dark_stacks += 1
+                if hasattr(champion, 'armor_pen_percent'):
+                    champion.armor_pen_percent += 0.10
+                if hasattr(champion, 'magic_pen_percent'):
+                    champion.magic_pen_percent += 0.10
+
+        # 4. 턴 교체 (빛 -> 어둠 -> 빛 ...)
+        self.is_light_turn = not self.is_light_turn
 
         return 0, magic_dmg
 
@@ -348,7 +419,7 @@ class ExpHexplate(Item):
 
 class Bloodthirster(Item):
     def __init__(self):
-        super().__init__("Bloodthirster", ad=80)
+        super().__init__("Bloodthirster", ad=80, lifesteal=0.15)
         self.cost = 3400
         # 생명력 흡수는 DPS 영향 X
 

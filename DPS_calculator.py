@@ -16,11 +16,12 @@ class Target:
 
 # 2. 챔피언 부모 클래스 (Base Class)
 class Champion:
-    def __init__(self, name, base_ad, base_as, as_ratio, as_growth, level=1):
+    def __init__(self, name, base_ad, base_as, as_ratio, as_growth, base_range, level=1):
         self.name = name
         self.level = level
 
         # 기본 능력치
+        self.range = base_range
         self.base_ad = base_ad
         self.base_as = base_as
         self.as_ratio = as_ratio         # 공격 속도 계수
@@ -37,8 +38,9 @@ class Champion:
         self.bonus_ap = 0
         self.bonus_as_percent = 0
         self.crit_chance = 0.0
-        self.crit_damage_modifier = 1.75  # 기본 치명타 피해 175%
+        self.crit_damage_modifier = 2.00  # 기본 치명타 피해 175%
         self.armor_pen_percent = 0.0  # 방관 %
+        self.magic_pen_percent = 0.0  # 마관 %
         self.lethality = 0  # 물리 관통력 (고정)
 
     # 아이템 장착 함수
@@ -47,6 +49,7 @@ class Champion:
 
         # 1. 스탯 단순 합산
         self.bonus_ad += item.stats.get('ad', 0)
+        self.bonus_ap += item.stats.get('ap', 0)
         self.bonus_as_percent += item.stats.get('as', 0)
         self.crit_chance += item.stats.get('crit', 0)
         self.armor_pen_percent = 1 - (1 - self.armor_pen_percent) * (
@@ -86,7 +89,9 @@ class Champion:
     # [핵심] 챔피언별로 오버라이딩 할 메서드
     # 반환값: (물리_기본, 마법_기본, 물리_온힛, 마법_온힛)
     def get_one_hit_damage(self, target):
+        # ---------------------------------------------------------
         # 1. 기본 물리 피해 계산
+        # ---------------------------------------------------------
         phys_base = self.total_ad * self.crit_damage_modifier * self.crit_chance + self.total_ad * (
                     1 - self.crit_chance)
         magic_base = 0
