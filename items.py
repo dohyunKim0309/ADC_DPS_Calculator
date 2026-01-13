@@ -2,7 +2,7 @@
 
 class Item:
     def __init__(self, name, ad=0, as_percent=0.0, crit=0.0, add_crit_damage=0.0, armor_pen_percent=0.0,
-                 lethality=0, hp=0, ms=0, ar=0, mr=0, cdr=0, omnivamp=0.0, tenacity=0.0):
+                 lethality=0, lifesteal=0.0, hp=0, ms=0, ar=0, mr=0, cdr=0, omnivamp=0.0, tenacity=0.0):
         self.name = name
         self.cost = 0
         self.stats = {
@@ -12,9 +12,12 @@ class Item:
         # 구인수 확인용 태그
         self.is_guinsoo = False
 
-    def apply_passive(self, champion):
-        """착용 시 스탯 수정"""
-        pass
+    def get_damage_modifier(self, target, champion):
+        """
+        최종 대미지를 %단위로 증폭시킬 때 사용
+        반환값: 0.15 (15% 증폭) / 0.0 (증폭 없음)
+        """
+        return 0.0
 
     def on_hit(self, target, champion):
         """
@@ -32,7 +35,7 @@ class Doranblade(Item):
         super().__init__('Doran Blade', ad=10, hp=80, omnivamp=0.025)
         self.cost = 450
 
-class Ddongshin(Item):
+class DdongShin(Item):
     def __init__(self): 
         super().__init__('ddongshin', ms=25)
         self.cost = 300
@@ -72,7 +75,6 @@ class Mercury_Treads(Item):
 # ==========================================
 # 3. 코어 아이템 1 - 공격 속도 및 유틸리티 (공통 가격 2650)
 # ==========================================
-
 class PhantomDancer(Item):
     def __init__(self):
         super().__init__("Phantom Dancer", as_percent=0.65, crit=0.25)
@@ -133,6 +135,16 @@ class StatikkShiv(Item):
         # 복잡하므로 단순하게 '첫 타격'에만 60 데미지 주고
         # 이후 쿨타임 로직은 시뮬레이터 엔진 레벨에서 다루는 게 좋음.
         return 0, 0
+
+
+class BladeOfRuinedKing(Item):
+    def __init__(self):
+        super().__init__("Blade of the Ruined King", ad=40, as_percent=0.25, lifesteal=0.1)
+        self.cost = 3200
+
+    def on_hit(self, target, champion):
+        # 원거리 챔피언은 적 챔피언의 현재 체력의 6퍼센트에 해당하는 온힛 물리 피해
+        return target.current_hp * 0.06, 0
 
 
 class KrakenSlayer(Item):
@@ -219,24 +231,24 @@ class TheCollector(Item):
         self.cost = 3000
 
 
-class EssenceReaver(Item):
-    def __init__(self):
-        # 스킬 가속은 DPS 시뮬레이션에서 평타 위주라면 제외하거나 쿨타임 감소로 구현
-        super().__init__("Essence Reaver", ad=60, crit=0.25)
-        self.cost = 2900
-
-    def on_hit(self, target, champion):
-        # 마나 회복은 대미지에 직접 영향 없으므로 패스
-        # 26.01 패치 시 주문검 효과(추가 피해) 생기면 여기에 로직 추가 필요
-        return 0, 0
+# class EssenceReaver(Item):
+#     def __init__(self):
+#         # 스킬 가속은 DPS 시뮬레이션에서 평타 위주라면 제외하거나 쿨타임 감소로 구현
+#         super().__init__("Essence Reaver", ad=60, crit=0.25)
+#         self.cost = 2900
+#
+#     def on_hit(self, target, champion):
+#         # 마나 회복은 대미지에 직접 영향 없으므로 패스
+#         # 26.01 패치 시 주문검 효과(추가 피해) 생기면 여기에 로직 추가 필요
+#         return 0, 0
 
 
 class YunTalWildarrows(Item):
     def __init__(self):
-        # AD 55, AS 35%, Crit 25%
-        super().__init__("Yun Tal Wildarrows", ad=55, as_percent=0.35, crit=0.25)
+        # AD 50, AS 40%, Crit 25%
+        super().__init__("Yun Tal Wildarrows", ad=50, as_percent=0.40, crit=0.25)
         self.active_buff = False
-        self.cost = 3000
+        self.cost = 3100
 
     def on_hit(self, target, champion):
         # 효과 (광풍): 적 챔피언 공격 시 공속 30% 증가
@@ -253,23 +265,40 @@ class YunTalWildarrows(Item):
 
 class InfinityEdge(Item):
     def __init__(self):
-        # 26.01 패치 전: AD 65, Crit 25%, 치명타 피해량 40%
-        super().__init__("Infinity Edge", ad=65, crit=0.25, add_crit_damage=0.4)
-        self.cost = 3450
+        super().__init__("Infinity Edge", ad=75, crit=0.25, add_crit_damage=0.3)
+        self.cost = 3500
 
 
 class LordDominiksRegards(Item):
     def __init__(self):
-        # AD 35, Armor Pen 40%, Crit 25%
-        super().__init__("Lord Dominik's Regards", ad=35, armor_pen_percent=0.40, crit=0.25)
-        self.cost = 3100
+        super().__init__("Lord Dominik's Regards", ad=35, armor_pen_percent=0.35, crit=0.25)
+        self.cost = 3300
+
+    def get_damage_modifier(self, target, champion):
+        # 거인 학살자: 대상의 추가 체력에 비례해 최대 15% 추가 피해
+        # 조건: 추가 체력 0일 때 0%, 1500 이상일 때 15%
+
+        # 1. 타겟에게 bonus_hp 속성이 없으면 0 반환 (안전장치)
+        if not hasattr(target, 'bonus_hp'):
+            return 0.0
+
+        extra_hp = target.bonus_hp
+
+        # 2. 계산 로직 (선형 비례)
+        if extra_hp <= 0:
+            return 0.0
+        elif extra_hp >= 1500:
+            return 0.15  # 최대 15%
+        else:
+            # 1500일 때 0.15이므로 => (현재추가체력 / 1500) * 0.15
+            # 즉, 현재추가체력 / 10000 과 같음
+            return (extra_hp / 1500) * 0.15
 
 
 class MortalReminder(Item):
     def __init__(self):
-        super().__init__("Mortal Reminder", ad=35, armor_pen_percent=0.35, crit=0.25)
-        self.cost = 3300
-        # 치유 감소 효과는 DPS 수치 영향 X
+        super().__init__("Mortal Reminder", ad=35, armor_pen_percent=0.30, crit=0.25)
+        self.cost = 3000
 
 
 class Terminus(Item):
@@ -283,10 +312,15 @@ class Terminus(Item):
         magic_dmg = 30
 
         # 공격 시 방/마저 or 관통력 중첩
-        if self.stack < 10:  # 가상의 최대 스택
+        if self.stack < 7:  # 가상의 최대 스택
+            if self.stack % 2 == 1:
+                # 8씩 방마저가 증가하는 것으로 했으나, 사실 챔피언 레벨이 1~6이면 6만큼, 7~11이면 7만큼, 12~18이면 8만큼씩 방마저가 증가함.
+                champion.ar += 8
+                champion.mr += 8
+            else:
+                champion.armor_pen_percent += 0.1
+                champion.magic_pen_percent += 0.1
             self.stack += 1
-            # 실제로는 챔피언의 관통력 스탯을 올려줘야 함
-            # champion.bonus_armor_pen ...
 
         return 0, magic_dmg
 
@@ -294,6 +328,23 @@ class Terminus(Item):
 # ==========================================
 # 5. 코어 아이템 3 - 생존 및 유지력
 # ==========================================
+class WitsEnd(Item):
+    def __init__(self):
+        super().__init__("Wit's End", as_percent=0.5, mr=45, tenacity=0.2)
+        self.cost = 2800
+
+    def on_hit(self, target, champion):
+        # 적중 시 45의 온힛 마법 피해
+        return 0, 45
+
+
+class ExpHexplate(Item):
+    def __init__(self):
+        super().__init__("Experimental Hexplate", ad=40, as_percent=0.2, hp=450)
+        self.cost=3000
+        self.ult_cdr=30
+        # 궁극기 사용후 8초 동안 50% 공속, 20% 이속 얻음(재사용 대기시간 30초), 구현 아직 안함!
+
 
 class Bloodthirster(Item):
     def __init__(self):

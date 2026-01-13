@@ -1,10 +1,11 @@
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
 
 # 1. 적 챔피언 (타겟) 클래스
 class Target:
-    def __init__(self, hp, armor, magic_resist):
+    def __init__(self, hp, armor, magic_resist, bonus_hp=0):
         self.max_hp = hp
+        self.bonus_hp = bonus_hp
         self.current_hp = hp
         self.armor = armor
         self.magic_resist = magic_resist
@@ -85,36 +86,73 @@ class Champion:
     # [핵심] 챔피언별로 오버라이딩 할 메서드
     # 반환값: (물리_기본, 마법_기본, 물리_온힛, 마법_온힛)
     def get_one_hit_damage(self, target):
-        # 1. 기본 물리 피해 계산(치명타는 기댓값으로 계산)
-        phys_base = self.total_ad * self.crit_damage_modifier * self.crit_chance + self.total_ad * (1 - self.crit_chance)
+        # 1. 기본 물리 피해 계산
+        phys_base = self.total_ad * self.crit_damage_modifier * self.crit_chance + self.total_ad * (
+                    1 - self.crit_chance)
         magic_base = 0
 
-        # 2. 아이템 온힛 대미지 계산
-        phys_onhit = 0
-        magic_onhit = 0
+        # ---------------------------------------------------------
+        # 2. 아이템 온힛 대미지 및 구인수 로직 처리
+        # ---------------------------------------------------------
 
-        # 구인수 보유 여부 확인
-        has_guinsoo = any(item.is_guinsoo for item in self.inventory)
+        # 2.0 내부 함수: 현재 인벤토리의 모든 온힛 효과를 한 번 실행하고 합산
+        def get_item_onhit():
+            p_sum = 0
+            m_sum = 0
+            for item in self.inventory:
+                p, m = item.on_hit(target, self)
+                p_sum += p
+                m_sum += m
+            return p_sum, m_sum
 
-        # 모든 아이템에게 "때렸을 때 대미지 내놔"라고 요청
+        # 2.1 구인수 객체 찾기 및 상태 확인
+        guinsoo_item = next((item for item in self.inventory if getattr(item, 'is_guinsoo', False)), None)
+
+        # [조건] 구인수가 있고 + 스택이 4(풀스택)여야 함
+        is_guinsoo_active = (guinsoo_item is not None) and (guinsoo_item.stack >= 4)
+
+        # 2.2 실행 횟수(proc_count) 결정
+        proc_count = 1
+
+        # 구인수 풀스택 상태에서, 3번째 평타마다 2회 발동
+        # !! 다만, hit_count는 시뮬레이션 전체에서 상대를 몇 번 때렸느냐이기 때문에, 상대를 쉬었다 때리는 것은 고려하지 않음.
+        # !! 또 구인수 4스택이 모두 쌓인 후부터 3번마다 적용하는 게 맞지만, 편의상 3의 배수로 만들어서 적용함.
+        if is_guinsoo_active and (self.hit_count > 0) and (self.hit_count % 3 == 0):
+            proc_count = 2
+
+        # 2.3 결정된 횟수만큼 온힛 루프 실행
+        # (크라켄 슬레이어 스택도 이 루프 안에서 2번 쌓이거나 터지게 됨)
+        total_phys_onhit = 0
+        total_magic_onhit = 0
+
+        for _ in range(proc_count):
+            p, m = get_item_onhit()
+            total_phys_onhit += p
+            total_magic_onhit += m
+
+        # ---------------------------------------------------------
+        # 3. 대미지 증폭(Multiplier) 적용 (거인 학살자 등)
+        # ---------------------------------------------------------
+        damage_multiplier = 0.0
+
         for item in self.inventory:
-            p_dmg, m_dmg = item.on_hit(target, self)  # target과 self(나)를 넘겨줌
-            phys_onhit += p_dmg
-            magic_onhit += m_dmg
+            # item 클래스에 get_damage_modifier 메서드가 있다고 가정 (없으면 0 처리 필요)
+            if hasattr(item, 'get_damage_modifier'):
+                damage_multiplier += item.get_damage_modifier(target, self)
 
-        # 3. 구인수의 격노검 (Phantom Hit) 로직
-        # "3번째 공격마다 적중 시 효과를 두 번 적용"
-        # 즉, 3타째라면 방금 구한 onhit_sum을 한 번 더 더해줌
-        if has_guinsoo and (self.hit_count > 0) and (self.hit_count % 3 == 0):
-            phys_onhit *= 2
-            magic_onhit *= 2
-            # (엄밀히는 '효과'를 두 번 실행하는 것이라, 스택이 쌓이는 아이템은 스택도 2번 쌓여야 하지만
-            # 대미지 계산 관점에서는 *2로 처리해도 무방합니다)
+        # 증폭 계수 적용 (예: 1.15)
+        mod_factor = 1.0 + damage_multiplier
+
+        phys_base *= mod_factor
+        magic_base *= mod_factor
+        total_phys_onhit *= mod_factor
+        total_magic_onhit *= mod_factor
 
         # 4. 평타 횟수 증가
         self.hit_count += 1
 
-        return phys_base, magic_base, phys_onhit, magic_onhit
+        # 5. 최종 반환
+        return phys_base, magic_base, total_phys_onhit, total_magic_onhit
 
 
 # 3. 개별 챔피언 구현 (예: 애쉬, 케이틀린)
