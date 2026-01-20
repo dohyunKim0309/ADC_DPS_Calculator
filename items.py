@@ -1,16 +1,18 @@
 # items.py
 
 class Item:
-    def __init__(self, name, ad=0, as_percent=0.0, crit=0.0, add_crit_damage=0.0, armor_pen_percent=0.0,
-                 lethality=0, lifesteal=0.0, hp=0, ms=0, ar=0, mr=0, cdr=0, omnivamp=0.0, tenacity=0.0):
+    def __init__(self, name, ad=0, ap=0, as_percent=0.0, crit=0.0, add_crit_damage=0.0, armor_pen_percent=0.0,
+                 lethality=0, lifesteal=0.0, hp=0, ms=0, ar=0, mr=0, cdr=0, omnivamp=0.0, tenacity=0.0, magic_pen_flat=0):
         self.name = name
         self.cost = 0
         self.stats = {
-            'ad': ad, 'as': as_percent, 'crit': crit,
-            'armor_pen_percent': armor_pen_percent, 'lethality': lethality
+            'ad': ad, 'ap': ap, 'as': as_percent, 'crit': crit,
+            'armor_pen_percent': armor_pen_percent, 'lethality': lethality,
+            'magic_pen_flat': magic_pen_flat
         }
         # 구인수 확인용 태그
         self.is_guinsoo = False
+
 
     def get_damage_modifier(self, target, champion):
         """
@@ -42,7 +44,7 @@ class DdongShin(Item):
 
 class BerserkerGreaves(Item):
     def __init__(self):
-        super().__init__('Berserker Greaves', as_percent=25, ms=45)
+        super().__init__('Berserker Greaves', as_percent=0.25, ms=45)
         self.cost = 1100
 
 class IoniaGreaves(Item):
@@ -69,7 +71,58 @@ class Mercury_Treads(Item):
 # ==========================================
 # 2. 하위템
 # ==========================================
+class Pickaxe(Item):
+    def __init__(self):
+        super().__init__("Pickaxe", ad=25)
+        self.cost = 875
 
+class BFSword(Item):
+    def __init__(self):
+        super().__init__("B.F. Sword", ad=40)
+        self.cost = 1300
+
+class ScoutingsSlingshot(Item):
+    def __init__(self):
+        super().__init__("Scouting's Slingshot", as_percent=0.20)
+        self.cost = 600
+
+class LongSword(Item):
+    def __init__(self):
+        super().__init__("Long Sword", ad=10)
+        self.cost = 350
+
+class RecurveBow(Item):
+    def __init__(self):
+        super().__init__("Recurve Bow", as_percent=0.15)
+        self.cost = 700
+    
+    def on_hit(self, target, champion):
+        return 15, 0 # 적중 시 물리 피해 15
+
+class Noonquiver(Item):
+    def __init__(self):
+        super().__init__("Noonquiver", ad=15, crit=0.20)
+        self.cost = 1300
+
+class VampiricScepter(Item):
+    def __init__(self):
+        super().__init__("Vampiric Scepter", ad=15, lifesteal=0.07)
+        self.cost = 900
+
+class HearthboundAxe(Item):
+    def __init__(self):
+        super().__init__("Hearthbound Axe", ad=20, as_percent=0.20)
+        self.cost = 1200
+
+class Dagger(Item):
+    def __init__(self):
+        super().__init__("Dagger", as_percent=0.10)
+        self.cost = 250
+
+class CloakofAgility(Item):
+    def __init__(self):
+        super().__init__("Cloak of Agility", crit=0.15)
+        self.cost = 600
 
 
 # ==========================================
@@ -213,7 +266,7 @@ class KrakenSlayer(Item):
 class GuinsoosRageblade(Item):
     def __init__(self):
         # AD 30, AP 30, AS 25%
-        super().__init__("Guinsoo's Rageblade", ad=30, as_percent=0.25)
+        super().__init__("Guinsoo's Rageblade", ad=30, ap=30, as_percent=0.25)
         self.is_guinsoo = True  # 핵심 플래그
         self.stack = 0
         self.cost = 3000
@@ -234,7 +287,8 @@ class GuinsoosRageblade(Item):
 class HextechScopeC44(Item):
     def __init__(self):
         # AD 50, Crit 25%, 가격 2800
-        super().__init__("Hextech Scope C44", ad=50, crit=0.25)
+        # 버프 적용: AD 50 -> 55
+        super().__init__("Hextech Scope C44", ad=55, crit=0.25)
         self.cost = 2800
 
         # 비전 조준 활성화 여부 (필요 시 시뮬레이션 외부에서 True로 변경)
@@ -244,6 +298,7 @@ class HextechScopeC44(Item):
         """
         확대: 적과의 거리(champion.range)에 따라 최대 10% 증가된 피해
         - 700 거리일 때 최대 (10%)
+        - 버프 적용: 600 거리일 때 최대 (10%)
         """
 
         # 1. 현재 사거리 가져오기
@@ -254,9 +309,9 @@ class HextechScopeC44(Item):
         if self.is_buff_active:
             current_range += 100
 
-        # 2. 증폭률 계산 (최대 700 거리 기준)
-        # 거리 700 이상이면 1.0, 그 미만이면 (거리/700) 비율
-        ratio = min(1.0, current_range / 700.0)
+        # 2. 증폭률 계산 (최대 600 거리 기준)
+        # 거리 600 이상이면 1.0, 그 미만이면 (거리/600) 비율
+        ratio = min(1.0, current_range / 600.0)
 
         # 3. 최대 10% 증폭
         modifier = ratio * 0.10
@@ -288,9 +343,10 @@ class TheCollector(Item):
 
 
 class YunTalWildarrows(Item):
-    def __init__(self):
-        # AD 50, AS 40%, Crit 25%
-        super().__init__("Yun Tal Wildarrows", ad=50, as_percent=0.40, crit=0.25)
+    def __init__(self, crit=0.25):
+        # AD 50, AS 40%, Crit 25% (기본값)
+        # crit 인자를 통해 치명타 확률 조절 가능 (10% 등)
+        super().__init__("Yun Tal Wildarrows", ad=50, as_percent=0.40, crit=crit)
         self.active_buff = False
         self.cost = 3100
 
@@ -441,3 +497,35 @@ class GuardianAngel(Item):
     def __init__(self):
         super().__init__("Guardian Angel", ad=55)
         self.cost = 3200
+
+class SerpentsFang(Item):
+    def __init__(self):
+        super().__init__("Serpent's Fang", ad=55, lethality=15)
+        self.cost = 2500
+
+class NashorsTooth(Item):
+    def __init__(self):
+        super().__init__("Nashor's Tooth", ap=80, as_percent=0.50, cdr=15)
+        self.cost = 2900
+
+    def on_hit(self, target, champion):
+        # 적중 시 15 + 0.15 AP 마법 피해
+        magic_dmg = 15 + (0.15 * champion.total_ap)
+        return 0, magic_dmg
+
+class RabadonsDeathcap(Item):
+    def __init__(self):
+        super().__init__("Rabadon's Deathcap", ap=130)
+        self.cost = 3500
+        # 패시브: 총 주문력 30% 증가 (Champion 클래스에서 처리)
+
+class Shadowflame(Item):
+    def __init__(self):
+        super().__init__("Shadowflame", ap=110, magic_pen_flat=15)
+        self.cost = 3200
+        # 패시브: 체력 40% 이하 적에게 마법/고정 피해 20% 증가 (Champion 클래스에서 처리)
+
+class HextechGunblade(Item):
+    def __init__(self):
+        super().__init__("Hextech Gunblade", ad=40, ap=80, omnivamp=0.10)
+        self.cost = 3000
