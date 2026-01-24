@@ -260,6 +260,10 @@ class Champion:
                 print(f"  - AD: {self.total_ad:.1f}, CritDmg: {self.crit_damage_modifier:.2f}, C44Mult: {c44_multiplier:.3f}")
                 print(f"  - PhysBase: {phys_base:.1f}, MagicBase: {magic_base:.1f}")
                 print(f"  - PhysOnHit: {total_phys_onhit:.1f}, MagicOnHit: {total_magic_onhit:.1f}")
+                
+                # 루난 체크 디버깅 추가
+                has_runaan = any(item.name == "Runaan's Hurricane" for item in self.inventory)
+                print(f"  - HasRunaan: {has_runaan}, TargetCount: {self.target_count}")
 
         # 6. 최종 반환
         return phys_base, magic_base, total_phys_onhit, total_magic_onhit
@@ -405,27 +409,26 @@ class Yunara(Champion):
             
         # 6. 루난 + Q 활성화 시 메인 타겟 대미지 증폭 (확산 평타)
         # 조건: Q 활성화 + 루난 보유 + 적 2명 이상
-        if self.q_active and self.target_count >= 2:
-            has_runaan = any(item.name == "Runaan's Hurricane" for item in self.inventory)
-            if has_runaan:
-                # 서브 타겟 수 (최대 2명)
-                sub_targets = min(2, self.target_count - 1)
-                
-                # 증폭 배율 계산
-                # 기본(AD) 계열: 1 + (0.55 * 0.3 * 서브타겟수)
-                ad_multiplier = 1.0 + (0.55 * 0.3 * sub_targets)
-                
-                # 온힛 계열: 1 + (1.0 * 0.3 * 서브타겟수)
-                onhit_multiplier = 1.0 + (1.0 * 0.3 * sub_targets)
-                
-                # 대미지 적용
-                # p_base, m_base는 기본 계열 (패시브 포함)
-                p_base *= ad_multiplier
-                m_base *= ad_multiplier
-                
-                # p_onhit, m_onhit은 온힛 계열
-                p_onhit *= onhit_multiplier
-                m_onhit *= onhit_multiplier
+        has_runaan = any(item.name == "Runaan's Hurricane" for item in self.inventory)
+        if self.q_active and self.target_count >= 2 and has_runaan:
+            # 서브 타겟 수 (최대 2명)
+            sub_targets = min(2, self.target_count - 1)
+            
+            # 증폭 배율 계산
+            # 기본(AD) 계열: 1 + (0.55 * 0.3 * 서브타겟수)
+            ad_multiplier = 1.0 + (0.55 * 0.3 * sub_targets)
+            
+            # 온힛 계열: 1 + (1.0 * 0.3 * 서브타겟수)
+            onhit_multiplier = 1.0 + (1.0 * 0.3 * sub_targets)
+            
+            # 대미지 적용
+            # p_base, m_base는 기본 계열 (패시브 포함)
+            p_base *= ad_multiplier
+            m_base *= ad_multiplier
+            
+            # p_onhit, m_onhit은 온힛 계열
+            p_onhit *= onhit_multiplier
+            m_onhit *= onhit_multiplier
 
         return p_base, m_base, p_onhit, m_onhit
 
@@ -458,14 +461,14 @@ class Kaisa(Champion):
     def __init__(self, level=1, q_level=5, w_level=1, e_level=1):
         # Base AD 59, AD Growth 2.6, AS 0.644, AS Ratio 0.644, AS Growth 1.8
         super().__init__(name="Kaisa", base_ad=59, base_as=0.644, as_ratio=0.644, as_growth=1.8, base_range=525, level=level, ad_growth=2.6)
-        
+
         self.q_level = q_level
         self.w_level = w_level
         self.e_level = e_level
-        
+
         # 패시브 상태
         self.plasma_stacks = 0
-        
+
         # 스킬 쿨타임 관리
         self.q_cooldown = 0.0
         self.w_cooldown = 0.0
@@ -473,7 +476,7 @@ class Kaisa(Champion):
         self.last_q_time = -999
         self.last_w_time = -999
         self.last_e_time = -999
-        
+
         # E 스킬 상태
         self.e_active = False
         self.e_end_time = 0.0
@@ -486,23 +489,23 @@ class Kaisa(Champion):
         # Q: 추가 AD 100 이상 (성장 AD 포함)
         bonus_ad_total = (self.ad_growth * (self.level - 1)) + self.bonus_ad
         q_evolved = bonus_ad_total >= 100
-        
+
         # W: AP 100 이상
         w_evolved = self.total_ap >= 100
-        
+
         # E: 추가 AS 100% 이상 (성장 AS 포함)
         bonus_as_total = self.get_total_bonus_as_percent()
         e_evolved = bonus_as_total >= 1.0
-        
+
         return q_evolved, w_evolved, e_evolved
 
     def update(self, time, target):
         """매 프레임 호출: 스킬 사용 및 상태 관리"""
         q_evolved, w_evolved, e_evolved = self.get_evolved_status()
-        
+
         total_phys_skill = 0
         total_magic_skill = 0
-        
+
         # E 스킬 사용 (쿨타임 돌았고, 충전 중이 아닐 때)
         # 시뮬레이션 단순화를 위해 쿨타임마다 즉시 사용한다고 가정
         # 실제로는 평타 캔슬이나 상황에 따라 다르지만, DPS 측정용이므로 쿨마다 사용
@@ -511,24 +514,24 @@ class Kaisa(Champion):
             base_cd = [16, 14.5, 13, 11.5, 10][self.e_level - 1]
             # 쿨감 적용 (아이템 등) - 현재 Champion 클래스에 cdr 속성이 없으므로 생략하거나 추가 필요
             # 여기선 0% 가정
-            self.e_cooldown = base_cd 
-            
+            self.e_cooldown = base_cd
+
             # 충전 시간 계산: 1.2 ~ 0.6초 (공속 비례)
             # 추가 공속 0% -> 1.2초, 100% -> 0.6초 (대략적)
             bonus_as = self.get_total_bonus_as_percent()
             charge_time = max(0.6, 1.2 - (0.6 * (bonus_as / 1.0)))
-            
+
             self.is_charging_e = True
             self.e_charge_end_time = time + charge_time
             self.last_e_time = time
             # print(f"[{time:.2f}s] Kaisa E Charging... ({charge_time:.2f}s)")
-            
+
         # E 충전 완료 확인
         if self.is_charging_e and time >= self.e_charge_end_time:
             self.is_charging_e = False
             self.e_active = True
             self.e_end_time = time + 4.0 # 4초 지속
-            
+
             # 공속 버프 적용
             if not self.e_as_buff_applied:
                 # 40 / 50 / 60 / 70 / 80%
@@ -536,7 +539,7 @@ class Kaisa(Champion):
                 self.bonus_as_percent += as_buff
                 self.e_as_buff_applied = True
                 # print(f"[{time:.2f}s] Kaisa E Buff Activated! (+{as_buff*100:.0f}%)")
-                
+
         # E 버프 종료 확인
         if self.e_active and time >= self.e_end_time:
             self.e_active = False
@@ -556,19 +559,19 @@ class Kaisa(Champion):
             base_cd = [10, 9, 8, 7, 6][self.q_level - 1]
             self.q_cooldown = base_cd # 쿨감 미적용
             self.last_q_time = time
-            
+
             # 대미지 계산
             # 미사일 수: 기본 6, 진화 12
             missile_count = 12 if q_evolved else 6
-            
+
             # 미사일 1개당 피해: 40~100 + 0.5 추가AD + 0.2 AP
             base_dmg = [40, 55, 70, 85, 100][self.q_level - 1]
             bonus_ad = (self.ad_growth * (self.level - 1)) + self.bonus_ad
             per_missile = base_dmg + (0.5 * bonus_ad) + (0.2 * self.total_ap)
-            
+
             # 단일 대상 적중 시: 첫 발 100%, 나머지 25%
             total_q_dmg = per_missile + (per_missile * 0.25 * (missile_count - 1))
-            
+
             total_phys_skill += total_q_dmg
             # print(f"[{time:.2f}s] Kaisa Q Cast! (Dmg: {total_q_dmg:.1f})")
 
@@ -578,31 +581,31 @@ class Kaisa(Champion):
             base_cd = [22, 20, 18, 16, 14][self.w_level - 1]
             self.w_cooldown = base_cd
             self.last_w_time = time
-            
+
             # 대미지: 30~130 + 1.3 총AD + 0.45 AP
             base_w = [30, 55, 80, 105, 130][self.w_level - 1]
             w_dmg = base_w + (1.3 * self.total_ad) + (0.45 * self.total_ap)
-            
+
             total_magic_skill += w_dmg
-            
+
             # 플라즈마 스택 적용: 기본 2, 진화 3
             stacks_to_add = 3 if w_evolved else 2
-            
+
             # 스택 적용 및 폭발 처리 (패시브 로직 재사용 필요하지만 여기선 간단히 구현)
             # W로 인한 스택은 평타 스택과 별개로 즉시 적용
             # 4스택 폭발 로직은 get_one_hit_damage와 공유해야 하므로 별도 메서드로 분리하는 게 좋음
             # 일단 여기서는 스택만 쌓고, 폭발은 다음 평타나 W 자체에서 처리
-            
+
             # W 적중 시에도 패시브 대미지가 터질 수 있음 (스택이 4가 되면)
             # 현재 스택 + 추가 스택
             current_stacks = self.plasma_stacks
-            
-            # 스택이 4를 초과하면 폭발하고 남은 스택 적용? 
+
+            # 스택이 4를 초과하면 폭발하고 남은 스택 적용?
             # 카이사 패시브는 4스택에서 '공격' 시 폭발. W도 공격으로 간주됨.
-            
+
             # 시뮬레이션 편의상 W는 단순히 대미지와 스택만 주고, 폭발은 평타 사이클에서 처리하거나
             # 여기서 직접 계산. W로 폭발시키는 경우도 많음.
-            
+
             # W 적중 -> 스택 증가 -> 4스택 도달 시 폭발 대미지 추가
             for _ in range(stacks_to_add):
                 self.plasma_stacks += 1
@@ -612,15 +615,15 @@ class Kaisa(Champion):
                     missing_hp = target.max_hp - target.current_hp
                     ratio = 0.15 + (0.0006 * self.total_ap)
                     proc_dmg = missing_hp * ratio
-                    
+
                     # 몬스터 대상 제한은 무시 (챔피언 기준)
                     total_magic_skill += proc_dmg
                     self.plasma_stacks = 0 # 초기화
-            
+
             # 진화 시 챔피언 적중하면 쿨타임 75% 반환
             if w_evolved:
                 self.w_cooldown *= 0.25
-                
+
             # print(f"[{time:.2f}s] Kaisa W Hit! (Dmg: {w_dmg:.1f})")
 
         return total_phys_skill, total_magic_skill
@@ -642,10 +645,10 @@ class Kaisa(Champion):
         # 레벨 비례값 (1~18)
         base_proc = 4 + ((24-4) * (self.level-1) / 17)
         stack_proc = 1 + ((6-1) * (self.level-1) / 17)
-        
+
         passive_magic = (base_proc + 0.12 * self.total_ap) + \
                         (self.plasma_stacks * (stack_proc + 0.03 * self.total_ap))
-        
+
         m_onhit += passive_magic
 
         # 2. 스택 쌓기 (구인수 고려는 super().get_one_hit_damage 내부에서 처리되지 않음)
@@ -653,16 +656,16 @@ class Kaisa(Champion):
         # 구인수 효과는 내부적으로 get_item_onhit을 반복 호출함.
         # 카이사 패시브 스택은 '공격 시' 쌓이므로, 구인수 환영 타격에도 쌓여야 함.
         # 이를 위해 get_champion_onhit을 활용해야 함.
-        
+
         # 하지만 get_champion_onhit은 대미지만 반환하고 상태(스택)를 변경하면 안 됨 (예측 불가)
         # 따라서 여기서 직접 스택을 관리하되, 구인수 여부를 확인해야 함.
-        
+
         # 구인수 보유 확인
         has_guinsoo = any(getattr(item, 'is_guinsoo', False) for item in self.inventory)
         is_phantom_hit = has_guinsoo and (self.hit_count > 0) and (self.hit_count % 3 == 0)
-        
+
         stacks_to_add = 2 if is_phantom_hit else 1
-        
+
         # 스택 적용 및 폭발
         # 카이사 패시브는 공격 '시' 스택 적용 -> 5스택(4+1) 되면 폭발
         for _ in range(stacks_to_add):

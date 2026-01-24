@@ -198,6 +198,9 @@ def get_item_set_4core_runaan(set_name):
     # 6. Krk + PD + IE + LDR (윤탈 X)
     elif set_name == "Set6":
         return [KrakenSlayer(), PhantomDancer(), InfinityEdge(), LordDominiksRegards()]
+    # 7. Yun + Gui + Run + LDR
+    elif set_name == "Set7":
+        return [YunTalWildarrows(crit=0.25), GuinsoosRageblade(), RunaansHurricane(), LordDominiksRegards()]
     return []
 
 # 5코어 아이템 세트 생성 함수 (루난 버전, 신발 X)
@@ -347,7 +350,7 @@ if __name__ == "__main__":
         print("\n=== 3-Core Simulation (Runaan, No Boots) ===")
         # ... (생략) ...
 
-    # === 4코어 시뮬레이션 (신발 X) ===
+    # === 4코어 시뮬레이션 (루난 버전, 신발 X) ===
     print("\n=== 4-Core Simulation (Runaan, No Boots) ===")
     dummy_hp_4 = 3000
     dummy_armor_4 = 180
@@ -360,6 +363,7 @@ if __name__ == "__main__":
         ("4. Yun+Krk+LDR+Run", "Set4"),
         ("5. Yun+Run+LDR+IE", "Set5"),
         ("6. Krk+PD+IE+LDR", "Set6"),
+        ("7. Yun+Gui+Run+LDR", "Set7"),
     ]
     
     results_4_runaan = []
@@ -370,47 +374,61 @@ if __name__ == "__main__":
         ("PTA+Coup", PressTheAttack(), CoupDeGrace())
     ]
     
+    # 적 수 시나리오 (1, 2, 3명)
+    target_counts = [1, 2, 3]
+    
     for label, set_name in item_sets_4core_runaan:
         for rune_label, main_rune, sub_rune in rune_combinations:
-            target = Target(hp=dummy_hp_4, armor=dummy_armor_4, magic_resist=dummy_mr_4, bonus_hp=dummy_hp_4-1000)
-            yunara = Yunara(level=16, q_level=5) 
+            # 아이템 세트 미리 가져와서 루난 여부 확인
+            temp_items = get_item_set_4core_runaan(set_name)
+            has_runaan = any(item.name == "Runaan's Hurricane" for item in temp_items)
             
-            # 룬 설정
-            yunara.set_rune(main_rune)
-            yunara.set_sub_rune(sub_rune)
+            # 루난이 없으면 1타겟만 시뮬레이션
+            current_target_counts = [1] if not has_runaan else target_counts
             
-            items = get_item_set_4core_runaan(set_name)
-            item_names = []
-            total_cost = 0
-            core_cost = 0
-            
-            for item in items:
-                item_names.append(item.name)
-                total_cost += item.cost
-                # 신발 X 빌드이므로 모든 아이템이 Core Cost
-                core_cost += item.cost
-                yunara.add_item(item)
-                if isinstance(item, HextechScopeC44):
-                    item.activate_vision_focus(yunara)
-                    
-            history, dps, kill_time = run_simulation(yunara, target, verbose=False)
-            efficiency = dps / total_cost if total_cost > 0 else 0
-            
-            full_label = f"{label} ({rune_label})"
-            
-            results_4_runaan.append({
-                'label': full_label, 'history': history, 'dps': dps, 'kill_time': kill_time,
-                'item_names': item_names, 'total_cost': total_cost, 'core_cost': core_cost, 'efficiency': efficiency
-            })
-            print(f"{full_label} -> DPS: {dps:.2f}, Cost: {total_cost} (Core: {core_cost}), DPG: {efficiency:.4f}")
+            for t_count in current_target_counts:
+                target = Target(hp=dummy_hp_4, armor=dummy_armor_4, magic_resist=dummy_mr_4, bonus_hp=dummy_hp_4-1000)
+                yunara = Yunara(level=16, q_level=5) 
+                
+                # 룬 및 타겟 수 설정
+                yunara.set_rune(main_rune)
+                yunara.set_sub_rune(sub_rune)
+                yunara.set_target_count(t_count)
+                
+                items = get_item_set_4core_runaan(set_name)
+                item_names = []
+                total_cost = 0
+                core_cost = 0
+                
+                for item in items:
+                    item_names.append(item.name)
+                    total_cost += item.cost
+                    # 신발 X 빌드이므로 모든 아이템이 Core Cost
+                    core_cost += item.cost
+                    yunara.add_item(item)
+                    if isinstance(item, HextechScopeC44):
+                        item.activate_vision_focus(yunara)
+                        
+                history, dps, kill_time = run_simulation(yunara, target, verbose=False)
+                efficiency = dps / total_cost if total_cost > 0 else 0
+                
+                # 라벨에 타겟 수 표시
+                full_label = f"{label} ({t_count} Targets)"
+                
+                results_4_runaan.append({
+                    'label': full_label, 'history': history, 'dps': dps, 'kill_time': kill_time,
+                    'item_names': item_names, 'total_cost': total_cost, 'core_cost': core_cost, 'efficiency': efficiency
+                })
+                print(f"{full_label} -> DPS: {dps:.2f}, Cost: {total_cost} (Core: {core_cost}), DPG: {efficiency:.4f}")
 
     # 4코어 루난 그래프
     results_4_runaan.sort(key=lambda x: x['dps'], reverse=True)
     plt.figure(figsize=(16, 10))
-    # 색상 팔레트 확장 (12개 이상)
+    # 색상 팔레트 확장 (21개 이상 필요)
     colors_4_runaan = [
         '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
-        '#1a55FF', '#FF1493'
+        '#1a55FF', '#FF1493', '#000000', '#800000', '#008080', '#FFD700', '#00FF00', '#0000FF', '#FF4500', '#DA70D6',
+        '#4B0082'
     ]
     graph_style = SIMULATION_SETTINGS.get('graph_style', 'linear')
     drawstyle = 'steps-post' if graph_style == 'step' else 'default'
@@ -426,7 +444,7 @@ if __name__ == "__main__":
         legend_label = f"#{i+1} {label}\n   DPS: {dps_val:.0f} | DPG: {eff_val:.2f} | Cost: {core_cost}"
         plt.plot(times, hps, color=color, linewidth=1.5, label=legend_label, drawstyle=drawstyle)
         
-    plt.title(f'Yunara DPS Comparison (4-Core Runaan, No Boots, Target: {dummy_hp_4}/{dummy_armor_4}/{dummy_mr_4})')
+    plt.title(f'Yunara DPS Comparison (4-Core Runaan, No Boots, LT+Cut, Target: {dummy_hp_4}/{dummy_armor_4}/{dummy_mr_4})')
     plt.xlabel('Time (s)')
     plt.ylabel('Target HP')
     plt.axhline(y=0, color='black', linestyle='--')
@@ -435,82 +453,15 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.show()
 
-    # === 4코어 시뮬레이션 (기존) (활성화) ===
+    # === 5코어 시뮬레이션 (루난 버전, 신발 X) (비활성화) ===
     if False:
-        print("\n=== 4-Core Simulation (Original, With Boots) ===")
-        dummy_hp_4 = 3000
-        dummy_armor_4 = 180
-        dummy_mr_4 = 90 # 마저 조정
-        
-        item_sets_4core = [
-            ("1. Krk+Yun+LDR+IE", "Set1"),
-            ("2. Krk+Yun+LDR+Bot", "Set2"),
-            ("3. Krk+Yun+LDR+C44", "Set3"),
-            ("4. Krk+Yun+LDR+Gui", "Set4"),
-            ("5. Yun+PD+IE+LDR", "Set5"),
-            ("6. Krk+Yun+LDR+Shadow", "Set6"),
-            ("7. Krk+Yun+LDR+Nash", "Set7"),
-            ("8. Krk+Yun+LDR+Rabadon", "Set8"),
-            ("9. Yun+LDR+Gui+Bot", "Set9"),
-            ("10. Yun+LDR+Gui+IE", "Set10"),
-        ]
-        
-        results_4 = []
-        
-        for label, set_name in item_sets_4core:
-            target = Target(hp=dummy_hp_4, armor=dummy_armor_4, magic_resist=dummy_mr_4, bonus_hp=dummy_hp_4-1000)
-            yunara = Yunara(level=16, q_level=5) 
-            yunara.set_rune(LethalTempo())
-            
-            items = get_item_set_4core(set_name)
-            item_names = []
-            total_cost = 0
-            core_cost = 0
-            
-            for item in items:
-                item_names.append(item.name)
-                total_cost += item.cost
-                if item.name != "Berserker Greaves":
-                    core_cost += item.cost
-                yunara.add_item(item)
-                if isinstance(item, HextechScopeC44):
-                    item.activate_vision_focus(yunara)
-                    
-            history, dps, kill_time = run_simulation(yunara, target, verbose=False)
-            efficiency = dps / total_cost if total_cost > 0 else 0
-            
-            results_4.append({
-                'label': label, 'history': history, 'dps': dps, 'kill_time': kill_time,
-                'item_names': item_names, 'total_cost': total_cost, 'core_cost': core_cost, 'efficiency': efficiency
-            })
-            print(f"{label} -> DPS: {dps:.2f}, Cost: {total_cost} (Core: {core_cost}), DPG: {efficiency:.4f}")
+        print("\n=== 5-Core Simulation (Runaan, No Boots) ===")
+        # ... (생략) ...
 
-        # 4코어 그래프 (기존)
-        results_4.sort(key=lambda x: x['dps'], reverse=True)
-        plt.figure(figsize=(14, 9))
-        colors_4 = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
-        graph_style = SIMULATION_SETTINGS.get('graph_style', 'linear')
-        drawstyle = 'steps-post' if graph_style == 'step' else 'default'
-        
-        for i, res in enumerate(results_4):
-            times, hps = zip(*res['history'])
-            kill_time = res['kill_time']
-            dps_val = res['dps']
-            eff_val = res['efficiency'] * 1000
-            core_cost = res['core_cost']
-            label = res['label']
-            color = colors_4[i % len(colors_4)]
-            legend_label = f"#{i+1} {label}\n   DPS: {dps_val:.0f} | DPG: {eff_val:.2f} | Cost: {core_cost}"
-            plt.plot(times, hps, color=color, linewidth=2, label=legend_label, drawstyle=drawstyle)
-            
-        plt.title(f'Yunara DPS Comparison (4-Core Original, With Boots, Target: {dummy_hp_4}/{dummy_armor_4}/{dummy_mr_4})')
-        plt.xlabel('Time (s)')
-        plt.ylabel('Target HP')
-        plt.axhline(y=0, color='black', linestyle='--')
-        plt.grid(True, alpha=0.3)
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=9)
-        plt.tight_layout()
-        plt.show()
+    # === 4코어 시뮬레이션 (기존) (비활성화) ===
+    if False:
+        print("\n=== 4-Core Simulation ===")
+        # ... (생략) ...
 
     # === 5코어 시뮬레이션 (기존) (비활성화) ===
     if False:
