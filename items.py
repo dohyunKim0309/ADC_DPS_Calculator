@@ -7,6 +7,7 @@ class Item:
         self.cost = 0
         self.stats = {
             'ad': ad, 'ap': ap, 'as': as_percent, 'crit': crit,
+            'add_crit_damage': add_crit_damage, # 추가됨
             'armor_pen_percent': armor_pen_percent, 'lethality': lethality,
             'magic_pen_flat': magic_pen_flat
         }

@@ -34,6 +34,7 @@ class Champion:
         self.inventory = []  # Item 객체들이 저장될 리스트
         self.hit_count = 0  # 평타 횟수 (구인수, 크라켄 등 카운팅용)
         self.rune = None    # 메인 룬
+        self.sub_rune = None # 보조 룬
 
         # 동적 스탯 (아이템으로 인해 변함)
         self.bonus_ad = 0
@@ -64,6 +65,9 @@ class Champion:
     # 룬 장착 함수
     def set_rune(self, rune):
         self.rune = rune
+        
+    def set_sub_rune(self, rune):
+        self.sub_rune = rune
 
     @property
     def total_ad(self):
@@ -124,6 +128,8 @@ class Champion:
         # ---------------------------------------------------------
         if self.rune:
             self.rune.on_attack(self)
+        if self.sub_rune:
+            self.sub_rune.on_attack(self)
 
         # ---------------------------------------------------------
         # 1. 기본 물리 피해 계산
@@ -147,7 +153,7 @@ class Champion:
                 p_sum += p
                 m_sum += m
             
-            # 룬 온힛
+            # 룬 온힛 (메인 룬)
             if self.rune:
                 rp, rm = self.rune.get_on_hit_damage(target, self)
                 p_sum += rp
@@ -183,22 +189,37 @@ class Champion:
             total_magic_onhit += m
 
         # ---------------------------------------------------------
-        # 3. 대미지 증폭(Multiplier) 적용 (거인 학살자 등)
+        # 3. 대미지 증폭(Multiplier) 적용 (거인 학살자, 룬 등)
         # ---------------------------------------------------------
         damage_multiplier = 0.0
+        c44_multiplier = 0.0 # C44는 별도 적용
 
+        # 아이템 증폭
         for item in self.inventory:
-            # item 클래스에 get_damage_modifier 메서드가 있다고 가정 (없으면 0 처리 필요)
             if hasattr(item, 'get_damage_modifier'):
-                damage_multiplier += item.get_damage_modifier(target, self)
+                modifier = item.get_damage_modifier(target, self)
+                if item.name == "Hextech Scope C44":
+                    c44_multiplier += modifier
+                else:
+                    damage_multiplier += modifier
+        
+        # 룬 증폭 (메인 룬 + 보조 룬)
+        if self.rune:
+            damage_multiplier += self.rune.get_damage_modifier(target, self)
+        if self.sub_rune:
+            damage_multiplier += self.sub_rune.get_damage_modifier(target, self)
 
-        # 증폭 계수 적용 (예: 1.15)
+        # 일반 증폭 계수 적용 (예: 1.15)
         mod_factor = 1.0 + damage_multiplier
 
         phys_base *= mod_factor
         magic_base *= mod_factor
         total_phys_onhit *= mod_factor
         total_magic_onhit *= mod_factor
+        
+        # C44 증폭 적용 (기본 물리 피해에만 적용)
+        if c44_multiplier > 0:
+            phys_base *= (1.0 + c44_multiplier)
         
         # ---------------------------------------------------------
         # 4. 그림자불꽃 (Shadowflame) 적용
@@ -222,6 +243,17 @@ class Champion:
 
         # 5. 평타 횟수 증가
         self.hit_count += 1
+        
+        # [DEBUG] 유나라 5코어 비교를 위한 디버깅
+        if self.name == "Yunara" and self.hit_count == 1:
+            # 아이템 목록 문자열 생성
+            item_list = ", ".join([item.name for item in self.inventory])
+            # IE 또는 C44가 포함된 경우만 출력
+            if "Infinity Edge" in item_list or "Hextech Scope C44" in item_list:
+                print(f"\n[DEBUG] Build: {item_list}")
+                print(f"  - AD: {self.total_ad:.1f}, CritDmg: {self.crit_damage_modifier:.2f}, C44Mult: {c44_multiplier:.3f}")
+                print(f"  - PhysBase: {phys_base:.1f}, MagicBase: {magic_base:.1f}")
+                print(f"  - PhysOnHit: {total_phys_onhit:.1f}, MagicOnHit: {total_magic_onhit:.1f}")
 
         # 6. 최종 반환
         return phys_base, magic_base, total_phys_onhit, total_magic_onhit
