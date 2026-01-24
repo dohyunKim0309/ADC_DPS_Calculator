@@ -217,11 +217,22 @@ class KrakenSlayer(Item):
 
     def on_hit(self, target, champion):
         # 1. 스택 쌓기
-        self.stack += 1
+        stack_increment = 1
+        if (
+            champion.name == "Yunara"
+            and getattr(champion, "q_active", False)
+            and champion.target_count >= 2
+            and any(item.name == "Runaan's Hurricane" for item in champion.inventory)
+        ):
+            extra_targets = min(2, champion.target_count - 1)
+            stack_increment += extra_targets
 
-        # 2. 3타 발동 조건 확인
-        if self.stack >= 3:
-            self.stack = 0  # 스택 초기화
+        self.stack += stack_increment
+
+        # 2. 3타 발동 조건 확인 (연속 발동 가능)
+        total_damage = 0
+        while self.stack >= 3:
+            self.stack -= 3  # 스택 소모
 
             # --- [A] 기본 피해량 계산 (8~18레벨 선형 보간) ---
             lvl = champion.level
@@ -257,9 +268,10 @@ class KrakenSlayer(Item):
                 damage_multiplier = 1.0 + current_bonus
 
             # 최종 대미지 산출
-            final_damage = base_dmg * damage_multiplier
+            total_damage += base_dmg * damage_multiplier
 
-            return final_damage, 0  # (물리 피해, 마법 피해)
+        if total_damage > 0:
+            return total_damage, 0  # (물리 피해, 마법 피해)
 
         return 0, 0
 
