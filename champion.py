@@ -46,6 +46,9 @@ class Champion:
         self.magic_pen_percent = 0.0  # 마관 %
         self.lethality = 0  # 물리 관통력 (고정)
         self.magic_pen_flat = 0 # 마법 관통력 (고정)
+        
+        # 시뮬레이션 설정
+        self.target_count = 1 # 적 수 (루난 효율 계산용)
 
     # 아이템 장착 함수
     def add_item(self, item):
@@ -68,6 +71,9 @@ class Champion:
         
     def set_sub_rune(self, rune):
         self.sub_rune = rune
+        
+    def set_target_count(self, count):
+        self.target_count = count
 
     @property
     def total_ad(self):
@@ -396,6 +402,30 @@ class Yunara(Champion):
         # Q 활성화 중에는 스택이 쌓이지 않음
         if not self.q_active and self.q_stacks < 8:
             self.q_stacks = min(8, self.q_stacks + 2)
+            
+        # 6. 루난 + Q 활성화 시 메인 타겟 대미지 증폭 (확산 평타)
+        # 조건: Q 활성화 + 루난 보유 + 적 2명 이상
+        if self.q_active and self.target_count >= 2:
+            has_runaan = any(item.name == "Runaan's Hurricane" for item in self.inventory)
+            if has_runaan:
+                # 서브 타겟 수 (최대 2명)
+                sub_targets = min(2, self.target_count - 1)
+                
+                # 증폭 배율 계산
+                # 기본(AD) 계열: 1 + (0.55 * 0.3 * 서브타겟수)
+                ad_multiplier = 1.0 + (0.55 * 0.3 * sub_targets)
+                
+                # 온힛 계열: 1 + (1.0 * 0.3 * 서브타겟수)
+                onhit_multiplier = 1.0 + (1.0 * 0.3 * sub_targets)
+                
+                # 대미지 적용
+                # p_base, m_base는 기본 계열 (패시브 포함)
+                p_base *= ad_multiplier
+                m_base *= ad_multiplier
+                
+                # p_onhit, m_onhit은 온힛 계열
+                p_onhit *= onhit_multiplier
+                m_onhit *= onhit_multiplier
 
         return p_base, m_base, p_onhit, m_onhit
 

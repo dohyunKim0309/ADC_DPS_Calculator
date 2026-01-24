@@ -122,76 +122,82 @@ def get_item_set_3core_runaan(set_name):
     # 1. Yun + Gui + Runaan
     if set_name == "Set1":
         return [YunTalWildarrows(crit=0.25), GuinsoosRageblade(), RunaansHurricane()]
-    # 2. Yun + BotRK + Runaan
+    # 2. Yun + BotRK(AS+18%) + Runaan
     elif set_name == "Set2":
-        return [YunTalWildarrows(crit=0.25), BladeOfRuinedKing(), RunaansHurricane()]
-    # 3. Yun + IE + Runaan
-    elif set_name == "Set3":
-        return [YunTalWildarrows(crit=0.25), InfinityEdge(), RunaansHurricane()]
-    # 4. Yun + Krk + Runaan
+        bot = BladeOfRuinedKing()
+        bot.stats['as'] += 0.18
+        bot.name = "Blade of Ruined King (AS+18%)"
+        return [YunTalWildarrows(crit=0.25), bot, RunaansHurricane()]
+    # 4. Yun + IE + Runaan
     elif set_name == "Set4":
-        return [YunTalWildarrows(crit=0.25), KrakenSlayer(), RunaansHurricane()]
-    # 5. Yun + Trm + Runaan
+        return [YunTalWildarrows(crit=0.25), InfinityEdge(), RunaansHurricane()]
+    # 5. Yun + Krk + Runaan
     elif set_name == "Set5":
-        return [YunTalWildarrows(crit=0.25), Terminus(), RunaansHurricane()]
-    # 6. Gui + Trm + Runaan
+        return [YunTalWildarrows(crit=0.25), KrakenSlayer(), RunaansHurricane()]
+    # 6. Yun + Terminus + Runaan
     elif set_name == "Set6":
-        return [GuinsoosRageblade(), Terminus(), RunaansHurricane()]
-    # 7. Bot + Gui + Runaan
+        return [YunTalWildarrows(crit=0.25), Terminus(), RunaansHurricane()]
+    # 7. Gui + Terminus + Runaan
     elif set_name == "Set7":
-        return [BladeOfRuinedKing(), GuinsoosRageblade(), RunaansHurricane()]
-    # 8. Yun + Run + LDR
-    elif set_name == "Set8":
-        return [YunTalWildarrows(crit=0.25), RunaansHurricane(), LordDominiksRegards()]
-    # 9. Yun + Krk + LDR
+        return [GuinsoosRageblade(), Terminus(), RunaansHurricane()]
+    # 9. BotRK(AS+18%) + Gui + Runaan
     elif set_name == "Set9":
-        return [YunTalWildarrows(crit=0.25), KrakenSlayer(), LordDominiksRegards()]
-    # 10. Yun + Gui + LDR
-    elif set_name == "Set10":
-        return [YunTalWildarrows(crit=0.25), GuinsoosRageblade(), LordDominiksRegards()]
-    # 11. Yun + Krk + IE
-    elif set_name == "Set11":
-        return [YunTalWildarrows(crit=0.25), KrakenSlayer(), InfinityEdge()]
-    # 12. Yun + Gui + IE
-    elif set_name == "Set12":
-        return [YunTalWildarrows(crit=0.25), GuinsoosRageblade(), InfinityEdge()]
-    # 13. Yun + LDR + IE
+        bot = BladeOfRuinedKing()
+        bot.stats['as'] += 0.18
+        bot.name = "Blade of Ruined King (AS+18%)"
+        return [bot, GuinsoosRageblade(), RunaansHurricane()]
+    # 13. Yun + Run + LDR
     elif set_name == "Set13":
+        return [YunTalWildarrows(crit=0.25), RunaansHurricane(), LordDominiksRegards()]
+    # 15. Yun + Krk + LDR (신발 X)
+    elif set_name == "Set15":
+        return [YunTalWildarrows(crit=0.25), KrakenSlayer(), LordDominiksRegards()]
+    # 16. Yun + Gui + LDR (신발 X)
+    elif set_name == "Set16":
+        return [YunTalWildarrows(crit=0.25), GuinsoosRageblade(), LordDominiksRegards()]
+    # 17. Yun + Krk + IE (신발 X)
+    elif set_name == "Set17":
+        return [YunTalWildarrows(crit=0.25), KrakenSlayer(), InfinityEdge()]
+    # 18. Yun + Gui + IE (신발 X)
+    elif set_name == "Set18":
+        return [YunTalWildarrows(crit=0.25), GuinsoosRageblade(), InfinityEdge()]
+    # 19. Yun + LDR + IE (신발 X)
+    elif set_name == "Set19":
         return [YunTalWildarrows(crit=0.25), LordDominiksRegards(), InfinityEdge()]
+    # 20. Yun + Bot(AS18) + LDR (신발 X)
+    elif set_name == "Set20":
+        bot = BladeOfRuinedKing()
+        bot.stats['as'] += 0.18
+        bot.name = "Blade of Ruined King (AS+18%)"
+        return [YunTalWildarrows(crit=0.25), bot, LordDominiksRegards()]
     return []
 
 # 4코어 아이템 세트 생성 함수 (루난 버전, 신발 X)
 def get_item_set_4core_runaan(set_name):
-    # 1. Yun + Gui + Runaan + LDR
+    # 1. Yun + Bot(AS18) + LDR + IE
     if set_name == "Set1":
-        return [YunTalWildarrows(crit=0.25), GuinsoosRageblade(), RunaansHurricane(), LordDominiksRegards()]
-    # 2. Yun + Gui + Runaan + BotRK
+        bot = BladeOfRuinedKing()
+        bot.stats['as'] += 0.18
+        bot.name = "Blade of Ruined King (AS+18%)"
+        return [YunTalWildarrows(crit=0.25), bot, LordDominiksRegards(), InfinityEdge()]
+    # 2. Yun + Bot(AS18) + LDR + Run
     elif set_name == "Set2":
-        return [YunTalWildarrows(crit=0.25), GuinsoosRageblade(), RunaansHurricane(), BladeOfRuinedKing()]
-    # 3. Yun + Gui + Runaan + IE
+        bot = BladeOfRuinedKing()
+        bot.stats['as'] += 0.18
+        bot.name = "Blade of Ruined King (AS+18%)"
+        return [YunTalWildarrows(crit=0.25), bot, LordDominiksRegards(), RunaansHurricane()]
+    # 3. Yun + Krk + LDR + IE
     elif set_name == "Set3":
-        return [YunTalWildarrows(crit=0.25), GuinsoosRageblade(), RunaansHurricane(), InfinityEdge()]
-    # 4. Yun + Gui + Runaan + C44
+        return [YunTalWildarrows(crit=0.25), KrakenSlayer(), LordDominiksRegards(), InfinityEdge()]
+    # 4. Yun + Krk + LDR + Run
     elif set_name == "Set4":
-        return [YunTalWildarrows(crit=0.25), GuinsoosRageblade(), RunaansHurricane(), HextechScopeC44()]
-    # 5. Yun + Terminus + Runaan + BotRK
+        return [YunTalWildarrows(crit=0.25), KrakenSlayer(), LordDominiksRegards(), RunaansHurricane()]
+    # 5. Yun + Run + LDR + IE
     elif set_name == "Set5":
-        return [YunTalWildarrows(crit=0.25), Terminus(), RunaansHurricane(), BladeOfRuinedKing()]
-    # 6. Yun + Terminus + Runaan + IE
+        return [YunTalWildarrows(crit=0.25), RunaansHurricane(), LordDominiksRegards(), InfinityEdge()]
+    # 6. Krk + PD + IE + LDR (윤탈 X)
     elif set_name == "Set6":
-        return [YunTalWildarrows(crit=0.25), Terminus(), RunaansHurricane(), InfinityEdge()]
-    # 7. Yun + Terminus + Runaan + C44
-    elif set_name == "Set7":
-        return [YunTalWildarrows(crit=0.25), Terminus(), RunaansHurricane(), HextechScopeC44()]
-    # 8. Yun + Terminus + Runaan + BT
-    elif set_name == "Set8":
-        return [YunTalWildarrows(crit=0.25), Terminus(), RunaansHurricane(), Bloodthirster()]
-    # 9. Yun + Gui + Runaan + Terminus
-    elif set_name == "Set9":
-        return [YunTalWildarrows(crit=0.25), GuinsoosRageblade(), RunaansHurricane(), Terminus()]
-    # 10. Yun + Run + IE + LDR
-    elif set_name == "Set10":
-        return [YunTalWildarrows(crit=0.25), RunaansHurricane(), InfinityEdge(), LordDominiksRegards()]
+        return [KrakenSlayer(), PhantomDancer(), InfinityEdge(), LordDominiksRegards()]
     return []
 
 # 5코어 아이템 세트 생성 함수 (루난 버전, 신발 X)
@@ -336,29 +342,27 @@ if __name__ == "__main__":
         print("\n=== 3-Core Simulation ===")
         # ... (생략) ...
 
-    # === 3코어 시뮬레이션 (루난 버전, 신발 X) ===
-    print("\n=== 3-Core Simulation (Runaan, No Boots) ===")
-    dummy_hp_3 = 2800
-    dummy_armor_3 = 150
-    dummy_mr_3 = 80
+    # === 3코어 시뮬레이션 (루난 버전, 신발 X) (비활성화) ===
+    if False:
+        print("\n=== 3-Core Simulation (Runaan, No Boots) ===")
+        # ... (생략) ...
+
+    # === 4코어 시뮬레이션 (신발 X) ===
+    print("\n=== 4-Core Simulation (Runaan, No Boots) ===")
+    dummy_hp_4 = 3000
+    dummy_armor_4 = 180
+    dummy_mr_4 = 90
     
-    item_sets_3core_runaan = [
-        ("1. Yun+Gui+Runaan", "Set1"),
-        ("2. Yun+Bot+Runaan", "Set2"),
-        ("3. Yun+IE+Runaan", "Set3"),
-        ("4. Yun+Krk+Runaan", "Set4"),
-        ("5. Yun+Trm+Runaan", "Set5"),
-        ("6. Gui+Trm+Runaan", "Set6"),
-        ("7. Bot+Gui+Runaan", "Set7"),
-        ("8. Yun+Run+LDR", "Set8"),
-        ("9. Yun+Krk+LDR", "Set9"),
-        ("10. Yun+Gui+LDR", "Set10"),
-        ("11. Yun+Krk+IE", "Set11"),
-        ("12. Yun+Gui+IE", "Set12"),
-        ("13. Yun+LDR+IE", "Set13"),
+    item_sets_4core_runaan = [
+        ("1. Yun+Bot(AS18)+LDR+IE", "Set1"),
+        ("2. Yun+Bot(AS18)+LDR+Run", "Set2"),
+        ("3. Yun+Krk+LDR+IE", "Set3"),
+        ("4. Yun+Krk+LDR+Run", "Set4"),
+        ("5. Yun+Run+LDR+IE", "Set5"),
+        ("6. Krk+PD+IE+LDR", "Set6"),
     ]
     
-    results_3_runaan = []
+    results_4_runaan = []
     
     # 룬 조합 정의
     rune_combinations = [
@@ -366,16 +370,99 @@ if __name__ == "__main__":
         ("PTA+Coup", PressTheAttack(), CoupDeGrace())
     ]
     
-    for label, set_name in item_sets_3core_runaan:
+    for label, set_name in item_sets_4core_runaan:
         for rune_label, main_rune, sub_rune in rune_combinations:
-            target = Target(hp=dummy_hp_3, armor=dummy_armor_3, magic_resist=dummy_mr_3, bonus_hp=dummy_hp_3-1000)
-            yunara = Yunara(level=13, q_level=5) 
+            target = Target(hp=dummy_hp_4, armor=dummy_armor_4, magic_resist=dummy_mr_4, bonus_hp=dummy_hp_4-1000)
+            yunara = Yunara(level=16, q_level=5) 
             
             # 룬 설정
             yunara.set_rune(main_rune)
             yunara.set_sub_rune(sub_rune)
             
-            items = get_item_set_3core_runaan(set_name)
+            items = get_item_set_4core_runaan(set_name)
+            item_names = []
+            total_cost = 0
+            core_cost = 0
+            
+            for item in items:
+                item_names.append(item.name)
+                total_cost += item.cost
+                # 신발 X 빌드이므로 모든 아이템이 Core Cost
+                core_cost += item.cost
+                yunara.add_item(item)
+                if isinstance(item, HextechScopeC44):
+                    item.activate_vision_focus(yunara)
+                    
+            history, dps, kill_time = run_simulation(yunara, target, verbose=False)
+            efficiency = dps / total_cost if total_cost > 0 else 0
+            
+            full_label = f"{label} ({rune_label})"
+            
+            results_4_runaan.append({
+                'label': full_label, 'history': history, 'dps': dps, 'kill_time': kill_time,
+                'item_names': item_names, 'total_cost': total_cost, 'core_cost': core_cost, 'efficiency': efficiency
+            })
+            print(f"{full_label} -> DPS: {dps:.2f}, Cost: {total_cost} (Core: {core_cost}), DPG: {efficiency:.4f}")
+
+    # 4코어 루난 그래프
+    results_4_runaan.sort(key=lambda x: x['dps'], reverse=True)
+    plt.figure(figsize=(16, 10))
+    # 색상 팔레트 확장 (12개 이상)
+    colors_4_runaan = [
+        '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
+        '#1a55FF', '#FF1493'
+    ]
+    graph_style = SIMULATION_SETTINGS.get('graph_style', 'linear')
+    drawstyle = 'steps-post' if graph_style == 'step' else 'default'
+    
+    for i, res in enumerate(results_4_runaan):
+        times, hps = zip(*res['history'])
+        kill_time = res['kill_time']
+        dps_val = res['dps']
+        eff_val = res['efficiency'] * 1000
+        core_cost = res['core_cost']
+        label = res['label']
+        color = colors_4_runaan[i % len(colors_4_runaan)]
+        legend_label = f"#{i+1} {label}\n   DPS: {dps_val:.0f} | DPG: {eff_val:.2f} | Cost: {core_cost}"
+        plt.plot(times, hps, color=color, linewidth=1.5, label=legend_label, drawstyle=drawstyle)
+        
+    plt.title(f'Yunara DPS Comparison (4-Core Runaan, No Boots, Target: {dummy_hp_4}/{dummy_armor_4}/{dummy_mr_4})')
+    plt.xlabel('Time (s)')
+    plt.ylabel('Target HP')
+    plt.axhline(y=0, color='black', linestyle='--')
+    plt.grid(True, alpha=0.3)
+    plt.legend(bbox_to_anchor=(0.5, -0.1), loc='upper center', fontsize=8, ncol=4)
+    plt.tight_layout()
+    plt.show()
+
+    # === 4코어 시뮬레이션 (기존) (활성화) ===
+    if False:
+        print("\n=== 4-Core Simulation (Original, With Boots) ===")
+        dummy_hp_4 = 3000
+        dummy_armor_4 = 180
+        dummy_mr_4 = 90 # 마저 조정
+        
+        item_sets_4core = [
+            ("1. Krk+Yun+LDR+IE", "Set1"),
+            ("2. Krk+Yun+LDR+Bot", "Set2"),
+            ("3. Krk+Yun+LDR+C44", "Set3"),
+            ("4. Krk+Yun+LDR+Gui", "Set4"),
+            ("5. Yun+PD+IE+LDR", "Set5"),
+            ("6. Krk+Yun+LDR+Shadow", "Set6"),
+            ("7. Krk+Yun+LDR+Nash", "Set7"),
+            ("8. Krk+Yun+LDR+Rabadon", "Set8"),
+            ("9. Yun+LDR+Gui+Bot", "Set9"),
+            ("10. Yun+LDR+Gui+IE", "Set10"),
+        ]
+        
+        results_4 = []
+        
+        for label, set_name in item_sets_4core:
+            target = Target(hp=dummy_hp_4, armor=dummy_armor_4, magic_resist=dummy_mr_4, bonus_hp=dummy_hp_4-1000)
+            yunara = Yunara(level=16, q_level=5) 
+            yunara.set_rune(LethalTempo())
+            
+            items = get_item_set_4core(set_name)
             item_names = []
             total_cost = 0
             core_cost = 0
@@ -392,61 +479,38 @@ if __name__ == "__main__":
             history, dps, kill_time = run_simulation(yunara, target, verbose=False)
             efficiency = dps / total_cost if total_cost > 0 else 0
             
-            full_label = f"{label} ({rune_label})"
-            
-            results_3_runaan.append({
-                'label': full_label, 'history': history, 'dps': dps, 'kill_time': kill_time,
+            results_4.append({
+                'label': label, 'history': history, 'dps': dps, 'kill_time': kill_time,
                 'item_names': item_names, 'total_cost': total_cost, 'core_cost': core_cost, 'efficiency': efficiency
             })
-            print(f"{full_label} -> DPS: {dps:.2f}, Cost: {total_cost} (Core: {core_cost}), DPG: {efficiency:.4f}")
+            print(f"{label} -> DPS: {dps:.2f}, Cost: {total_cost} (Core: {core_cost}), DPG: {efficiency:.4f}")
 
-    # 3코어 루난 그래프
-    results_3_runaan.sort(key=lambda x: x['dps'], reverse=True)
-    plt.figure(figsize=(16, 10)) # 그래프 크기 키움
-    # 색상 팔레트 확장 (26개 이상 필요)
-    colors_3_runaan = [
-        '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
-        '#1a55FF', '#FF1493', '#000000', '#800000', '#008080', '#FFD700', '#00FF00', '#0000FF', '#FF4500', '#DA70D6',
-        '#4B0082', '#808000', '#00CED1', '#DC143C', '#2F4F4F', '#A0522D'
-    ]
-    graph_style = SIMULATION_SETTINGS.get('graph_style', 'linear')
-    drawstyle = 'steps-post' if graph_style == 'step' else 'default'
-    
-    # 모든 데이터 표시
-    for i, res in enumerate(results_3_runaan):
-        times, hps = zip(*res['history'])
-        kill_time = res['kill_time']
-        dps_val = res['dps']
-        eff_val = res['efficiency'] * 1000
-        core_cost = res['core_cost']
-        label = res['label']
-        color = colors_3_runaan[i % len(colors_3_runaan)]
-        legend_label = f"#{i+1} {label}\n   DPS: {dps_val:.0f} | DPG: {eff_val:.2f} | Cost: {core_cost}"
-        plt.plot(times, hps, color=color, linewidth=1.5, label=legend_label, drawstyle=drawstyle)
+        # 4코어 그래프 (기존)
+        results_4.sort(key=lambda x: x['dps'], reverse=True)
+        plt.figure(figsize=(14, 9))
+        colors_4 = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+        graph_style = SIMULATION_SETTINGS.get('graph_style', 'linear')
+        drawstyle = 'steps-post' if graph_style == 'step' else 'default'
         
-    plt.title(f'Yunara DPS Comparison (3-Core Runaan, No Boots, Target: {dummy_hp_3}/{dummy_armor_3}/{dummy_mr_3})')
-    plt.xlabel('Time (s)')
-    plt.ylabel('Target HP')
-    plt.axhline(y=0, color='black', linestyle='--')
-    plt.grid(True, alpha=0.3)
-    plt.legend(bbox_to_anchor=(0.5, -0.1), loc='upper center', fontsize=8, ncol=4)
-    plt.tight_layout()
-    plt.show()
-
-    # === 4코어 시뮬레이션 (루난 버전, 신발 X) (비활성화) ===
-    if False:
-        print("\n=== 4-Core Simulation (Runaan, No Boots) ===")
-        # ... (생략) ...
-
-    # === 5코어 시뮬레이션 (루난 버전, 신발 X) (비활성화) ===
-    if False:
-        print("\n=== 5-Core Simulation (Runaan, No Boots) ===")
-        # ... (생략) ...
-
-    # === 4코어 시뮬레이션 (기존) (비활성화) ===
-    if False:
-        print("\n=== 4-Core Simulation ===")
-        # ... (생략) ...
+        for i, res in enumerate(results_4):
+            times, hps = zip(*res['history'])
+            kill_time = res['kill_time']
+            dps_val = res['dps']
+            eff_val = res['efficiency'] * 1000
+            core_cost = res['core_cost']
+            label = res['label']
+            color = colors_4[i % len(colors_4)]
+            legend_label = f"#{i+1} {label}\n   DPS: {dps_val:.0f} | DPG: {eff_val:.2f} | Cost: {core_cost}"
+            plt.plot(times, hps, color=color, linewidth=2, label=legend_label, drawstyle=drawstyle)
+            
+        plt.title(f'Yunara DPS Comparison (4-Core Original, With Boots, Target: {dummy_hp_4}/{dummy_armor_4}/{dummy_mr_4})')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Target HP')
+        plt.axhline(y=0, color='black', linestyle='--')
+        plt.grid(True, alpha=0.3)
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=9)
+        plt.tight_layout()
+        plt.show()
 
     # === 5코어 시뮬레이션 (기존) (비활성화) ===
     if False:
