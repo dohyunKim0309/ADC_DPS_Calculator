@@ -39,6 +39,7 @@ class Champion:
         # 동적 스탯 (아이템으로 인해 변함)
         self.bonus_ad = 0
         self.bonus_ap = 0
+        self.bonus_mana = 0
         self.bonus_as_percent = 0
         self.crit_chance = 0.0
         self.crit_damage_modifier = 2.00  # 기본 치명타 피해 200%
@@ -46,6 +47,7 @@ class Champion:
         self.magic_pen_percent = 0.0  # 마관 %
         self.lethality = 0  # 물리 관통력 (고정)
         self.magic_pen_flat = 0 # 마법 관통력 (고정)
+        self.ability_haste = 0.0 # 스킬 가속
         
         # 시뮬레이션 설정
         self.target_count = 1 # 적 수 (루난 효율 계산용)
@@ -57,6 +59,7 @@ class Champion:
         # 1. 스탯 단순 합산
         self.bonus_ad += item.stats.get('ad', 0)
         self.bonus_ap += item.stats.get('ap', 0)
+        self.bonus_mana += item.stats.get('mana', 0)
         self.bonus_as_percent += item.stats.get('as', 0)
         self.crit_chance += item.stats.get('crit', 0)
         self.armor_pen_percent = 1 - (1 - self.armor_pen_percent) * (
@@ -64,6 +67,7 @@ class Champion:
         self.lethality += item.stats.get('lethality', 0)
         self.crit_damage_modifier += item.stats.get('add_crit_damage', 0)
         self.magic_pen_flat += item.stats.get('magic_pen_flat', 0)
+        self.ability_haste += item.stats.get('cdr', 0)
 
     # 룬 장착 함수
     def set_rune(self, rune):
@@ -74,12 +78,32 @@ class Champion:
         
     def set_target_count(self, count):
         self.target_count = count
+        
+    def cast_spell(self, time):
+        """스킬 사용 시 호출 (주문검 활성화 등)"""
+        for item in self.inventory:
+            if hasattr(item, 'on_spell_cast'):
+                item.on_spell_cast(self, time)
+                
+    def cast_ultimate(self, time):
+        """궁극기 사용 시 호출 (아이템 효과 활성화 등)"""
+        for item in self.inventory:
+            if hasattr(item, 'on_ult_cast'):
+                item.on_ult_cast(self, time)
+
+    @property
+    def base_attack_ad(self):
+        # 현재 레벨 기준 "기본 공격력" (아이템 AD 제외)
+        growth_ad = self.ad_growth * (self.level - 1)
+        return self.base_ad + growth_ad
 
     @property
     def total_ad(self):
-        # 성장 공격력 반영: base_ad + (ad_growth * (level - 1)) + bonus_ad
-        growth_ad = self.ad_growth * (self.level - 1)
-        return self.base_ad + growth_ad + self.bonus_ad
+        dynamic_bonus_ad = 0.0
+        for item in self.inventory:
+            if hasattr(item, "get_bonus_ad"):
+                dynamic_bonus_ad += item.get_bonus_ad(self)
+        return self.base_attack_ad + self.bonus_ad + dynamic_bonus_ad
 
     @property
     def total_ap(self):
@@ -87,6 +111,18 @@ class Champion:
         has_rabadon = any(item.name == "Rabadon's Deathcap" for item in self.inventory)
         multiplier = 1.30 if has_rabadon else 1.0
         return self.bonus_ap * multiplier
+
+    @property
+    def total_mana(self):
+        base_mana = getattr(self, "base_mana", 0.0)
+        mana_growth = getattr(self, "mana_growth", 0.0)
+        growth_mana = mana_growth * (self.level - 1)
+
+        dynamic_bonus_mana = 0.0
+        for item in self.inventory:
+            if hasattr(item, "get_bonus_mana"):
+                dynamic_bonus_mana += item.get_bonus_mana(self)
+        return base_mana + growth_mana + self.bonus_mana + dynamic_bonus_mana
 
     def get_total_bonus_as_percent(self):
         """총 추가 공격 속도(%) 반환 (아이템 + 성장 + 룬)"""
@@ -114,6 +150,18 @@ class Champion:
         if current_as <= 0: return 9999
         return 1.0 / current_as
 
+    @property
+    def cooldown_multiplier(self):
+        # 스킬가속(AH): 최종 쿨타임 = 기본쿨 * (100 / (100 + AH))
+        return 100.0 / (100.0 + max(0.0, self.ability_haste))
+
+    @property
+    def total_ability_haste(self):
+        return self.ability_haste
+
+    def apply_haste_to_cooldown(self, base_cooldown):
+        return base_cooldown * (100.0 / (100.0 + max(0.0, self.total_ability_haste)))
+
     def get_champion_onhit(self, target):
         """챔피언 고유 스킬에 의한 온힛 대미지 (구인수 적용 대상)"""
         return 0, 0
@@ -126,9 +174,22 @@ class Champion:
         """매 프레임마다 호출되어 스킬 쿨타임 등을 관리하고 스킬 대미지를 반환"""
         return 0, 0 # (Phys, Magic)
 
+    def get_on_skill_hit_damage(self, target, time=0.0):
+        phys = 0.0
+        magic = 0.0
+        true = 0.0
+        for item in self.inventory:
+            if hasattr(item, "on_skill_hit"):
+                p, m, t = item.on_skill_hit(target, self, time)
+                phys += p
+                magic += m
+                true += t
+        return phys, magic, true
+
     # [핵심] 챔피언별로 오버라이딩 할 메서드
-    # 반환값: (물리_기본, 마법_기본, 물리_온힛, 마법_온힛)
+    # 반환값: (물리_기본, 마법_기본, 물리_온힛, 마법_온힛, 물리_고정_기본, 물리_고정_온힛)
     def get_one_hit_damage(self, target, time=0):
+        self._combat_time = time
         # ---------------------------------------------------------
         # 0. 룬 효과 발동 (공격 시)
         # ---------------------------------------------------------
@@ -143,6 +204,8 @@ class Champion:
         phys_base = self.total_ad * self.crit_damage_modifier * self.crit_chance + self.total_ad * (
                     1 - self.crit_chance)
         magic_base = 0
+        phys_true_base = 0 # 평타 고정 피해
+        phys_true_onhit = 0 # 온힛 고정 피해
 
         # ---------------------------------------------------------
         # 2. 아이템 및 챔피언 온힛 대미지 처리 (구인수 적용)
@@ -152,12 +215,16 @@ class Champion:
         def get_all_onhit():
             p_sum = 0
             m_sum = 0
+            pt_base_sum = 0 # 평타 고정 피해 합산
+            pt_onhit_sum = 0 # 온힛 고정 피해 합산
             
             # 아이템 온힛
             for item in self.inventory:
-                p, m = item.on_hit(target, self)
+                p, m, pt_b, pt_o = item.on_hit(target, self) # 4개 반환
                 p_sum += p
                 m_sum += m
+                pt_base_sum += pt_b
+                pt_onhit_sum += pt_o
             
             # 룬 온힛 (메인 룬)
             if self.rune:
@@ -170,29 +237,27 @@ class Champion:
             p_sum += cp
             m_sum += cm
 
-            return p_sum, m_sum
+            return p_sum, m_sum, pt_base_sum, pt_onhit_sum
 
-        # 2.1 구인수 객체 찾기 및 상태 확인
-        guinsoo_item = next((item for item in self.inventory if getattr(item, 'is_guinsoo', False)), None)
-
-        # [조건] 구인수가 있고 + 스택이 4(풀스택)여야 함
-        is_guinsoo_active = (guinsoo_item is not None) and (guinsoo_item.stack >= 4)
-
-        # 2.2 실행 횟수(proc_count) 결정
+        # 2.1 실행 횟수(proc_count) 결정
+        # 아이템이 온힛 처리 횟수를 확장할 수 있도록 훅 제공 (예: 구인수)
         proc_count = 1
+        for item in self.inventory:
+            if hasattr(item, "get_onhit_proc_count"):
+                proc_count = max(proc_count, item.get_onhit_proc_count(self))
 
-        # 구인수 풀스택 상태에서, 3번째 평타마다 2회 발동
-        if is_guinsoo_active and (self.hit_count > 0) and (self.hit_count % 3 == 0):
-            proc_count = 2
-
-        # 2.3 결정된 횟수만큼 온힛 루프 실행
+        # 2.2 결정된 횟수만큼 온힛 루프 실행
         total_phys_onhit = 0
         total_magic_onhit = 0
+        total_true_base = 0
+        total_true_onhit = 0
 
         for _ in range(proc_count):
-            p, m = get_all_onhit()
+            p, m, pt_b, pt_o = get_all_onhit()
             total_phys_onhit += p
             total_magic_onhit += m
+            total_true_base += pt_b
+            total_true_onhit += pt_o
 
         # ---------------------------------------------------------
         # 3. 대미지 증폭(Multiplier) 적용 (거인 학살자, 룬 등)
@@ -266,7 +331,7 @@ class Champion:
                 print(f"  - HasRunaan: {has_runaan}, TargetCount: {self.target_count}")
 
         # 6. 최종 반환
-        return phys_base, magic_base, total_phys_onhit, total_magic_onhit
+        return phys_base, magic_base, total_phys_onhit, total_magic_onhit, phys_true_base, total_true_onhit
 
 
 # 3. 개별 챔피언 구현 (예: 애쉬, 케이틀린)
@@ -301,7 +366,7 @@ class Ashe(Champion):
             self.activate_q(time)
 
         # 3. 부모 클래스의 기본 대미지 계산 (기댓값 로직 포함)
-        p_base, m_base, p_onhit, m_onhit = super().get_one_hit_damage(target, time)
+        p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit = super().get_one_hit_damage(target, time)
 
         # 4. Q 활성화 시 기본 공격 피해 증폭
         if self.q_active:
@@ -316,7 +381,7 @@ class Ashe(Champion):
             # 만약 "강화된 기본 공격" 전체가 증폭된다면 아래 주석 해제.
             # p_onhit *= multiplier 
 
-        return p_base, m_base, p_onhit, m_onhit
+        return p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit
 
     def activate_q(self, time):
         self.q_active = True
@@ -328,7 +393,13 @@ class Ashe(Champion):
             as_bonus = self.q_as_amounts[idx]
             self.bonus_as_percent += as_bonus
             self.q_as_buff_applied = True
-            print(f"[{time:.2f}s] Ashe Q Activated! (AS +{as_bonus*100:.0f}%, Dmg x{self.q_dmg_multipliers[idx]})")
+            # print(f"[{time:.2f}s] Ashe Q Activated! (AS +{as_bonus*100:.0f}%, Dmg x{self.q_dmg_multipliers[idx]})")
+            
+            # 주문검 활성화 (정수 약탈자)
+            self.cast_spell(time)
+            
+            # 궁극기 사용 (악마사냥꾼의 화살)
+            self.cast_ultimate(time)
 
     def deactivate_q(self):
         self.q_active = False
@@ -339,14 +410,72 @@ class Ashe(Champion):
             as_bonus = self.q_as_amounts[idx]
             self.bonus_as_percent -= as_bonus
             self.q_as_buff_applied = False
-            print(f"Ashe Q Expired.")
+            # print(f"Ashe Q Expired.")
             
     def cast_w(self, target):
         # W: 일제 사격 (단순 대미지 계산용)
         # 200 (+1.1 추가 AD) - 5레벨 기준
         base_dmg = 200
         scaling = 1.1 * self.bonus_ad
+        
+        # 주문검 활성화 (정수 약탈자)
+        self.cast_spell(0) # time 인자가 없으므로 0 전달 (단순 활성화용)
+        
         return base_dmg + scaling
+
+
+class Jinx(Champion):
+    def __init__(self, level=1, q_level=5, minigun_stacks=3, q_mode="minigun"):
+        # 요청 스펙 기준: AD 59(+3.15), AS 0.625(+1%)
+        super().__init__(
+            name="Jinx",
+            base_ad=59,
+            base_as=0.625,
+            as_ratio=0.625,
+            as_growth=1.0,
+            base_range=525,
+            level=level,
+            ad_growth=3.15,
+        )
+
+        self.q_level = max(1, min(5, q_level))
+        self.q_mode = q_mode
+        self.minigun_stacks = max(0, min(3, minigun_stacks))
+        self.minigun_stack_duration = 2.5
+        self.last_minigun_hit_time = -999.0
+        # Q 최대 3중첩 기준 총 공속 증가량
+        self.q_max_as_bonus = [0.30, 0.55, 0.80, 1.05, 1.30]
+        self.fishbones_ad_multiplier = 1.10
+        self.fishbones_bonus_as_multiplier = 0.90
+
+    def get_total_bonus_as_percent(self):
+        # 파워스파이크 비교에서는 유지딜 기준으로 Q 모드를 고정 반영.
+        base_bonus = super().get_total_bonus_as_percent()
+        max_bonus = self.q_max_as_bonus[self.q_level - 1]
+        stack_bonus = max_bonus * (self.minigun_stacks / 3.0)
+        if self.q_mode == "fishbones":
+            # 생선 대가리: "추가 공격 속도"에 곱연산 -10%
+            # 요청 반영: Fishbones에서는 Q 스택 공속 증가 미적용
+            return base_bonus * self.fishbones_bonus_as_multiplier
+
+        # 미니건: 스택에 비례한 공속 보너스
+        return base_bonus + stack_bonus
+
+    def get_one_hit_damage(self, target, time=0):
+        # 미니건 스택은 마지막 미니건 적중 후 2.5초 유지
+        if self.q_mode == "minigun" and (time - self.last_minigun_hit_time > self.minigun_stack_duration):
+            self.minigun_stacks = 0
+
+        p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit = super().get_one_hit_damage(target, time)
+
+        # 미니건 평타 적중 시 스택 증가 (최대 3)
+        if self.q_mode == "minigun":
+            self.minigun_stacks = min(3, self.minigun_stacks + 1)
+            self.last_minigun_hit_time = time
+
+        if self.q_mode == "fishbones":
+            p_base *= self.fishbones_ad_multiplier
+        return p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit
 
 
 class Yunara(Champion):
@@ -394,7 +523,7 @@ class Yunara(Champion):
             self.activate_q(time)
 
         # 3. 부모 클래스의 기본 대미지 계산 (여기서 get_champion_onhit이 호출됨)
-        p_base, m_base, p_onhit, m_onhit = super().get_one_hit_damage(target, time)
+        p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit = super().get_one_hit_damage(target, time)
 
         # 4. 패시브: 치명타 시 추가 마법 피해 (10% + 0.1 AP)
         # 치명타가 터졌는지 여부는 확률적으로 결정되지만, 여기서는 기댓값(평균)으로 계산
@@ -407,275 +536,522 @@ class Yunara(Champion):
         if not self.q_active and self.q_stacks < 8:
             self.q_stacks = min(8, self.q_stacks + 2)
             
-        # 6. 루난 + Q 활성화 시 메인 타겟 대미지 증폭 (확산 평타)
-        # 조건: Q 활성화 + 루난 보유 + 적 2명 이상
-        has_runaan = any(item.name == "Runaan's Hurricane" for item in self.inventory)
-        if self.q_active and self.target_count >= 2 and has_runaan:
-            # 서브 타겟 수 (최대 2명)
-            sub_targets = min(2, self.target_count - 1)
-            
-            # 증폭 배율 계산
-            # 기본(AD) 계열: 1 + (0.55 * 0.3 * 서브타겟수)
-            ad_multiplier = 1.0 + (0.55 * 0.3 * sub_targets)
-            
-            # 온힛 계열: 1 + (1.0 * 0.3 * 서브타겟수)
-            onhit_multiplier = 1.0 + (1.0 * 0.3 * sub_targets)
-            
-            # 대미지 적용
-            # p_base, m_base는 기본 계열 (패시브 포함)
-            p_base *= ad_multiplier
-            m_base *= ad_multiplier
-            
-            # p_onhit, m_onhit은 온힛 계열
-            p_onhit *= onhit_multiplier
-            m_onhit *= onhit_multiplier
+        # 6. Q 활성화 시 다중 타겟 로직 (크라켄 가속 & 루난 확산)
+        if self.q_active and self.target_count >= 2:
+            # 6-1. 크라켄 스택 가속 (루난 없어도 적용)
+            kraken = next((item for item in self.inventory if item.name == "Kraken Slayer"), None)
+            if kraken:
+                # 크라켄 대미지 계산 (KrakenSlayer.on_hit 참조)
+                lvl = self.level
+                min_dmg = 120
+                max_dmg = 160
+                if lvl < 8: base_dmg = min_dmg
+                elif lvl >= 18: base_dmg = max_dmg
+                else:
+                    ratio = (lvl - 8) / (18 - 8)
+                    base_dmg = min_dmg + (ratio * (max_dmg - min_dmg))
+                
+                current_hp_ratio = target.current_hp / target.max_hp
+                missing_hp_ratio = 1.0 - current_hp_ratio
+                saturation_point = 0.7
+                max_bonus = 0.75
+                if missing_hp_ratio >= saturation_point:
+                    damage_multiplier = 1.0 + max_bonus
+                else:
+                    current_bonus = (missing_hp_ratio / saturation_point) * max_bonus
+                    damage_multiplier = 1.0 + current_bonus
+                
+                kraken_dmg = base_dmg * damage_multiplier
+                
+                # 추가 빈도 계산
+                extra_proc_rate = (min(3, self.target_count) - 1) / 3.0
+                
+                p_onhit += kraken_dmg * extra_proc_rate
 
-        return p_base, m_base, p_onhit, m_onhit
+            # 6-2. 루난 확산 대미지 (루난 있을 때만)
+            has_runaan = any(item.name == "Runaan's Hurricane" for item in self.inventory)
+            if has_runaan:
+                sub_targets = min(2, self.target_count - 1)
+                
+                # 기본(AD) 계열 증폭: 1 + (0.55 * 0.3 * 서브타겟수)
+                ad_multiplier = 1.0 + (0.55 * 0.3 * sub_targets)
+                p_base *= ad_multiplier
+                m_base *= ad_multiplier
+                
+                # 온힛 계열 증폭: 1 + (1.0 * 0.3 * 서브타겟수)
+                onhit_multiplier = 1.0 + (1.0 * 0.3 * sub_targets)
+                p_onhit *= onhit_multiplier
+                m_onhit *= onhit_multiplier
+
+        return p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit
 
     def activate_q(self, time):
         self.q_active = True
         self.q_start_time = time
-        self.q_stacks = 0 # 스택 소모
-        
-        # 공속 버프 적용
+        self.q_stacks = 0
         if not self.q_as_buff_applied:
             idx = self.q_level - 1
             as_bonus = self.q_as_amounts[idx]
             self.bonus_as_percent += as_bonus
             self.q_as_buff_applied = True
-            print(f"[{time:.2f}s] Yunara Q Activated! (AS +{as_bonus*100:.0f}%)")
+            self.cast_spell(time)
+            self.cast_ultimate(time)
 
     def deactivate_q(self):
         self.q_active = False
-        
-        # 공속 버프 해제
         if self.q_as_buff_applied:
             idx = self.q_level - 1
             as_bonus = self.q_as_amounts[idx]
             self.bonus_as_percent -= as_bonus
             self.q_as_buff_applied = False
-            print(f"Yunara Q Expired.")
 
 
-class Kaisa(Champion):
-    def __init__(self, level=1, q_level=5, w_level=1, e_level=1):
-        # Base AD 59, AD Growth 2.6, AS 0.644, AS Ratio 0.644, AS Growth 1.8
-        super().__init__(name="Kaisa", base_ad=59, base_as=0.644, as_ratio=0.644, as_growth=1.8, base_range=525, level=level, ad_growth=2.6)
+class KaiSa(Champion):
+    def __init__(self, level=1, q_level=5, w_level=5, e_level=5, r_level=3):
+        super().__init__(
+            name="Kai'Sa",
+            base_ad=59,
+            base_as=0.644,
+            as_ratio=0.644,
+            as_growth=1.8,
+            base_range=525,
+            level=level,
+            ad_growth=2.6
+        )
 
+        # 기본 스탯 (현재 엔진에서 직접 사용하지 않는 항목도 보관)
+        self.base_hp = 640
+        self.hp_growth = 102
+        self.base_hp_regen = 4.0
+        self.hp_regen_growth = 0.55
+        self.base_mana = 345
+        self.mana_growth = 40
+        self.base_mana_regen = 8.2
+        self.mana_regen_growth = 0.7
+        self.base_armor = 25
+        self.armor_growth = 4.2
+        self.base_mr = 30
+        self.mr_growth = 1.3
+        self.base_ms = 335
+
+        # 스킬 레벨
         self.q_level = q_level
         self.w_level = w_level
         self.e_level = e_level
+        self.r_level = r_level
 
-        # 패시브 상태
-        self.plasma_stacks = 0
+        # 스킬 데이터
+        self.q_cd = [10, 9, 8, 7, 6]
+        self.q_missile_base = [40, 55, 70, 85, 100]
+        self.w_cd = [22, 20, 18, 16, 14]
+        self.w_base = [30, 55, 80, 105, 130]
+        self.e_cd = [16, 14.5, 13, 11.5, 10]
+        self.e_as_bonus = [0.40, 0.50, 0.60, 0.70, 0.80]
+        self.r_cd = [130, 100, 70]
+        self.r_shield_base = [70, 90, 110]
+        self.r_ad_ratio = [0.9, 1.35, 1.8]
 
-        # 스킬 쿨타임 관리
-        self.q_cooldown = 0.0
-        self.w_cooldown = 0.0
-        self.e_cooldown = 0.0
-        self.last_q_time = -999
-        self.last_w_time = -999
-        self.last_e_time = -999
-
-        # E 스킬 상태
+        # 쿨타임/버프 상태
+        self.q_next_ready_time = 0.0
+        self.w_next_ready_time = 0.0
+        self.e_next_ready_time = 0.0
+        self.r_next_ready_time = 0.0
         self.e_active = False
         self.e_end_time = 0.0
-        self.e_as_buff_applied = False
-        self.is_charging_e = False # E 충전 중 (공격 불가)
-        self.e_charge_end_time = 0.0
+        self.e_buff_applied = False
+        self.r_shield_value = 0.0
+        self.r_shield_end_time = 0.0
 
-    def get_evolved_status(self):
-        # 진화 조건 확인
-        # Q: 추가 AD 100 이상 (성장 AD 포함)
-        bonus_ad_total = (self.ad_growth * (self.level - 1)) + self.bonus_ad
-        q_evolved = bonus_ad_total >= 100
+        # 자동 시전 설정
+        self.auto_cast_q = True
+        self.auto_cast_w = True
+        self.auto_cast_e = True
+        self.auto_cast_r = False
+        self.q_cast_count = 0
+        self.w_cast_count = 0
 
-        # W: AP 100 이상
-        w_evolved = self.total_ap >= 100
+        # 패시브(플라즈마): 타겟별 [스택, 만료시각]
+        self.plasma_state = {}
+        self._combat_time = 0.0
 
-        # E: 추가 AS 100% 이상 (성장 AS 포함)
-        bonus_as_total = self.get_total_bonus_as_percent()
-        e_evolved = bonus_as_total >= 1.0
+        # 시뮬레이션별 진화 오버라이드 (None이면 기본 조건 사용)
+        self.q_evolved_override = None
+        self.w_evolved_override = None
 
-        return q_evolved, w_evolved, e_evolved
+    def _lerp_by_level(self, lv1_value, lv18_value):
+        if self.level <= 1:
+            return lv1_value
+        if self.level >= 18:
+            return lv18_value
+        ratio = (self.level - 1) / 17.0
+        return lv1_value + (lv18_value - lv1_value) * ratio
+
+    def _get_bonus_ad_for_scaling(self):
+        # LoL 기준 bonus AD(아이템 + 성장 AD)에 가깝게 계산
+        return self.bonus_ad + (self.ad_growth * (self.level - 1))
+
+    def _get_evolution_bonus_as(self):
+        # 진화 조건은 레벨/아이템 기반 추가 공속만 사용 (룬/버프 제외)
+        return self.bonus_as_percent + (self.as_growth * (self.level - 1) / 100.0)
+
+    def has_q_evolved(self):
+        if self.q_evolved_override is not None:
+            return self.q_evolved_override
+        return self._get_bonus_ad_for_scaling() >= 100.0
+
+    def has_w_evolved(self):
+        if self.w_evolved_override is not None:
+            return self.w_evolved_override
+        return self.total_ap >= 100.0
+
+    def has_e_evolved(self):
+        return self._get_evolution_bonus_as() >= 1.0
+
+    def _get_plasma(self, target, time):
+        key = id(target)
+        stacks, expire_time = self.plasma_state.get(key, (0, 0.0))
+        if time > expire_time:
+            stacks = 0
+        return stacks, expire_time
+
+    def _set_plasma(self, target, stacks, time):
+        key = id(target)
+        expire_time = time + 4.0 if stacks > 0 else 0.0
+        self.plasma_state[key] = (stacks, expire_time)
+
+    def _get_plasma_base_damage(self):
+        # 4 ~ 24 (레벨 선형 보간) (+0.12 AP)
+        return self._lerp_by_level(4.0, 24.0) + (0.12 * self.total_ap)
+
+    def _get_plasma_per_stack_damage(self):
+        # 1 ~ 6 (레벨 선형 보간) (+0.03 AP)
+        return self._lerp_by_level(1.0, 6.0) + (0.03 * self.total_ap)
+
+    def _get_plasma_execute_damage(self, target):
+        # 잃은 체력의 15(+0.06 AP)% (마법)
+        missing_hp = max(0.0, target.max_hp - target.current_hp)
+        execute_ratio = 0.15 + (0.0006 * self.total_ap)
+        detonate_damage = missing_hp * execute_ratio
+
+        if getattr(target, 'is_monster', False):
+            detonate_damage = min(detonate_damage, 400.0)
+
+        return detonate_damage
+
+    def _apply_single_plasma_stack(self, target, time, include_passive_damage=True):
+        """
+        플라즈마 1회 적용 시 피해:
+        - 기본 공격 계열(include_passive_damage=True):
+          기본 추가 피해 + 현재 중첩 기반 추가 피해
+        - 스택 부여 계열(include_passive_damage=False, 예: W):
+          스택/폭발만 처리
+        - 4중첩 상태에서 다음(5번째) 적용이면 폭발 피해 후 중첩 초기화
+        """
+        pre_stacks, _ = self._get_plasma(target, time)
+        damage = 0.0
+        if include_passive_damage:
+            damage += self._get_plasma_base_damage() + (self._get_plasma_per_stack_damage() * pre_stacks)
+
+        # 5번째 적용 시 폭발
+        if pre_stacks >= 4:
+            damage += self._get_plasma_execute_damage(target)
+            self._set_plasma(target, 0, time)
+        else:
+            self._set_plasma(target, pre_stacks + 1, time)
+
+        return damage
+
+    def _apply_plasma_stacks(self, target, time, count, include_passive_damage=True):
+        total = 0.0
+        for _ in range(count):
+            total += self._apply_single_plasma_stack(target, time, include_passive_damage=include_passive_damage)
+        return total
+
+    def get_champion_onhit(self, target):
+        # 패시브 온힛: 평타 1회당 플라즈마 1회 적용 피해
+        time = self._combat_time
+        return 0, self._apply_plasma_stacks(target, time, 1, include_passive_damage=True)
+
+    def _cast_q(self, time):
+        idx = self.q_level - 1
+
+        # 요청 반영:
+        # 추가 공격력 = 현재 공격력(total_ad) - 1레벨 카이사 공격력(base_ad=59)
+        bonus_ad_for_q = max(0.0, self.total_ad - self.base_ad)
+
+        if self.has_q_evolved():
+            # 진화 후 단일 대상 최대 피해
+            # 150 / 206.25 / 262.5 / 318.75 / 375
+            q_single_base_evolved = [150.0, 206.25, 262.5, 318.75, 375.0]
+            q_damage = q_single_base_evolved[idx] + (1.875 * bonus_ad_for_q) + (0.75 * self.total_ap)
+        else:
+            # 진화 전 단일 대상 피해
+            # 90 / 123.75 / 157.5 / 191.25 / 225
+            q_single_base = [90.0, 123.75, 157.5, 191.25, 225.0]
+            q_damage = q_single_base[idx] + (1.125 * bonus_ad_for_q) + (0.45 * self.total_ap)
+
+        self.q_next_ready_time = time + self.apply_haste_to_cooldown(self.q_cd[idx])
+        self.q_cast_count += 1
+        self.cast_spell(time)
+        return q_damage, 0.0
+
+    def _cast_w(self, target, time):
+        idx = self.w_level - 1
+        w_damage = self.w_base[idx] + (1.3 * self.total_ad) + (0.45 * self.total_ap)
+
+        self.w_next_ready_time = time + self.apply_haste_to_cooldown(self.w_cd[idx])
+        if self.has_w_evolved():
+            # 진화 W가 챔피언 적중 시 쿨타임 75% 환급 -> 남은 쿨타임 25%
+            self.w_next_ready_time = time + self.apply_haste_to_cooldown(self.w_cd[idx]) * 0.25
+
+        self.w_cast_count += 1
+        self.cast_spell(time)
+        w_plasma_stacks = 3 if self.has_w_evolved() else 2
+        plasma_magic = self._apply_plasma_stacks(target, time, w_plasma_stacks, include_passive_damage=True)
+        return 0.0, w_damage + plasma_magic
+
+    def _cast_e(self, time):
+        idx = self.e_level - 1
+        self.e_next_ready_time = time + self.apply_haste_to_cooldown(self.e_cd[idx])
+        self.e_active = True
+        self.e_end_time = time + 4.0
+
+        if not self.e_buff_applied:
+            self.bonus_as_percent += self.e_as_bonus[idx]
+            self.e_buff_applied = True
+
+        self.cast_spell(time)
+
+    def _cast_r(self, time):
+        idx = self.r_level - 1
+        self.r_next_ready_time = time + self.apply_haste_to_cooldown(self.r_cd[idx])
+        self.r_shield_value = self.r_shield_base[idx] + (self.r_ad_ratio[idx] * self.total_ad) + (1.2 * self.total_ap)
+        self.r_shield_end_time = time + 2.0
+        self.cast_ultimate(time)
 
     def update(self, time, target):
-        """매 프레임 호출: 스킬 사용 및 상태 관리"""
-        q_evolved, w_evolved, e_evolved = self.get_evolved_status()
-
-        total_phys_skill = 0
-        total_magic_skill = 0
-
-        # E 스킬 사용 (쿨타임 돌았고, 충전 중이 아닐 때)
-        # 시뮬레이션 단순화를 위해 쿨타임마다 즉시 사용한다고 가정
-        # 실제로는 평타 캔슬이나 상황에 따라 다르지만, DPS 측정용이므로 쿨마다 사용
-        if time >= self.last_e_time + self.e_cooldown and not self.is_charging_e and not self.e_active:
-            # E 쿨타임 계산: 16 / 14.5 / 13 / 11.5 / 10
-            base_cd = [16, 14.5, 13, 11.5, 10][self.e_level - 1]
-            # 쿨감 적용 (아이템 등) - 현재 Champion 클래스에 cdr 속성이 없으므로 생략하거나 추가 필요
-            # 여기선 0% 가정
-            self.e_cooldown = base_cd
-
-            # 충전 시간 계산: 1.2 ~ 0.6초 (공속 비례)
-            # 추가 공속 0% -> 1.2초, 100% -> 0.6초 (대략적)
-            bonus_as = self.get_total_bonus_as_percent()
-            charge_time = max(0.6, 1.2 - (0.6 * (bonus_as / 1.0)))
-
-            self.is_charging_e = True
-            self.e_charge_end_time = time + charge_time
-            self.last_e_time = time
-            # print(f"[{time:.2f}s] Kaisa E Charging... ({charge_time:.2f}s)")
-
-        # E 충전 완료 확인
-        if self.is_charging_e and time >= self.e_charge_end_time:
-            self.is_charging_e = False
-            self.e_active = True
-            self.e_end_time = time + 4.0 # 4초 지속
-
-            # 공속 버프 적용
-            if not self.e_as_buff_applied:
-                # 40 / 50 / 60 / 70 / 80%
-                as_buff = [0.4, 0.5, 0.6, 0.7, 0.8][self.e_level - 1]
-                self.bonus_as_percent += as_buff
-                self.e_as_buff_applied = True
-                # print(f"[{time:.2f}s] Kaisa E Buff Activated! (+{as_buff*100:.0f}%)")
-
-        # E 버프 종료 확인
-        if self.e_active and time >= self.e_end_time:
+        # 버프 종료 처리
+        if self.e_active and time > self.e_end_time:
             self.e_active = False
-            if self.e_as_buff_applied:
-                as_buff = [0.4, 0.5, 0.6, 0.7, 0.8][self.e_level - 1]
-                self.bonus_as_percent -= as_buff
-                self.e_as_buff_applied = False
-                # print(f"[{time:.2f}s] Kaisa E Buff Expired.")
+            if self.e_buff_applied:
+                idx = self.e_level - 1
+                self.bonus_as_percent -= self.e_as_bonus[idx]
+                self.e_buff_applied = False
 
-        # E 충전 중에는 공격/스킬 불가
-        if self.is_charging_e:
-            return 0, 0
+        if self.r_shield_end_time and time > self.r_shield_end_time:
+            self.r_shield_value = 0.0
+            self.r_shield_end_time = 0.0
 
-        # Q 스킬 사용
-        if time >= self.last_q_time + self.q_cooldown:
-            # 쿨타임: 10 / 9 / 8 / 7 / 6
-            base_cd = [10, 9, 8, 7, 6][self.q_level - 1]
-            self.q_cooldown = base_cd # 쿨감 미적용
-            self.last_q_time = time
+        # 요청 반영: Q/W는 준비되면 같은 시각에 즉시 시전 가능
+        total_phys = 0.0
+        total_magic = 0.0
 
-            # 대미지 계산
-            # 미사일 수: 기본 6, 진화 12
-            missile_count = 12 if q_evolved else 6
+        if self.auto_cast_q and time >= self.q_next_ready_time:
+            q_phys, q_magic = self._cast_q(time)
+            total_phys += q_phys
+            total_magic += q_magic
 
-            # 미사일 1개당 피해: 40~100 + 0.5 추가AD + 0.2 AP
-            base_dmg = [40, 55, 70, 85, 100][self.q_level - 1]
-            bonus_ad = (self.ad_growth * (self.level - 1)) + self.bonus_ad
-            per_missile = base_dmg + (0.5 * bonus_ad) + (0.2 * self.total_ap)
+        if self.auto_cast_w and time >= self.w_next_ready_time:
+            w_phys, w_magic = self._cast_w(target, time)
+            total_phys += w_phys
+            total_magic += w_magic
 
-            # 단일 대상 적중 시: 첫 발 100%, 나머지 25%
-            total_q_dmg = per_missile + (per_missile * 0.25 * (missile_count - 1))
+        if total_phys > 0.0 or total_magic > 0.0:
+            return total_phys, total_magic
 
-            total_phys_skill += total_q_dmg
-            # print(f"[{time:.2f}s] Kaisa Q Cast! (Dmg: {total_q_dmg:.1f})")
+        if self.auto_cast_e and time >= self.e_next_ready_time and not self.e_active:
+            self._cast_e(time)
+            return 0.0, 0.0
 
-        # W 스킬 사용 (쿨타임마다)
-        if time >= self.last_w_time + self.w_cooldown:
-            # 쿨타임: 22 / 20 / 18 / 16 / 14
-            base_cd = [22, 20, 18, 16, 14][self.w_level - 1]
-            self.w_cooldown = base_cd
-            self.last_w_time = time
+        if self.auto_cast_r and time >= self.r_next_ready_time:
+            self._cast_r(time)
+            return 0.0, 0.0
 
-            # 대미지: 30~130 + 1.3 총AD + 0.45 AP
-            base_w = [30, 55, 80, 105, 130][self.w_level - 1]
-            w_dmg = base_w + (1.3 * self.total_ad) + (0.45 * self.total_ap)
-
-            total_magic_skill += w_dmg
-
-            # 플라즈마 스택 적용: 기본 2, 진화 3
-            stacks_to_add = 3 if w_evolved else 2
-
-            # 스택 적용 및 폭발 처리 (패시브 로직 재사용 필요하지만 여기선 간단히 구현)
-            # W로 인한 스택은 평타 스택과 별개로 즉시 적용
-            # 4스택 폭발 로직은 get_one_hit_damage와 공유해야 하므로 별도 메서드로 분리하는 게 좋음
-            # 일단 여기서는 스택만 쌓고, 폭발은 다음 평타나 W 자체에서 처리
-
-            # W 적중 시에도 패시브 대미지가 터질 수 있음 (스택이 4가 되면)
-            # 현재 스택 + 추가 스택
-            current_stacks = self.plasma_stacks
-
-            # 스택이 4를 초과하면 폭발하고 남은 스택 적용?
-            # 카이사 패시브는 4스택에서 '공격' 시 폭발. W도 공격으로 간주됨.
-
-            # 시뮬레이션 편의상 W는 단순히 대미지와 스택만 주고, 폭발은 평타 사이클에서 처리하거나
-            # 여기서 직접 계산. W로 폭발시키는 경우도 많음.
-
-            # W 적중 -> 스택 증가 -> 4스택 도달 시 폭발 대미지 추가
-            for _ in range(stacks_to_add):
-                self.plasma_stacks += 1
-                if self.plasma_stacks >= 5: # 0~4 쌓고 5가 되면 폭발
-                    # 폭발 대미지 계산
-                    # 잃은 체력 비례: 15% + (0.06% * AP)
-                    missing_hp = target.max_hp - target.current_hp
-                    ratio = 0.15 + (0.0006 * self.total_ap)
-                    proc_dmg = missing_hp * ratio
-
-                    # 몬스터 대상 제한은 무시 (챔피언 기준)
-                    total_magic_skill += proc_dmg
-                    self.plasma_stacks = 0 # 초기화
-
-            # 진화 시 챔피언 적중하면 쿨타임 75% 반환
-            if w_evolved:
-                self.w_cooldown *= 0.25
-
-            # print(f"[{time:.2f}s] Kaisa W Hit! (Dmg: {w_dmg:.1f})")
-
-        return total_phys_skill, total_magic_skill
+        return 0.0, 0.0
 
     def get_one_hit_damage(self, target, time=0):
-        # E 충전 중이면 공격 불가 (0 반환)
-        if self.is_charging_e:
-            return 0, 0, 0, 0
+        self._combat_time = time
+        p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit = super().get_one_hit_damage(target, time)
 
-        # E 쿨타임 감소 (평타 시 0.5초)
-        if self.e_cooldown > 0:
-            self.last_e_time += 0.5 # 쿨타임 계산 기준 시간을 당겨줌 (간접적 쿨감)
+        # E: 기본 공격 시 쿨타임 0.5초 감소
+        self.e_next_ready_time = max(0.0, self.e_next_ready_time - 0.5)
+        return p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit
 
-        # 부모 클래스 대미지 계산
-        p_base, m_base, p_onhit, m_onhit = super().get_one_hit_damage(target, time)
 
-        # 패시브: 부식성 흉터
-        # 1. 기본 추가 피해: 4~24 + 0.12 AP + (1~6 + 0.03 AP) * 중첩
-        # 레벨 비례값 (1~18)
-        base_proc = 4 + ((24-4) * (self.level-1) / 17)
-        stack_proc = 1 + ((6-1) * (self.level-1) / 17)
+class Corki(Champion):
+    def __init__(self, level=1, q_level=5, e_level=5, r_level=3):
+        super().__init__(
+            name="Corki",
+            base_ad=52,
+            base_as=0.644,
+            as_ratio=0.644,
+            as_growth=2.8,
+            base_range=550,
+            level=level,
+            ad_growth=2.0,
+        )
 
-        passive_magic = (base_proc + 0.12 * self.total_ap) + \
-                        (self.plasma_stacks * (stack_proc + 0.03 * self.total_ap))
+        # 기본 스탯 보관
+        self.base_hp = 610
+        self.hp_growth = 100
+        self.base_hp_regen = 5.5
+        self.hp_regen_growth = 0.55
+        self.base_mana = 350
+        self.mana_growth = 40
+        self.base_armor = 27
+        self.armor_growth = 4.5
+        self.base_mr = 30
+        self.mr_growth = 1.3
 
-        m_onhit += passive_magic
+        # 스킬 레벨
+        self.q_level = q_level
+        self.e_level = e_level
+        self.r_level = r_level
 
-        # 2. 스택 쌓기 (구인수 고려는 super().get_one_hit_damage 내부에서 처리되지 않음)
-        # Champion 클래스의 구조상 get_one_hit_damage는 1회 공격에 대해 호출됨.
-        # 구인수 효과는 내부적으로 get_item_onhit을 반복 호출함.
-        # 카이사 패시브 스택은 '공격 시' 쌓이므로, 구인수 환영 타격에도 쌓여야 함.
-        # 이를 위해 get_champion_onhit을 활용해야 함.
+        # 자동 시전
+        self.auto_cast_q = True
+        self.auto_cast_e = True
+        self.auto_cast_r = True
 
-        # 하지만 get_champion_onhit은 대미지만 반환하고 상태(스택)를 변경하면 안 됨 (예측 불가)
-        # 따라서 여기서 직접 스택을 관리하되, 구인수 여부를 확인해야 함.
+        # Q: 인광탄
+        self.q_cd = [9.0, 8.5, 8.0, 7.5, 7.0]
+        self.q_base = [60.0, 105.0, 150.0, 195.0, 240.0]
+        self.q_initial_delay = 0.0
+        self.q_next_ready_time = 0.0
 
-        # 구인수 보유 확인
-        has_guinsoo = any(getattr(item, 'is_guinsoo', False) for item in self.inventory)
-        is_phantom_hit = has_guinsoo and (self.hit_count > 0) and (self.hit_count % 3 == 0)
+        # E: 개틀링 건
+        self.e_cd = 12.0
+        self.e_base = [80.0, 130.0, 180.0, 230.0, 280.0]
+        self.e_shred = [12.0, 14.0, 16.0, 18.0, 20.0]
+        self.e_initial_delay = 0.0
+        self.e_next_ready_time = 0.0
+        self.e_debuff_target = None
+        self.e_debuff_end_time = 0.0
+        self.e_debuff_armor = 0.0
+        self.e_debuff_mr = 0.0
 
-        stacks_to_add = 2 if is_phantom_hit else 1
+        # R: 미사일 폭격
+        self.r_charge_cd = 20.0
+        self.r_cast_cd = 2.0
+        self.r_base = [90.0, 170.0, 250.0]
+        self.r_initial_delay = 1.5
+        self.r_next_cast_time = self.r_initial_delay
+        self.r_charges = 4
+        self.r_max_charges = 4
+        self.r_next_charge_time = None
+        # 첫 4발을 강화-일반-일반-강화로 시작시키기 위해 2에서 시작
+        self.r_missile_count = 2
 
-        # 스택 적용 및 폭발
-        # 카이사 패시브는 공격 '시' 스택 적용 -> 5스택(4+1) 되면 폭발
-        for _ in range(stacks_to_add):
-            self.plasma_stacks += 1
-            if self.plasma_stacks >= 5:
-                # 폭발 대미지
-                missing_hp = target.max_hp - target.current_hp
-                ratio = 0.15 + (0.0006 * self.total_ap)
-                proc_dmg = missing_hp * ratio
-                m_onhit += proc_dmg
-                self.plasma_stacks = 0
+    def _get_bonus_ad(self):
+        return max(0.0, self.total_ad - self.base_attack_ad)
 
-        return p_base, m_base, p_onhit, m_onhit
+    def _cast_q(self, time):
+        idx = self.q_level - 1
+        damage = self.q_base[idx] + (1.25 * self._get_bonus_ad()) + (1.0 * self.total_ap)
+        self.q_next_ready_time = time + self.apply_haste_to_cooldown(self.q_cd[idx])
+        self.cast_spell(time)
+        return 0.0, damage
+
+    def _clear_e_debuff(self):
+        if self.e_debuff_target is not None:
+            self.e_debuff_target.armor += self.e_debuff_armor
+            self.e_debuff_target.magic_resist += self.e_debuff_mr
+        self.e_debuff_target = None
+        self.e_debuff_end_time = 0.0
+        self.e_debuff_armor = 0.0
+        self.e_debuff_mr = 0.0
+
+    def _cast_e(self, time, target):
+        idx = self.e_level - 1
+        damage = self.e_base[idx] + (2.4 * self._get_bonus_ad())
+        shred = self.e_shred[idx]
+
+        if self.e_debuff_target is not None:
+            self._clear_e_debuff()
+
+        target.armor = max(-99.0, target.armor - shred)
+        target.magic_resist = max(-99.0, target.magic_resist - shred)
+        self.e_debuff_target = target
+        self.e_debuff_end_time = time + 2.0
+        self.e_debuff_armor = shred
+        self.e_debuff_mr = shred
+
+        self.e_next_ready_time = time + self.apply_haste_to_cooldown(self.e_cd)
+        self.cast_spell(time)
+        return damage, 0.0
+
+    def _cast_r(self, time):
+        if self.r_charges <= 0 or time < self.r_next_cast_time:
+            return 0.0, 0.0
+
+        idx = self.r_level - 1
+        self.r_missile_count += 1
+        is_big = (self.r_missile_count % 3 == 0)
+
+        if is_big:
+            damage = (self.r_base[idx] * 2.0) + (1.7 * self._get_bonus_ad())
+        else:
+            damage = self.r_base[idx] + (0.85 * self._get_bonus_ad())
+
+        self.r_charges -= 1
+        if self.r_charges < self.r_max_charges and self.r_next_charge_time is None:
+            self.r_next_charge_time = time + self.apply_haste_to_cooldown(self.r_charge_cd)
+
+        self.r_next_cast_time = time + self.apply_haste_to_cooldown(self.r_cast_cd)
+        self.cast_spell(time)
+        self.cast_ultimate(time)
+        return damage, 0.0
+
+    def _update_r_charges(self, time):
+        if self.r_next_charge_time is None:
+            return
+        while self.r_charges < self.r_max_charges and time >= self.r_next_charge_time:
+            self.r_charges += 1
+            if self.r_charges >= self.r_max_charges:
+                self.r_next_charge_time = None
+            else:
+                self.r_next_charge_time += self.apply_haste_to_cooldown(self.r_charge_cd)
+
+    def update(self, time, target):
+        if self.e_debuff_target is not None and time >= self.e_debuff_end_time:
+            self._clear_e_debuff()
+
+        self._update_r_charges(time)
+
+        total_phys = 0.0
+        total_magic = 0.0
+
+        if self.auto_cast_e and time >= self.e_next_ready_time:
+            e_phys, e_magic = self._cast_e(time, target)
+            total_phys += e_phys
+            total_magic += e_magic
+
+        if self.auto_cast_q and time >= self.q_next_ready_time:
+            q_phys, q_magic = self._cast_q(time)
+            total_phys += q_phys
+            total_magic += q_magic
+
+        if self.auto_cast_r and self.r_charges > 0 and time >= self.r_next_cast_time:
+            r_phys, r_magic = self._cast_r(time)
+            total_phys += r_phys
+            total_magic += r_magic
+
+        if total_phys > 0.0 or total_magic > 0.0:
+            return total_phys, total_magic
+        return 0.0, 0.0
+
+    def get_one_hit_damage(self, target, time=0):
+        p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit = super().get_one_hit_damage(target, time)
+
+        # 패시브: 기본 공격/주문검 대미지의 20% 고정 피해
+        spellblade_phys = 0.0
+        for item in self.inventory:
+            spellblade_phys += getattr(item, "last_spellblade_damage", 0.0)
+        pt_base += 0.2 * (p_base + spellblade_phys)
+
+        # R 충전시간 단축: 챔피언 대상 기본 공격 적중 시
+        if self.r_charges < self.r_max_charges and self.r_next_charge_time is not None:
+            reduction = 2.0 + (self.crit_damage_modifier * 2.0)
+            self.r_next_charge_time = max(time, self.r_next_charge_time - reduction)
+
+        return p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit

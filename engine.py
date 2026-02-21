@@ -44,8 +44,17 @@ def run_simulation(champion, target, verbose=True):
         if hasattr(champion, 'update'):
             s_phys, s_magic = champion.update(current_time, target)
             if s_phys > 0 or s_magic > 0:
+                bonus_s_phys = 0.0
+                bonus_s_magic = 0.0
+                bonus_s_true = 0.0
+                if hasattr(champion, "get_on_skill_hit_damage"):
+                    bonus_s_phys, bonus_s_magic, bonus_s_true = champion.get_on_skill_hit_damage(target, current_time)
+
                 actual_s_phys, actual_s_magic = calculate_mitigation(s_phys, s_magic, target, champion)
-                skill_dmg = actual_s_phys + actual_s_magic
+                actual_bonus_phys, actual_bonus_magic = calculate_mitigation(
+                    bonus_s_phys, bonus_s_magic, target, champion
+                )
+                skill_dmg = actual_s_phys + actual_s_magic + actual_bonus_phys + actual_bonus_magic + bonus_s_true
                 target.current_hp -= skill_dmg
                 total_damage_dealt += skill_dmg
                 if verbose:
@@ -56,7 +65,7 @@ def run_simulation(champion, target, verbose=True):
                     break
 
         # 1. 대미지 성분 계산
-        p_base, m_base, p_onhit, m_onhit = champion.get_one_hit_damage(target, current_time)
+        p_base, m_base, p_onhit, m_onhit, phys_true_base, phys_true_onhit = champion.get_one_hit_damage(target, current_time)
 
         # 2. 방어력/마저 적용
         raw_phys = p_base + p_onhit
@@ -65,9 +74,10 @@ def run_simulation(champion, target, verbose=True):
         actual_phys, actual_magic = calculate_mitigation(
             raw_phys, raw_magic, target, champion
         )
-        total_damage = actual_phys + actual_magic
+        # 고정 피해는 방어/마저 무시
+        total_damage = actual_phys + actual_magic + phys_true_base + phys_true_onhit
 
-        # 3. 체력 차감 및 누적 딜 계산
+        # 3. 체력 차감
         target.current_hp -= total_damage
         total_damage_dealt += total_damage # 오버킬 대미지도 그대로 누적
         attack_count += 1
@@ -79,7 +89,7 @@ def run_simulation(champion, target, verbose=True):
             print(
                 f"[{current_time:.3f}s] Attack #{attack_count}: "
                 f"AS {champion.current_attack_speed:.2f} (Rune +{rune_bonus_as*100:.1f}%, Stacks {rune_stacks}) | "
-                f"Dmg {total_damage:.1f} (Phys:{actual_phys:.1f}, Mag:{actual_magic:.1f}) -> "
+                f"Dmg {total_damage:.1f} (Phys:{actual_phys:.1f}, Mag:{actual_magic:.1f}, True:{phys_true_base+phys_true_onhit:.1f}) -> "
                 f"HP: {max(0, target.current_hp):.1f}"
             )
 
