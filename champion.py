@@ -48,6 +48,7 @@ class Champion:
         self.lethality = 0  # 물리 관통력 (고정)
         self.magic_pen_flat = 0 # 마법 관통력 (고정)
         self.ability_haste = 0.0 # 스킬 가속
+        self._combat_time = 0.0
         
         # 시뮬레이션 설정
         self.target_count = 1 # 적 수 (루난 효율 계산용)
@@ -103,7 +104,12 @@ class Champion:
         for item in self.inventory:
             if hasattr(item, "get_bonus_ad"):
                 dynamic_bonus_ad += item.get_bonus_ad(self)
-        return self.base_attack_ad + self.bonus_ad + dynamic_bonus_ad
+        rune_bonus_ad = 0.0
+        if self.rune and hasattr(self.rune, "get_bonus_ad"):
+            rune_bonus_ad += self.rune.get_bonus_ad(self)
+        if self.sub_rune and hasattr(self.sub_rune, "get_bonus_ad"):
+            rune_bonus_ad += self.sub_rune.get_bonus_ad(self)
+        return self.base_attack_ad + self.bonus_ad + dynamic_bonus_ad + rune_bonus_ad
 
     @property
     def total_ap(self):
@@ -170,9 +176,22 @@ class Champion:
         """그림자불꽃 발동 시 추가 효과 (챔피언별 오버라이딩)"""
         return 0, 0
         
-    def update(self, time, target):
-        """매 프레임마다 호출되어 스킬 쿨타임 등을 관리하고 스킬 대미지를 반환"""
-        return 0, 0 # (Phys, Magic)
+    # 엔진 주도 이벤트 인터페이스 (기본: 스킬 이벤트 없음)
+    def init_combat_state(self, skill_plan=None):
+        self._combat_time = 0.0
+
+    def advance_combat_time(self, delta_time, current_time, target):
+        self._combat_time = current_time
+
+    def get_time_to_next_skill_event(self, current_time):
+        return float("inf")
+
+    def get_time_to_next_state_event(self, current_time):
+        return float("inf")
+
+    def pop_due_skill_events(self, current_time, target):
+        # event tuple: (skill_name, raw_phys, raw_magic, is_skill_hit)
+        return []
 
     def get_on_skill_hit_damage(self, target, time=0.0):
         phys = 0.0
@@ -652,10 +671,7 @@ class KaiSa(Champion):
         self.r_ad_ratio = [0.9, 1.35, 1.8]
 
         # 쿨타임/버프 상태
-        self.q_next_ready_time = 0.0
-        self.w_next_ready_time = 0.0
-        self.e_next_ready_time = 0.0
-        self.r_next_ready_time = 0.0
+        self.cooldowns_remaining = {"q": 0.0, "w": 0.0, "e": 0.0, "r": 0.0}
         self.e_active = False
         self.e_end_time = 0.0
         self.e_buff_applied = False
@@ -670,9 +686,12 @@ class KaiSa(Champion):
         self.q_cast_count = 0
         self.w_cast_count = 0
 
-        # 패시브(플라즈마): 타겟별 [스택, 만료시각]
+        # 패시브(플라즈마) 및 스킬 스케줄 상태
         self.plasma_state = {}
-        self._combat_time = 0.0
+        self.manual_skill_casts = []
+        self.manual_skill_index = 0
+        self.auto_skill_enabled = {"q": True, "w": True, "e": True, "r": False}
+        self.auto_skill_order = ["q", "w", "e", "r"]
 
         # 시뮬레이션별 진화 오버라이드 (None이면 기본 조건 사용)
         self.q_evolved_override = None
@@ -772,6 +791,73 @@ class KaiSa(Champion):
         time = self._combat_time
         return 0, self._apply_plasma_stacks(target, time, 1, include_passive_damage=True)
 
+    def init_combat_state(self, skill_plan=None):
+        super().init_combat_state(skill_plan)
+        self.cooldowns_remaining = {"q": 0.0, "w": 0.0, "e": 0.0, "r": 0.0}
+        self.e_active = False
+        self.e_end_time = 0.0
+        self.e_buff_applied = False
+        self.r_shield_value = 0.0
+        self.r_shield_end_time = 0.0
+        self.plasma_state = {}
+        self.q_cast_count = 0
+        self.w_cast_count = 0
+
+        plan = skill_plan or {}
+        auto_cfg = plan.get("auto_cast", {})
+        self.auto_skill_enabled = {
+            "q": auto_cfg.get("q", self.auto_cast_q),
+            "w": auto_cfg.get("w", self.auto_cast_w),
+            "e": auto_cfg.get("e", self.auto_cast_e),
+            "r": auto_cfg.get("r", self.auto_cast_r),
+        }
+        self.auto_skill_order = list(plan.get("auto_order", ["q", "w", "e", "r"]))
+        self.manual_skill_casts = sorted(list(plan.get("manual_casts", [])), key=lambda x: x[0])
+        self.manual_skill_index = 0
+
+    def advance_combat_time(self, delta_time, current_time, target):
+        super().advance_combat_time(delta_time, current_time, target)
+        if delta_time > 0:
+            for key in self.cooldowns_remaining:
+                self.cooldowns_remaining[key] = max(0.0, self.cooldowns_remaining[key] - delta_time)
+
+        # 버프 종료 처리
+        if self.e_active and current_time >= self.e_end_time:
+            self.e_active = False
+            if self.e_buff_applied:
+                idx = self.e_level - 1
+                self.bonus_as_percent -= self.e_as_bonus[idx]
+                self.e_buff_applied = False
+
+        if self.r_shield_end_time and current_time >= self.r_shield_end_time:
+            self.r_shield_value = 0.0
+            self.r_shield_end_time = 0.0
+
+    def _can_cast_skill(self, skill_name):
+        eps = 1e-9
+        if skill_name not in self.cooldowns_remaining:
+            return False
+        if self.cooldowns_remaining[skill_name] > eps:
+            return False
+        if skill_name == "e" and self.e_active:
+            return False
+        return True
+
+    def _cast_skill(self, skill_name, target, time):
+        if skill_name == "q":
+            p, m = self._cast_q(time)
+            return skill_name, p, m, True
+        if skill_name == "w":
+            p, m = self._cast_w(target, time)
+            return skill_name, p, m, True
+        if skill_name == "e":
+            self._cast_e(time)
+            return skill_name, 0.0, 0.0, False
+        if skill_name == "r":
+            self._cast_r(time)
+            return skill_name, 0.0, 0.0, False
+        return skill_name, 0.0, 0.0, False
+
     def _cast_q(self, time):
         idx = self.q_level - 1
 
@@ -790,7 +876,7 @@ class KaiSa(Champion):
             q_single_base = [90.0, 123.75, 157.5, 191.25, 225.0]
             q_damage = q_single_base[idx] + (1.125 * bonus_ad_for_q) + (0.45 * self.total_ap)
 
-        self.q_next_ready_time = time + self.apply_haste_to_cooldown(self.q_cd[idx])
+        self.cooldowns_remaining["q"] = self.apply_haste_to_cooldown(self.q_cd[idx])
         self.q_cast_count += 1
         self.cast_spell(time)
         return q_damage, 0.0
@@ -799,10 +885,10 @@ class KaiSa(Champion):
         idx = self.w_level - 1
         w_damage = self.w_base[idx] + (1.3 * self.total_ad) + (0.45 * self.total_ap)
 
-        self.w_next_ready_time = time + self.apply_haste_to_cooldown(self.w_cd[idx])
+        self.cooldowns_remaining["w"] = self.apply_haste_to_cooldown(self.w_cd[idx])
         if self.has_w_evolved():
             # 진화 W가 챔피언 적중 시 쿨타임 75% 환급 -> 남은 쿨타임 25%
-            self.w_next_ready_time = time + self.apply_haste_to_cooldown(self.w_cd[idx]) * 0.25
+            self.cooldowns_remaining["w"] = self.apply_haste_to_cooldown(self.w_cd[idx]) * 0.25
 
         self.w_cast_count += 1
         self.cast_spell(time)
@@ -812,7 +898,7 @@ class KaiSa(Champion):
 
     def _cast_e(self, time):
         idx = self.e_level - 1
-        self.e_next_ready_time = time + self.apply_haste_to_cooldown(self.e_cd[idx])
+        self.cooldowns_remaining["e"] = self.apply_haste_to_cooldown(self.e_cd[idx])
         self.e_active = True
         self.e_end_time = time + 4.0
 
@@ -824,57 +910,71 @@ class KaiSa(Champion):
 
     def _cast_r(self, time):
         idx = self.r_level - 1
-        self.r_next_ready_time = time + self.apply_haste_to_cooldown(self.r_cd[idx])
+        self.cooldowns_remaining["r"] = self.apply_haste_to_cooldown(self.r_cd[idx])
         self.r_shield_value = self.r_shield_base[idx] + (self.r_ad_ratio[idx] * self.total_ad) + (1.2 * self.total_ap)
         self.r_shield_end_time = time + 2.0
+        self.cast_spell(time)
         self.cast_ultimate(time)
 
-    def update(self, time, target):
-        # 버프 종료 처리
-        if self.e_active and time > self.e_end_time:
-            self.e_active = False
-            if self.e_buff_applied:
-                idx = self.e_level - 1
-                self.bonus_as_percent -= self.e_as_bonus[idx]
-                self.e_buff_applied = False
+    def get_time_to_next_skill_event(self, current_time):
+        eps = 1e-9
+        candidates = []
 
-        if self.r_shield_end_time and time > self.r_shield_end_time:
-            self.r_shield_value = 0.0
-            self.r_shield_end_time = 0.0
+        if self.manual_skill_index < len(self.manual_skill_casts):
+            next_manual_time, _ = self.manual_skill_casts[self.manual_skill_index]
+            candidates.append(max(0.0, next_manual_time - current_time))
 
-        # 요청 반영: Q/W는 준비되면 같은 시각에 즉시 시전 가능
-        total_phys = 0.0
-        total_magic = 0.0
+        for skill_name, enabled in self.auto_skill_enabled.items():
+            if not enabled:
+                continue
+            if skill_name == "e" and self.e_active:
+                continue
+            remaining = self.cooldowns_remaining.get(skill_name, float("inf"))
+            candidates.append(max(0.0, remaining))
 
-        if self.auto_cast_q and time >= self.q_next_ready_time:
-            q_phys, q_magic = self._cast_q(time)
-            total_phys += q_phys
-            total_magic += q_magic
+        valid = [dt for dt in candidates if dt >= -eps]
+        if not valid:
+            return float("inf")
+        return max(0.0, min(valid))
 
-        if self.auto_cast_w and time >= self.w_next_ready_time:
-            w_phys, w_magic = self._cast_w(target, time)
-            total_phys += w_phys
-            total_magic += w_magic
+    def get_time_to_next_state_event(self, current_time):
+        candidates = []
+        if self.e_active:
+            candidates.append(max(0.0, self.e_end_time - current_time))
+        if self.r_shield_end_time:
+            candidates.append(max(0.0, self.r_shield_end_time - current_time))
+        if not candidates:
+            return float("inf")
+        return min(candidates)
 
-        if total_phys > 0.0 or total_magic > 0.0:
-            return total_phys, total_magic
+    def pop_due_skill_events(self, current_time, target):
+        eps = 1e-9
+        events = []
 
-        if self.auto_cast_e and time >= self.e_next_ready_time and not self.e_active:
-            self._cast_e(time)
-            return 0.0, 0.0
+        # 수동 스케줄 스킬
+        while self.manual_skill_index < len(self.manual_skill_casts):
+            cast_time, skill_name = self.manual_skill_casts[self.manual_skill_index]
+            if cast_time > current_time + eps:
+                break
+            self.manual_skill_index += 1
+            if self._can_cast_skill(skill_name):
+                events.append(self._cast_skill(skill_name, target, current_time))
 
-        if self.auto_cast_r and time >= self.r_next_ready_time:
-            self._cast_r(time)
-            return 0.0, 0.0
+        # 자동 스킬
+        for skill_name in self.auto_skill_order:
+            if not self.auto_skill_enabled.get(skill_name, False):
+                continue
+            if self._can_cast_skill(skill_name):
+                events.append(self._cast_skill(skill_name, target, current_time))
 
-        return 0.0, 0.0
+        return events
 
     def get_one_hit_damage(self, target, time=0):
         self._combat_time = time
         p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit = super().get_one_hit_damage(target, time)
 
         # E: 기본 공격 시 쿨타임 0.5초 감소
-        self.e_next_ready_time = max(0.0, self.e_next_ready_time - 0.5)
+        self.cooldowns_remaining["e"] = max(0.0, self.cooldowns_remaining["e"] - 0.5)
         return p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit
 
 
@@ -916,15 +1016,11 @@ class Corki(Champion):
         # Q: 인광탄
         self.q_cd = [9.0, 8.5, 8.0, 7.5, 7.0]
         self.q_base = [60.0, 105.0, 150.0, 195.0, 240.0]
-        self.q_initial_delay = 0.0
-        self.q_next_ready_time = 0.0
 
         # E: 개틀링 건
         self.e_cd = 12.0
         self.e_base = [80.0, 130.0, 180.0, 230.0, 280.0]
         self.e_shred = [12.0, 14.0, 16.0, 18.0, 20.0]
-        self.e_initial_delay = 0.0
-        self.e_next_ready_time = 0.0
         self.e_debuff_target = None
         self.e_debuff_end_time = 0.0
         self.e_debuff_armor = 0.0
@@ -935,10 +1031,16 @@ class Corki(Champion):
         self.r_cast_cd = 2.0
         self.r_base = [90.0, 170.0, 250.0]
         self.r_initial_delay = 1.5
-        self.r_next_cast_time = self.r_initial_delay
         self.r_charges = 4
         self.r_max_charges = 4
-        self.r_next_charge_time = None
+        self.r_charge_remaining = None
+        self.cooldowns_remaining = {"q": 0.0, "e": 0.0, "r_cast": self.r_initial_delay}
+
+        # 스킬 스케줄 상태
+        self.manual_skill_casts = []
+        self.manual_skill_index = 0
+        self.auto_skill_enabled = {"e": True, "q": True, "r": True}
+        self.auto_skill_order = ["e", "q", "r"]
         # 첫 4발을 강화-일반-일반-강화로 시작시키기 위해 2에서 시작
         self.r_missile_count = 2
 
@@ -948,7 +1050,7 @@ class Corki(Champion):
     def _cast_q(self, time):
         idx = self.q_level - 1
         damage = self.q_base[idx] + (1.25 * self._get_bonus_ad()) + (1.0 * self.total_ap)
-        self.q_next_ready_time = time + self.apply_haste_to_cooldown(self.q_cd[idx])
+        self.cooldowns_remaining["q"] = self.apply_haste_to_cooldown(self.q_cd[idx])
         self.cast_spell(time)
         return 0.0, damage
 
@@ -976,12 +1078,12 @@ class Corki(Champion):
         self.e_debuff_armor = shred
         self.e_debuff_mr = shred
 
-        self.e_next_ready_time = time + self.apply_haste_to_cooldown(self.e_cd)
+        self.cooldowns_remaining["e"] = self.apply_haste_to_cooldown(self.e_cd)
         self.cast_spell(time)
         return damage, 0.0
 
     def _cast_r(self, time):
-        if self.r_charges <= 0 or time < self.r_next_cast_time:
+        if self.r_charges <= 0 or self.cooldowns_remaining["r_cast"] > 1e-9:
             return 0.0, 0.0
 
         idx = self.r_level - 1
@@ -994,53 +1096,132 @@ class Corki(Champion):
             damage = self.r_base[idx] + (0.85 * self._get_bonus_ad())
 
         self.r_charges -= 1
-        if self.r_charges < self.r_max_charges and self.r_next_charge_time is None:
-            self.r_next_charge_time = time + self.apply_haste_to_cooldown(self.r_charge_cd)
+        if self.r_charges < self.r_max_charges and self.r_charge_remaining is None:
+            self.r_charge_remaining = self.apply_haste_to_cooldown(self.r_charge_cd)
 
-        self.r_next_cast_time = time + self.apply_haste_to_cooldown(self.r_cast_cd)
+        self.cooldowns_remaining["r_cast"] = self.apply_haste_to_cooldown(self.r_cast_cd)
         self.cast_spell(time)
         self.cast_ultimate(time)
         return damage, 0.0
 
-    def _update_r_charges(self, time):
-        if self.r_next_charge_time is None:
+    def _update_r_charges(self, delta_time):
+        if self.r_charge_remaining is None:
             return
-        while self.r_charges < self.r_max_charges and time >= self.r_next_charge_time:
+        self.r_charge_remaining -= delta_time
+        while self.r_charges < self.r_max_charges and self.r_charge_remaining <= 1e-9:
             self.r_charges += 1
             if self.r_charges >= self.r_max_charges:
-                self.r_next_charge_time = None
+                self.r_charge_remaining = None
             else:
-                self.r_next_charge_time += self.apply_haste_to_cooldown(self.r_charge_cd)
+                self.r_charge_remaining += self.apply_haste_to_cooldown(self.r_charge_cd)
 
-    def update(self, time, target):
-        if self.e_debuff_target is not None and time >= self.e_debuff_end_time:
+    def init_combat_state(self, skill_plan=None):
+        super().init_combat_state(skill_plan)
+        self.cooldowns_remaining = {"q": 0.0, "e": 0.0, "r_cast": self.r_initial_delay}
+        self.e_debuff_target = None
+        self.e_debuff_end_time = 0.0
+        self.e_debuff_armor = 0.0
+        self.e_debuff_mr = 0.0
+        self.r_charges = self.r_max_charges
+        self.r_charge_remaining = None
+        self.r_missile_count = 2
+
+        plan = skill_plan or {}
+        auto_cfg = plan.get("auto_cast", {})
+        self.auto_skill_enabled = {
+            "e": auto_cfg.get("e", self.auto_cast_e),
+            "q": auto_cfg.get("q", self.auto_cast_q),
+            "r": auto_cfg.get("r", self.auto_cast_r),
+        }
+        self.auto_skill_order = list(plan.get("auto_order", ["e", "q", "r"]))
+        self.manual_skill_casts = sorted(list(plan.get("manual_casts", [])), key=lambda x: x[0])
+        self.manual_skill_index = 0
+
+    def advance_combat_time(self, delta_time, current_time, target):
+        super().advance_combat_time(delta_time, current_time, target)
+        if delta_time > 0:
+            for key in self.cooldowns_remaining:
+                self.cooldowns_remaining[key] = max(0.0, self.cooldowns_remaining[key] - delta_time)
+
+        if self.e_debuff_target is not None and current_time >= self.e_debuff_end_time:
             self._clear_e_debuff()
 
-        self._update_r_charges(time)
+        self._update_r_charges(delta_time)
 
-        total_phys = 0.0
-        total_magic = 0.0
+    def _can_cast_skill(self, skill_name):
+        eps = 1e-9
+        if skill_name == "r":
+            return self.r_charges > 0 and self.cooldowns_remaining["r_cast"] <= eps
+        if skill_name == "q":
+            return self.cooldowns_remaining["q"] <= eps
+        if skill_name == "e":
+            return self.cooldowns_remaining["e"] <= eps
+        return False
 
-        if self.auto_cast_e and time >= self.e_next_ready_time:
-            e_phys, e_magic = self._cast_e(time, target)
-            total_phys += e_phys
-            total_magic += e_magic
+    def _cast_skill(self, skill_name, target, time):
+        if skill_name == "q":
+            p, m = self._cast_q(time)
+            return skill_name, p, m, True
+        if skill_name == "e":
+            p, m = self._cast_e(time, target)
+            return skill_name, p, m, True
+        if skill_name == "r":
+            p, m = self._cast_r(time)
+            return skill_name, p, m, True
+        return skill_name, 0.0, 0.0, False
 
-        if self.auto_cast_q and time >= self.q_next_ready_time:
-            q_phys, q_magic = self._cast_q(time)
-            total_phys += q_phys
-            total_magic += q_magic
+    def get_time_to_next_skill_event(self, current_time):
+        eps = 1e-9
+        candidates = []
 
-        if self.auto_cast_r and self.r_charges > 0 and time >= self.r_next_cast_time:
-            r_phys, r_magic = self._cast_r(time)
-            total_phys += r_phys
-            total_magic += r_magic
+        if self.manual_skill_index < len(self.manual_skill_casts):
+            next_manual_time, _ = self.manual_skill_casts[self.manual_skill_index]
+            candidates.append(max(0.0, next_manual_time - current_time))
 
-        if total_phys > 0.0 or total_magic > 0.0:
-            return total_phys, total_magic
-        return 0.0, 0.0
+        if self.auto_skill_enabled.get("e", False):
+            candidates.append(max(0.0, self.cooldowns_remaining["e"]))
+        if self.auto_skill_enabled.get("q", False):
+            candidates.append(max(0.0, self.cooldowns_remaining["q"]))
+        if self.auto_skill_enabled.get("r", False) and self.r_charges > 0:
+            candidates.append(max(0.0, self.cooldowns_remaining["r_cast"]))
+
+        valid = [dt for dt in candidates if dt >= -eps]
+        if not valid:
+            return float("inf")
+        return max(0.0, min(valid))
+
+    def get_time_to_next_state_event(self, current_time):
+        candidates = []
+        if self.r_charge_remaining is not None:
+            candidates.append(max(0.0, self.r_charge_remaining))
+        if self.e_debuff_target is not None:
+            candidates.append(max(0.0, self.e_debuff_end_time - current_time))
+        if not candidates:
+            return float("inf")
+        return min(candidates)
+
+    def pop_due_skill_events(self, current_time, target):
+        eps = 1e-9
+        events = []
+
+        while self.manual_skill_index < len(self.manual_skill_casts):
+            cast_time, skill_name = self.manual_skill_casts[self.manual_skill_index]
+            if cast_time > current_time + eps:
+                break
+            self.manual_skill_index += 1
+            if self._can_cast_skill(skill_name):
+                events.append(self._cast_skill(skill_name, target, current_time))
+
+        for skill_name in self.auto_skill_order:
+            if not self.auto_skill_enabled.get(skill_name, False):
+                continue
+            if self._can_cast_skill(skill_name):
+                events.append(self._cast_skill(skill_name, target, current_time))
+
+        return events
 
     def get_one_hit_damage(self, target, time=0):
+        self._combat_time = time
         p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit = super().get_one_hit_damage(target, time)
 
         # 패시브: 기본 공격/주문검 대미지의 20% 고정 피해
@@ -1050,8 +1231,9 @@ class Corki(Champion):
         pt_base += 0.2 * (p_base + spellblade_phys)
 
         # R 충전시간 단축: 챔피언 대상 기본 공격 적중 시
-        if self.r_charges < self.r_max_charges and self.r_next_charge_time is not None:
+        if self.r_charges < self.r_max_charges and self.r_charge_remaining is not None:
             reduction = 2.0 + (self.crit_damage_modifier * 2.0)
-            self.r_next_charge_time = max(time, self.r_next_charge_time - reduction)
+            self.r_charge_remaining = max(0.0, self.r_charge_remaining - reduction)
+            self._update_r_charges(0.0)
 
         return p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit

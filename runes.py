@@ -18,6 +18,22 @@ class Rune:
         """최종 대미지 증폭 비율 반환 (예: 0.08 = 8% 증가)"""
         return 0.0
 
+    def on_skill_hit(self, champion):
+        """스킬 적중 시 호출"""
+        pass
+
+    def get_bonus_ad(self, champion):
+        """추가 AD 반환"""
+        return 0.0
+
+    def get_bonus_ap(self, champion):
+        """추가 AP 반환"""
+        return 0.0
+
+    def on_damage_dealt(self, champion, damage):
+        """실제 피해량 적용 후 호출"""
+        pass
+
 
 class LethalTempo(Rune):
     def __init__(self):
@@ -137,3 +153,46 @@ class CutDown(Rune):
         if (target.current_hp / target.max_hp) >= 0.60:
             return 0.08
         return 0.0
+
+
+class Conqueror(Rune):
+    def __init__(self):
+        super().__init__("Conqueror")
+        self.stacks = 0
+        self.max_stacks = 12
+        self.stack_duration = 5.0
+        self.last_stack_time = -999.0
+        self.total_healing_done = 0.0
+
+    def _sync_decay(self, champion):
+        now = getattr(champion, "_combat_time", 0.0)
+        if now - self.last_stack_time > self.stack_duration:
+            self.stacks = 0
+
+    def _add_stacks(self, champion, amount):
+        self._sync_decay(champion)
+        self.stacks = min(self.max_stacks, self.stacks + amount)
+        self.last_stack_time = getattr(champion, "_combat_time", 0.0)
+
+    def on_attack(self, champion):
+        # 원거리 기본 공격은 1스택
+        self._add_stacks(champion, 1)
+
+    def on_skill_hit(self, champion):
+        # 스킬 적중은 2스택
+        self._add_stacks(champion, 2)
+
+    def _ad_per_stack(self, champion):
+        # 레벨 선형 보간: 1.08 ~ 2.4
+        lvl = champion.level
+        return 1.08 + ((2.4 - 1.08) * (lvl - 1) / 17.0)
+
+    def get_bonus_ad(self, champion):
+        self._sync_decay(champion)
+        return self._ad_per_stack(champion) * self.stacks
+
+    def on_damage_dealt(self, champion, damage):
+        # 최대 중첩 시 원거리 5% 회복 (보조 지표 누적만, 출력 없음)
+        self._sync_decay(champion)
+        if self.stacks >= self.max_stacks and damage > 0:
+            self.total_healing_done += damage * 0.05

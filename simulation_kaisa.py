@@ -113,10 +113,6 @@ def simulate_kaisa_core_path(full_path, core_tier):
     # - 시뮬레이션 시작 전 E 선사용
     # - 0초에 Q/W 동시 시전 + 평타 시작, 이후 쿨마다 즉시 Q/W 사용
     kaisa = KaiSa(level=level_cfg["level"], q_level=5, w_level=5, e_level=e_level_for_tier, r_level=3)
-    kaisa.auto_cast_q = True
-    kaisa.auto_cast_w = True
-    kaisa.auto_cast_e = False
-    kaisa.auto_cast_r = False
 
     # 기본 룬: 치명적 속도 + 체력차 극복
     kaisa.set_rune(LethalTempo())
@@ -142,14 +138,14 @@ def simulate_kaisa_core_path(full_path, core_tier):
     kaisa.q_evolved_override = None
     kaisa.w_evolved_override = None
 
-    # 요청 반영: 시뮬레이션 시작 전 E 진화 여부 체크(코드상 로직 유지)
-    kaisa.e_evolved_checked_at_start = kaisa.has_e_evolved()
+    # 스킬 시나리오를 simulation에서 정의하고 engine가 처리
+    skill_plan = {
+        "manual_casts": [(0.0, "e"), (0.0, "q"), (0.0, "w")],
+        "auto_cast": {"q": True, "w": True, "e": False, "r": False},
+        "auto_order": ["q", "w", "e", "r"],
+    }
 
-    # 요청 반영: 시뮬레이션 시작 전에 E 사용
-    # -> 0초부터 E 공속 버프(4초)가 적용된 상태로 전투 시작
-    kaisa._cast_e(time=0.0)
-
-    _, dps, _ = run_simulation(kaisa, target, verbose=False)
+    _, dps, _ = run_simulation(kaisa, target, verbose=False, skill_plan=skill_plan)
     return dps, total_cost, kaisa.w_cast_count
 
 
@@ -195,6 +191,7 @@ if __name__ == "__main__":
         item_obj = create_item_from_key(k)
         ad_by_key[k] = item_obj.stats.get("ad", 0)
         as_by_key[k] = item_obj.stats.get("as", 0.0)
+
 
     for c1 in core1_candidates:
         for c2 in core2_candidates:

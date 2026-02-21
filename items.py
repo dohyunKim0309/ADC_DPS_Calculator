@@ -398,16 +398,19 @@ class EssenceReaver(Item):
         super().__init__("Essence Reaver", ad=50, crit=0.25, cdr=20)
         self.cost = 3050
         self.is_spellblade_active = False
-        self.last_proc_time = -999.0 # 마지막 발동 시간
+        self.spellblade_cd = 1.5
+        self.last_activation_time = -999.0  # 마지막 활성화 시간
         self.last_spellblade_damage = 0.0
 
     def on_spell_cast(self, champion, time):
-        # 스킬 사용 시 주문검 활성화
-        self.is_spellblade_active = True
+        # 주문검 내부 쿨: 마지막 활성화 시점 기준 1.5초
+        if time >= self.last_activation_time + self.spellblade_cd:
+            self.is_spellblade_active = True
+            self.last_activation_time = time
 
     def on_hit(self, target, champion):
         self.last_spellblade_damage = 0.0
-        # 주문검 효과 발동 (쿨타임 1.5초)
+        # 주문검 효과 발동 (활성 상태에서 다음 기본 공격 1회)
         if self.is_spellblade_active:
             # 대미지: 기본 공격력 125% + 치명타 확률 * 50
             # 기본 공격력 = base_ad + ad_growth*(level-1) = total_ad - bonus_ad
@@ -429,14 +432,17 @@ class TrinityForce(Item):
         # 주문검
         self.is_spellblade_active = False
         self.last_spellblade_damage = 0.0
-        self.last_spellblade_proc_time = -999.0
         self.spellblade_cd = 1.5
+        self.last_activation_time = -999.0
 
         # 가속(이동속도 +20, 2초) - 현재 엔진에서는 이동속도 비전투 영향 없음
         self.haste_buff_end_time = 0.0
 
     def on_spell_cast(self, champion, time):
-        self.is_spellblade_active = True
+        # 주문검 내부 쿨: 마지막 활성화 시점 기준 1.5초
+        if time >= self.last_activation_time + self.spellblade_cd:
+            self.is_spellblade_active = True
+            self.last_activation_time = time
 
     def on_hit(self, target, champion):
         self.last_spellblade_damage = 0.0
@@ -445,12 +451,11 @@ class TrinityForce(Item):
         # 가속 버프 갱신 (엔진 내 이동속도 계산에는 아직 미연동)
         self.haste_buff_end_time = current_time + 2.0
 
-        # 주문검: 다음 기본 공격에 기본 공격력 * 2 물리 피해 (1.5초 내부쿨)
-        if self.is_spellblade_active and current_time >= self.last_spellblade_proc_time + self.spellblade_cd:
+        # 주문검: 다음 기본 공격에 기본 공격력 * 2 물리 피해
+        if self.is_spellblade_active:
             base_attack_ad = champion.total_ad - champion.bonus_ad
             damage = base_attack_ad * 2.0
             self.last_spellblade_damage = damage
-            self.last_spellblade_proc_time = current_time
             self.is_spellblade_active = False
             return damage, 0, 0, 0
 
