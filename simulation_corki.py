@@ -11,6 +11,7 @@ from items import (
     TheCollector,
     YunTalWildarrows,
     BladeOfRuinedKing,
+    Bloodthirster,
     Terminus,
     LordDominiksRegards,
     MortalReminder,
@@ -91,6 +92,8 @@ def create_item_from_key(item_key, yuntal_crit=None):
         return YunTalWildarrows(crit=0.05 if yuntal_crit is None else yuntal_crit)
     if item_key == "botrk":
         return BladeOfRuinedKing()
+    if item_key == "bt":
+        return Bloodthirster()
     if item_key == "terminus":
         return Terminus()
     if item_key == "ldr":
@@ -125,6 +128,7 @@ def short_name(item_key):
         "collector": "Collector",
         "yuntal": "Yun",
         "botrk": "BotRK",
+        "bt": "BT",
         "terminus": "Terminus",
         "ldr": "LDR",
         "mortal": "Mortal",
@@ -194,8 +198,97 @@ def simulate_corki_core_path(full_path, shoe_key, rune_key, core_tier):
     return dps, total_cost
 
 
+def get_corki_4core_top1_build():
+    """현재 simulation_corki 랭킹 기준(4코어, 5:4:3:3) top1 빌드 반환."""
+    core12_candidates = [
+        "muramana", "trinity", "statikk", "kraken", "guinsoo", "storm",
+        "essence", "ie", "collector", "yuntal", "botrk", "terminus",
+    ]
+    core3_candidates = [
+        "ldr", "ie", "mortal", "statikk", "pd", "runaan", "guinsoo", "terminus",
+        "botrk", "essence", "trinity", "muramana", "kraken", "shieldbow",
+        "collector", "rfc", "storm", "yuntal",
+    ]
+    core4_candidates = ["ie", "ldr", "botrk", "bt", "kraken", "yuntal", "storm", "essence", "trinity", "statikk"]
+    shoe_candidates = ["plated", "berserker"]
+    rune_candidates = ["conq", "lt"]
+    pen_exclusive = {"terminus", "ldr", "mortal"}
+
+    control_path = ("trinity", "muramana", "collector", "ldr")
+    control_shoe = "plated"
+    control_rune = "conq"
+
+    results = []
+    sim_cache = {}
+
+    def sim_cached(path, shoe, rune_key, core_tier):
+        key = (tuple(path[:core_tier]), shoe, rune_key, core_tier)
+        if key not in sim_cache:
+            sim_cache[key] = simulate_corki_core_path(path, shoe, rune_key, core_tier)
+        return sim_cache[key]
+
+    for rune_key in rune_candidates:
+        for shoe in shoe_candidates:
+            for c1 in core12_candidates:
+                for c2 in core12_candidates:
+                    if c1 == c2:
+                        continue
+                    if {"trinity", "essence"} == {c1, c2}:
+                        continue
+                    for c3 in core3_candidates:
+                        if c3 in (c1, c2):
+                            continue
+                        for c4 in core4_candidates:
+                            if c4 in (c1, c2, c3):
+                                continue
+                            if "trinity" in (c1, c2, c3, c4) and "essence" in (c1, c2, c3, c4):
+                                continue
+                            pen_count = sum(1 for k in (c1, c2, c3, c4) if k in pen_exclusive)
+                            if pen_count > 1:
+                                continue
+
+                            path = (c1, c2, c3, c4)
+                            dps1, cost1 = sim_cached(path, shoe, rune_key, 1)
+                            dps2, cost2 = sim_cached(path, shoe, rune_key, 2)
+                            dps3, cost3 = sim_cached(path, shoe, rune_key, 3)
+                            dps4, cost4 = sim_cached(path, shoe, rune_key, 4)
+
+                            dpg1 = dps1 / (cost1 / 1000.0) if cost1 > 0 else 0.0
+                            dpg2 = dps2 / (cost2 / 1000.0) if cost2 > 0 else 0.0
+                            dpg3 = dps3 / (cost3 / 1000.0) if cost3 > 0 else 0.0
+                            dpg4 = dps4 / (cost4 / 1000.0) if cost4 > 0 else 0.0
+
+                            results.append({
+                                "path": path,
+                                "shoe": shoe,
+                                "rune": rune_key,
+                                "dps": [dps1, dps2, dps3, dps4],
+                                "cost": [cost1, cost2, cost3, cost4],
+                                "dpg": [dpg1, dpg2, dpg3, dpg4],
+                                "is_control": (path == control_path and shoe == control_shoe and rune_key == control_rune),
+                            })
+
+    control_row = next((r for r in results if r["is_control"]), None)
+    if control_row is None:
+        raise RuntimeError("Control build not found for Corki 4-core ranking.")
+
+    ctrl = control_row["dpg"]
+    w = [5.0, 4.0, 3.0, 3.0]
+    wsum = sum(w)
+    for r in results:
+        rel = []
+        for i in range(4):
+            base = ctrl[i]
+            rel.append(((r["dpg"][i] / base) * 100.0 - 100.0) if base > 0 else 0.0)
+        r["rel_dpg_core"] = rel
+        r["score"] = sum(w[i] * rel[i] for i in range(4)) / wsum
+
+    ranked = sorted(results, key=lambda r: r["score"], reverse=True)
+    return ranked[0]
+
+
 if __name__ == "__main__":
-    print("\n=== Corki 3-Core Efficiency (DPG vs Control, 5:4:3) ===")
+    print("\n=== Corki 4-Core Efficiency (DPG vs Control, 5:4:3:3) ===")
 
     core12_candidates = [
         "muramana", "trinity", "statikk", "kraken", "guinsoo", "storm",
@@ -207,12 +300,13 @@ if __name__ == "__main__":
         "collector",
         "rfc", "storm", "yuntal",
     ]
+    core4_candidates = ["ie", "ldr", "botrk", "bt", "kraken", "yuntal", "storm", "essence", "trinity", "statikk"]
     shoe_candidates = ["plated", "berserker"]
     rune_candidates = ["conq", "lt"]
     pen_exclusive = {"terminus", "ldr", "mortal"}
 
-    # 대조군 1: 트포-무라마나-징수 + 판금 + 정복자/체력차극복
-    control_path = ("trinity", "muramana", "collector")
+    # 대조군: 트포-무라마나-징수-LDR + 판금 + 정복자/체력차극복
+    control_path = ("trinity", "muramana", "collector", "ldr")
     control_shoe = "plated"
     control_rune = "conq"
 
@@ -229,69 +323,75 @@ if __name__ == "__main__":
                     for c3 in core3_candidates:
                         if c3 in (c1, c2):
                             continue
-                        # 트포와 정수는 동시 구매 불가 (3코어 포함)
-                        if "trinity" in (c1, c2, c3) and "essence" in (c1, c2, c3):
-                            continue
-                        # 경계/LDR/필멸자는 셋 중 하나만
-                        pen_count = sum(1 for k in (c1, c2, c3) if k in pen_exclusive)
-                        if pen_count > 1:
-                            continue
+                        for c4 in core4_candidates:
+                            if c4 in (c1, c2, c3):
+                                continue
+                            # 트포와 정수는 동시 구매 불가
+                            if "trinity" in (c1, c2, c3, c4) and "essence" in (c1, c2, c3, c4):
+                                continue
+                            # 경계/LDR/필멸자는 셋 중 하나만
+                            pen_count = sum(1 for k in (c1, c2, c3, c4) if k in pen_exclusive)
+                            if pen_count > 1:
+                                continue
 
-                        path = (c1, c2, c3)
-                        dps1, cost1 = simulate_corki_core_path(path, shoe, rune_key, 1)
-                        dps2, cost2 = simulate_corki_core_path(path, shoe, rune_key, 2)
-                        dps3, cost3 = simulate_corki_core_path(path, shoe, rune_key, 3)
+                            path = (c1, c2, c3, c4)
+                            dps1, cost1 = simulate_corki_core_path(path, shoe, rune_key, 1)
+                            dps2, cost2 = simulate_corki_core_path(path, shoe, rune_key, 2)
+                            dps3, cost3 = simulate_corki_core_path(path, shoe, rune_key, 3)
+                            dps4, cost4 = simulate_corki_core_path(path, shoe, rune_key, 4)
 
-                        label = (
-                            f"{short_name(c1)}-{short_name(c2)}-{short_name(c3)}-"
-                            f"{short_name(shoe)}-{rune_short(rune_key)}"
-                        )
-                        is_control = (
-                            path == control_path and shoe == control_shoe and rune_key == control_rune
-                        )
+                            label = (
+                                f"{short_name(c1)}-{short_name(c2)}-{short_name(c3)}-{short_name(c4)}-"
+                                f"{short_name(shoe)}-{rune_short(rune_key)}"
+                            )
+                            is_control = (
+                                path == control_path and shoe == control_shoe and rune_key == control_rune
+                            )
 
-                        dpg1 = dps1 / (cost1 / 1000.0) if cost1 > 0 else 0.0
-                        dpg2 = dps2 / (cost2 / 1000.0) if cost2 > 0 else 0.0
-                        dpg3 = dps3 / (cost3 / 1000.0) if cost3 > 0 else 0.0
+                            dpg1 = dps1 / (cost1 / 1000.0) if cost1 > 0 else 0.0
+                            dpg2 = dps2 / (cost2 / 1000.0) if cost2 > 0 else 0.0
+                            dpg3 = dps3 / (cost3 / 1000.0) if cost3 > 0 else 0.0
+                            dpg4 = dps4 / (cost4 / 1000.0) if cost4 > 0 else 0.0
 
-                        results.append({
-                            "path": path,
-                            "shoe": shoe,
-                            "rune": rune_key,
-                            "label": label,
-                            "x": [cost1, cost2, cost3],
-                            "y": [dps1, dps2, dps3],
-                            "dpg": [dpg1, dpg2, dpg3],
-                            "is_control": is_control,
-                        })
+                            results.append({
+                                "path": path,
+                                "shoe": shoe,
+                                "rune": rune_key,
+                                "label": label,
+                                "x": [cost1, cost2, cost3, cost4],
+                                "y": [dps1, dps2, dps3, dps4],
+                                "dpg": [dpg1, dpg2, dpg3, dpg4],
+                                "is_control": is_control,
+                            })
 
     control_row = next((r for r in results if r["is_control"]), None)
     if control_row is None:
         raise RuntimeError("Control build not found.")
 
-    ctrl_dpg1, ctrl_dpg2, ctrl_dpg3 = control_row["dpg"]
+    ctrl_dpg1, ctrl_dpg2, ctrl_dpg3, ctrl_dpg4 = control_row["dpg"]
 
-    w1, w2, w3 = 5.0, 4.0, 3.0
-    wsum = w1 + w2 + w3
+    w1, w2, w3, w4 = 5.0, 4.0, 3.0, 3.0
+    wsum = w1 + w2 + w3 + w4
 
     for r in results:
         rel1 = ((r["dpg"][0] / ctrl_dpg1) * 100.0 - 100.0) if ctrl_dpg1 > 0 else 0.0
         rel2 = ((r["dpg"][1] / ctrl_dpg2) * 100.0 - 100.0) if ctrl_dpg2 > 0 else 0.0
         rel3 = ((r["dpg"][2] / ctrl_dpg3) * 100.0 - 100.0) if ctrl_dpg3 > 0 else 0.0
-        r["rel_dpg_core"] = [rel1, rel2, rel3]
-        r["score"] = ((w1 * rel1) + (w2 * rel2) + (w3 * rel3)) / wsum
+        rel4 = ((r["dpg"][3] / ctrl_dpg4) * 100.0 - 100.0) if ctrl_dpg4 > 0 else 0.0
+        r["rel_dpg_core"] = [rel1, rel2, rel3, rel4]
+        r["score"] = ((w1 * rel1) + (w2 * rel2) + (w3 * rel3) + (w4 * rel4)) / wsum
 
     ranked = sorted(results, key=lambda r: r["score"], reverse=True)
 
     print(
         f"Control: {control_row['label']} | "
-        f"1C DPG {ctrl_dpg1:.2f}, 2C DPG {ctrl_dpg2:.2f}, 3C DPG {ctrl_dpg3:.2f}"
+        f"1C DPG {ctrl_dpg1:.2f}, 2C DPG {ctrl_dpg2:.2f}, 3C DPG {ctrl_dpg3:.2f}, 4C DPG {ctrl_dpg4:.2f}"
     )
     print(
-        "\nTop 50 (rank by weighted relative DPG, 5:4:3)\n"
-        "RK | BUILD                                        | 1C DPS/ΔDPG% | 2C DPS/ΔDPG% | 3C DPS/ΔDPG% | SCORE"
+        "\nTop 50 (rank by weighted relative DPG, 5:4:3:3)\n"
+        "RK | BUILD                                                    | 1C DPS/ΔDPG% | 2C DPS/ΔDPG% | 3C DPS/ΔDPG% | 4C DPS/ΔDPG% | SCORE"
     )
-    print("-" * 122)
+    print("-" * 152)
 
     top_n = min(50, len(ranked))
     output_rows = ranked[:top_n]
@@ -299,33 +399,54 @@ if __name__ == "__main__":
         output_rows.append(control_row)
 
     for i, r in enumerate(output_rows, start=1):
-        y1, y2, y3 = r["y"]
-        d1, d2, d3 = r["rel_dpg_core"]
+        y1, y2, y3, y4v = r["y"]
+        d1, d2, d3, d4v = r["rel_dpg_core"]
         ctrl_tag = " [CTRL]" if r["is_control"] else ""
         c1 = f"{y1:.1f}/{d1:+.1f}%"
         c2 = f"{y2:.1f}/{d2:+.1f}%"
         c3 = f"{y3:.1f}/{d3:+.1f}%"
-        print(f"{i:>2} | {(r['label'] + ctrl_tag):<44} | {c1:>12} | {c2:>12} | {c3:>12} | {r['score']:>6.2f}")
+        c4 = f"{y4v:.1f}/{d4v:+.1f}%"
+        print(f"{i:>2} | {(r['label'] + ctrl_tag):<56} | {c1:>12} | {c2:>12} | {c3:>12} | {c4:>12} | {r['score']:>6.2f}")
 
     # 요청 빌드 별도 출력
     wanted = next(
         (
             r for r in results
-            if r["path"] == ("trinity", "muramana", "ldr")
+            if r["path"][:3] == ("trinity", "muramana", "ldr")
             and r["shoe"] == "plated"
             and r["rune"] == "conq"
         ),
         None,
     )
+    wanted_alt = next(
+        (
+            r for r in results
+            if r["path"][:3] == ("trinity", "muramana", "ldr")
+            and r["shoe"] == "berserker"
+            and r["rune"] == "conq"
+        ),
+        None,
+    )
     if wanted:
-        w1r, w2r, w3r = wanted["rel_dpg_core"]
-        wy1, wy2, wy3 = wanted["y"]
+        w1r, w2r, w3r, w4r = wanted["rel_dpg_core"]
+        wy1, wy2, wy3, wy4 = wanted["y"]
         print("\nRequested Build:")
         print(
             f"{wanted['label']} | "
             f"1C {wy1:.1f}/{w1r:+.1f}% | "
             f"2C {wy2:.1f}/{w2r:+.1f}% | "
-            f"3C {wy3:.1f}/{w3r:+.1f}% | SCORE {wanted['score']:.2f}"
+            f"3C {wy3:.1f}/{w3r:+.1f}% | "
+            f"4C {wy4:.1f}/{w4r:+.1f}% | SCORE {wanted['score']:.2f}"
+        )
+    if wanted_alt:
+        w1r, w2r, w3r, w4r = wanted_alt["rel_dpg_core"]
+        wy1, wy2, wy3, wy4 = wanted_alt["y"]
+        print(
+            f"{wanted_alt['label']} | "
+            f"1C {wy1:.1f}/{w1r:+.1f}% | "
+            f"2C {wy2:.1f}/{w2r:+.1f}% | "
+            f"3C {wy3:.1f}/{w3r:+.1f}% | "
+            f"4C {wy4:.1f}/{w4r:+.1f}% | SCORE {wanted_alt['score']:.2f}"
         )
 
     # 그래프: x=투자 골드, y=DPS (상위5개 컬러 강조 + 나머지 흐릿)
@@ -395,12 +516,23 @@ if __name__ == "__main__":
             zorder=4,
             label=f"Requested {wanted['label']} (Score {wanted['score']:.2f})"
         )
+    if wanted_alt is not None:
+        plt.plot(
+            wanted_alt["x"], wanted_alt["y"],
+            color="#1B5E20",
+            linewidth=2.6,
+            marker="v",
+            markersize=7,
+            linestyle=":",
+            zorder=4,
+            label=f"Requested {wanted_alt['label']} (Score {wanted_alt['score']:.2f})"
+        )
 
     # 상위 5개 점 라벨 겹침 완화 (코어별 분산 오프셋)
-    label_points_by_core = {0: [], 1: [], 2: []}
+    label_points_by_core = {0: [], 1: [], 2: [], 3: []}
     for i, r in enumerate(top5):
         color = top_colors[i % len(top_colors)]
-        for ci in range(3):
+        for ci in range(4):
             label_points_by_core[ci].append({
                 "x": r["x"][ci],
                 "y": r["y"][ci],
@@ -414,7 +546,7 @@ if __name__ == "__main__":
         for j, p in enumerate(pts_sorted):
             # 가운데 기준으로 위/아래 분산
             y_off = (j - (n - 1) / 2.0) * 12.0
-            x_off = -12 if core_idx == 0 else (8 if core_idx == 1 else 12)
+            x_off = -12 if core_idx == 0 else (8 if core_idx == 1 else (12 if core_idx == 2 else 14))
             plt.annotate(
                 p["text"],
                 (p["x"], p["y"]),
@@ -427,7 +559,7 @@ if __name__ == "__main__":
                 zorder=5,
             )
 
-    plt.title("Corki 3-Core DPS Power Spike (Top5 Highlighted)")
+    plt.title("Corki 4-Core DPS Power Spike (Top5 Highlighted)")
     plt.xlabel("Invested Gold")
     plt.ylabel("DPS")
     plt.grid(True, alpha=0.25)

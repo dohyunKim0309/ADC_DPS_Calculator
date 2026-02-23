@@ -74,6 +74,8 @@ def create_item_from_key(item_key, yuntal_crit=None):
         return bot
     if item_key == "storm":
         return Stormrazor()
+    if item_key == "statikk":
+        return StatikkShiv()
     if item_key == "c44":
         return HextechScopeC44()
     if item_key == "bot":
@@ -180,6 +182,192 @@ def simulate_yunara_reference_path(core_tier):
 
     _, dps, _ = run_simulation(yunara, target, verbose=False)
     return dps, total_cost
+
+
+def simulate_yunara_core_path(core_item_keys, core_tier):
+    target = build_target_for_core(core_tier)
+    level_cfg = CORE_YUNARA_LEVELS[core_tier]
+    yunara = Yunara(level=level_cfg["level"], q_level=level_cfg["q_level"])
+    yunara.set_rune(LethalTempo())
+    yunara.set_sub_rune(CutDown())
+
+    active_core_keys = list(core_item_keys[:core_tier])
+    core_items = []
+    for idx, key in enumerate(active_core_keys, start=1):
+        if key == "yuntal25":
+            current_tier = len(active_core_keys)
+            purchase_tier = idx
+            if current_tier == purchase_tier:
+                if idx == 1:
+                    yuntal_crit = 0.0
+                elif idx == 2:
+                    yuntal_crit = 0.12
+                else:
+                    yuntal_crit = 0.05
+            else:
+                yuntal_crit = 0.25
+            core_items.append(create_item_from_key(key, yuntal_crit=yuntal_crit))
+        else:
+            core_items.append(create_item_from_key(key))
+
+    items = [BerserkerGreaves()] + core_items
+    total_cost = 0
+    for item in items:
+        total_cost += item.cost
+        yunara.add_item(item)
+
+    # 현재 비교/시뮬 기준: 전투 시작 시 Q 활성 상태
+    yunara.activate_q(0.0)
+    _, dps, _ = run_simulation(yunara, target, verbose=False)
+    return dps, total_cost
+
+
+def _build_ashe_4core_all_paths():
+    core1_candidates = ["kraken", "yuntal25", "storm", "c44", "bot", "guinsoo", "terminus"]
+    core2_candidates = ["kraken", "yuntal25", "storm", "c44", "bot", "pd", "runaan", "terminus", "guinsoo"]
+    core3_candidates = ["ie", "ldr", "guinsoo", "terminus"]
+    core4_candidates = ["ie", "ldr", "storm", "c44", "pd", "runaan", "kraken", "statikk", "guinsoo", "terminus"]
+
+    all_paths = []
+    seen_exact_paths = set()
+    pen_exclusive_keys = {"terminus", "ldr", "mortal"}
+
+    for c1 in core1_candidates:
+        for c2 in core2_candidates:
+            if c1 == c2:
+                continue
+            for c3 in core3_candidates:
+                if c3 in {c1, c2}:
+                    continue
+                for c4 in core4_candidates:
+                    if c4 in {c1, c2, c3}:
+                        continue
+                    path_keys = [c1, c2, c3, c4]
+                    pen_count = sum(1 for key in path_keys if key in pen_exclusive_keys)
+                    if pen_count > 1:
+                        continue
+                    exact_path = (c1, c2, c3, c4)
+                    if exact_path in seen_exact_paths:
+                        continue
+                    seen_exact_paths.add(exact_path)
+                    all_paths.append(exact_path)
+
+    forced_paths = []
+    for c3 in core3_candidates:
+        for c4 in core4_candidates:
+            if c4 == c3:
+                continue
+            if c4 in {"yuntal25", "kraken"}:
+                continue
+            path_keys = ["yuntal25", "kraken", c3, c4]
+            pen_count = sum(1 for key in path_keys if key in pen_exclusive_keys)
+            if pen_count > 1:
+                continue
+            forced_paths.append(("yuntal25", "kraken", c3, c4))
+            forced_paths.append(("kraken", "yuntal25", c3, c4))
+    for fp in forced_paths:
+        if fp not in seen_exact_paths:
+            seen_exact_paths.add(fp)
+            all_paths.append(fp)
+
+    return all_paths
+
+
+def _rank_ashe_like_4core_paths(simulate_core_path_fn):
+    control_combo_key = tuple(sorted(("kraken", "pd", "ie", "ldr")))
+    all_paths = _build_ashe_4core_all_paths()
+
+    spike_results = []
+    for c1, c2, c3, c4 in all_paths:
+        dps1, cost1 = simulate_core_path_fn([c1], 1)
+        dps2, cost2 = simulate_core_path_fn([c1, c2], 2)
+        dps3, cost3 = simulate_core_path_fn([c1, c2, c3], 3)
+        dps4, cost4 = simulate_core_path_fn([c1, c2, c3, c4], 4)
+        spike_results.append({
+            "path": (c1, c2, c3, c4),
+            "x": [cost1, cost2, cost3, cost4],
+            "y": [dps1, dps2, dps3, dps4],
+        })
+
+    base_results = []
+    for res in spike_results:
+        base_key = res["path"]
+        base_results.append({
+            "base_key": base_key,
+            "x": res["x"],
+            "y": res["y"],
+            "is_control": tuple(sorted(base_key)) == control_combo_key,
+        })
+
+    control_candidates = [r for r in base_results if r["is_control"]]
+    if not control_candidates:
+        raise RuntimeError("Control build Krk-PD-IE-LDR not found in generated Ashe-like paths.")
+    best_control = control_candidates[0]
+    ctrl_y = best_control["y"]
+    ctrl_x = best_control["x"]
+    ctrl_dpg = [
+        ctrl_y[i] / (ctrl_x[i] / 1000.0) if ctrl_x[i] > 0 else 0.0
+        for i in range(4)
+    ]
+
+    core_weight_raw = [5.0, 4.0, 3.0, 3.0]
+    weight_sum = sum(core_weight_raw)
+    core_weights = [w / weight_sum for w in core_weight_raw]
+
+    for res in base_results:
+        row_dpg = [
+            res["y"][i] / (res["x"][i] / 1000.0) if res["x"][i] > 0 else 0.0
+            for i in range(4)
+        ]
+        rels = [(row_dpg[i] / ctrl_dpg[i]) if ctrl_dpg[i] > 0 else 0.0 for i in range(4)]
+        res["rel_dpg_score"] = sum(core_weights[i] * rels[i] for i in range(4)) * 100.0
+
+    combo_best = {}
+    for res in base_results:
+        combo_key = tuple(sorted(res["base_key"]))
+        prev = combo_best.get(combo_key)
+        if prev is None or res["rel_dpg_score"] > prev["rel_dpg_score"]:
+            combo_best[combo_key] = res
+
+    ranked = sorted(combo_best.values(), key=lambda r: r["rel_dpg_score"], reverse=True)
+    return {
+        "ranked": ranked,
+        "top1": ranked[0],
+        "control": next(r for r in ranked if r["is_control"]),
+        "all_paths_count": len(all_paths),
+    }
+
+
+_ASHE_4CORE_TOP1_CACHE = None
+_YUNARA_4CORE_TOP1_CACHE = None
+
+
+def get_ashe_4core_top1_build():
+    global _ASHE_4CORE_TOP1_CACHE
+    if _ASHE_4CORE_TOP1_CACHE is None:
+        ranking = _rank_ashe_like_4core_paths(simulate_ashe_core_path)
+        top1 = ranking["top1"]
+        _ASHE_4CORE_TOP1_CACHE = {
+            "path": top1["base_key"],
+            "score": top1["rel_dpg_score"],
+            "control_path": ranking["control"]["base_key"],
+            "total_paths_tested": ranking["all_paths_count"],
+        }
+    return _ASHE_4CORE_TOP1_CACHE
+
+
+def get_yunara_4core_top1_build():
+    global _YUNARA_4CORE_TOP1_CACHE
+    if _YUNARA_4CORE_TOP1_CACHE is None:
+        ranking = _rank_ashe_like_4core_paths(simulate_yunara_core_path)
+        top1 = ranking["top1"]
+        _YUNARA_4CORE_TOP1_CACHE = {
+            "path": top1["base_key"],
+            "score": top1["rel_dpg_score"],
+            "control_path": ranking["control"]["base_key"],
+            "total_paths_tested": ranking["all_paths_count"],
+        }
+    return _YUNARA_4CORE_TOP1_CACHE
 
 
 # 1코어 아이템 세트 생성 함수
@@ -514,10 +702,11 @@ if __name__ == "__main__":
     core1_candidates = ["kraken", "yuntal25", "storm", "c44", "bot", "guinsoo", "terminus"]
     core2_candidates = ["kraken", "yuntal25", "storm", "c44", "bot", "pd", "runaan", "terminus", "guinsoo"]
     core3_candidates = ["ie", "ldr", "guinsoo", "terminus"]
+    core4_candidates = ["ie", "ldr", "storm", "c44", "pd", "runaan", "kraken", "statikk", "guinsoo", "terminus"]
     core5_candidates = ["bt", "bot", "c44", "kraken", "pd", "ga", "mercurial"]
 
     control_paths = {
-        ("kraken", "pd", "ie"): "Control Krk-PD-IE-LDR",
+        ("kraken", "pd", "ie", "ldr"): "Control Krk-PD-IE-LDR",
     }
 
     item_short = {
@@ -525,6 +714,7 @@ if __name__ == "__main__":
         "yuntal25": "Yun",
         "bot_as18": "Bot(AS18)",
         "storm": "Storm",
+        "statikk": "Statikk",
         "c44": "C44",
         "bot": "Bot",
         "pd": "PD",
@@ -539,7 +729,7 @@ if __name__ == "__main__":
     }
 
     all_paths = []
-    seen_final_builds = set()
+    seen_exact_paths = set()
     pen_exclusive_keys = {"terminus", "ldr", "mortal"}
     for c1 in core1_candidates:
         for c2 in core2_candidates:
@@ -548,38 +738,49 @@ if __name__ == "__main__":
             for c3 in core3_candidates:
                 if c3 in {c1, c2}:
                     continue
-                c4 = "ldr" if c3 == "ie" else "ie"
-                # 방관/관통 계열(경계, LDR, 모렐로 대체 키)의 상호 배타 규칙 (4코어 베이스 기준)
-                path_keys = [c1, c2, c3, c4]
-                pen_count = sum(1 for key in path_keys if key in pen_exclusive_keys)
-                if pen_count > 1:
-                    continue
+                for c4 in core4_candidates:
+                    if c4 in {c1, c2, c3}:
+                        continue
+                    # 방관/관통 계열(경계, LDR, 모렐로 대체 키)의 상호 배타 규칙 (4코어 베이스 기준)
+                    path_keys = [c1, c2, c3, c4]
+                    pen_count = sum(1 for key in path_keys if key in pen_exclusive_keys)
+                    if pen_count > 1:
+                        continue
 
-                # 동일 빌드의 순서 중복 최소화 (1코어/2코어만 정렬)
-                final_build_key = (tuple(sorted([c1, c2])), c3)
-                if final_build_key in seen_final_builds:
-                    continue
-                seen_final_builds.add(final_build_key)
-                all_paths.append((c1, c2, c3))
+                    # 정확히 같은 경로만 제거 (순서 차이는 점수 계산 후 최적 1개 선택)
+                    exact_path = (c1, c2, c3, c4)
+                    if exact_path in seen_exact_paths:
+                        continue
+                    seen_exact_paths.add(exact_path)
+                    all_paths.append(exact_path)
 
     # 윤탈 구매 타이밍 차이를 보기 위해, 아래 2개 경로는 중복 규칙과 무관하게 항상 포함
     forced_paths = []
     for c3 in core3_candidates:
-        forced_paths.append(("yuntal25", "kraken", c3))
-        forced_paths.append(("kraken", "yuntal25", c3))
+        for c4 in core4_candidates:
+            if c4 == c3:
+                continue
+            # 같은 아이템 중복 구매 불가
+            if c4 in {"yuntal25", "kraken"}:
+                continue
+            path_keys = ["yuntal25", "kraken", c3, c4]
+            pen_count = sum(1 for key in path_keys if key in pen_exclusive_keys)
+            if pen_count > 1:
+                continue
+            forced_paths.append(("yuntal25", "kraken", c3, c4))
+            forced_paths.append(("kraken", "yuntal25", c3, c4))
     for fp in forced_paths:
-        if fp not in all_paths:
+        if fp not in seen_exact_paths:
+            seen_exact_paths.add(fp)
             all_paths.append(fp)
 
     print(f"\nPower Spike Paths Used ({len(all_paths)} total)")
-    for idx, (c1, c2, c3) in enumerate(all_paths, start=1):
-        c4 = "ldr" if c3 == "ie" else "ie"
+    for idx, (c1, c2, c3, c4) in enumerate(all_paths, start=1):
         print(f"{idx:03d}. {item_short[c1]}-{item_short[c2]}-{item_short[c3]}-{item_short[c4]}")
 
     spike_results = []
     for path in all_paths:
-        c1, c2, c3 = path
-        c4 = "ldr" if c3 == "ie" else "ie"
+        c1, c2, c3, c4 = path
         dps1, cost1 = simulate_ashe_core_path([c1], 1)
         dps2, cost2 = simulate_ashe_core_path([c1, c2], 2)
         dps3, cost3 = simulate_ashe_core_path([c1, c2, c3], 3)
@@ -593,20 +794,21 @@ if __name__ == "__main__":
             "control_label": control_paths.get(path, ""),
         })
 
+    control_combo_key = tuple(sorted(("kraken", "pd", "ie", "ldr")))
+
     # 4코어 기준 랭킹용 결과
     base_results = {}
     for res in spike_results:
-        c1, c2, c3 = res["path"]
-        base_key = (c1, c2, c3)
-        c4 = "ldr" if c3 == "ie" else "ie"
+        c1, c2, c3, c4 = res["path"]
+        base_key = (c1, c2, c3, c4)
         if base_key not in base_results:
             base_results[base_key] = {
                 "base_key": base_key,
                 "label": f"{item_short[c1]}-{item_short[c2]}-{item_short[c3]}-{item_short[c4]}",
                 "x": res["x"],
                 "y": res["y"],
-                "is_control": base_key == ("kraken", "pd", "ie"),
-                "control_label": "Control Krk-PD-IE-LDR" if base_key == ("kraken", "pd", "ie") else "",
+                "is_control": tuple(sorted(base_key)) == control_combo_key,
+                "control_label": control_paths.get(("kraken", "pd", "ie", "ldr"), "") if tuple(sorted(base_key)) == control_combo_key else "",
             }
     base_results = list(base_results.values())
 
@@ -643,6 +845,16 @@ if __name__ == "__main__":
         ) * 100.0
         res["spike_score"] = res["rel_dpg_score"]
 
+    # 4코어 아이템 조합이 같고 순서만 다른 경우: 가장 점수가 높은 1개만 유지
+    combo_best_results = {}
+    for res in base_results:
+        combo_key = tuple(sorted(res["base_key"]))
+        prev = combo_best_results.get(combo_key)
+        if prev is None or res["rel_dpg_score"] > prev["rel_dpg_score"]:
+            combo_best_results[combo_key] = res
+
+    base_results = list(combo_best_results.values())
+
     ranked_by_dpg = sorted(base_results, key=lambda r: r["rel_dpg_score"], reverse=True)
     top5_spikes = ranked_by_dpg[:5]
     top_n = 20
@@ -655,6 +867,7 @@ if __name__ == "__main__":
         f"({best_control['control_label']} / {best_control['label']})"
     )
 
+    control_results = [r for r in base_results if r["is_control"]]
     total_rows = top_n + len(control_results)
 
     def print_relative_table(title, rows, score_key, score_col, show_dpg_columns=False):
@@ -831,8 +1044,7 @@ if __name__ == "__main__":
 
     # 5코어 옵션 비교: 4코어 Top1 베이스에 5코어 후보를 붙여 모두 비교
     top1_base = ranked_by_dpg[0]
-    b1, b2, b3 = top1_base["base_key"]
-    b4 = "ldr" if b3 == "ie" else "ie"
+    b1, b2, b3, b4 = top1_base["base_key"]
     base_set = {b1, b2, b3, b4}
     top1_5core_results = []
     for c5 in core5_candidates:

@@ -334,21 +334,6 @@ class Champion:
         # 5. 평타 횟수 증가
         self.hit_count += 1
         
-        # [DEBUG] 유나라 5코어 비교를 위한 디버깅
-        if self.name == "Yunara" and self.hit_count == 1:
-            # 아이템 목록 문자열 생성
-            item_list = ", ".join([item.name for item in self.inventory])
-            # IE 또는 C44가 포함된 경우만 출력
-            if "Infinity Edge" in item_list or "Hextech Scope C44" in item_list:
-                print(f"\n[DEBUG] Build: {item_list}")
-                print(f"  - AD: {self.total_ad:.1f}, CritDmg: {self.crit_damage_modifier:.2f}, C44Mult: {c44_multiplier:.3f}")
-                print(f"  - PhysBase: {phys_base:.1f}, MagicBase: {magic_base:.1f}")
-                print(f"  - PhysOnHit: {total_phys_onhit:.1f}, MagicOnHit: {total_magic_onhit:.1f}")
-                
-                # 루난 체크 디버깅 추가
-                has_runaan = any(item.name == "Runaan's Hurricane" for item in self.inventory)
-                print(f"  - HasRunaan: {has_runaan}, TargetCount: {self.target_count}")
-
         # 6. 최종 반환
         return phys_base, magic_base, total_phys_onhit, total_magic_onhit, phys_true_base, total_true_onhit
 
@@ -361,11 +346,16 @@ class Ashe(Champion):
         
         # 스킬 레벨 설정
         self.q_level = q_level
+        # 시뮬레이션 시작 조건 변경:
+        # Q 준비 스택을 2부터 시작시키기 위해(평-평-Q평 캔슬),
+        # 현재 Q 준비 조건에 사용 중인 hit_count를 2로 초기화한다.
+        self.hit_count = 2
         
         # Q 상태 관리
         self.q_active = False
         self.q_start_time = 0.0
         self.q_as_buff_applied = False # 공속 버프 중복 적용 방지
+        self.q_attack_reset_pending = False  # Q 활성화 직후 다음 평타 간격 0.2초 적용
         
         # Q 데이터 (레벨별)
         # 공격 속도: 20 / 30 / 40 / 50 / 60%
@@ -402,9 +392,17 @@ class Ashe(Champion):
 
         return p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit
 
+    def get_attack_interval(self):
+        # Q 4스택 후 활성화되는 공격 직후에는 평타 딜레이 캔슬을 반영해 다음 평타를 0.2초로 처리
+        if self.q_attack_reset_pending:
+            self.q_attack_reset_pending = False
+            return 0.2
+        return super().get_attack_interval()
+
     def activate_q(self, time):
         self.q_active = True
         self.q_start_time = time
+        self.q_attack_reset_pending = True
         
         # 공속 버프 적용
         if not self.q_as_buff_applied:
@@ -422,6 +420,7 @@ class Ashe(Champion):
 
     def deactivate_q(self):
         self.q_active = False
+        self.q_attack_reset_pending = False
         
         # 공속 버프 해제
         if self.q_as_buff_applied:

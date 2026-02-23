@@ -149,6 +149,158 @@ def simulate_kaisa_core_path(full_path, core_tier):
     return dps, total_cost, kaisa.w_cast_count
 
 
+def is_kaisa_w_evolved_at_core(full_path, core_tier=4, include_ap_400_component=False):
+    level_cfg = CORE_LEVELS[core_tier]
+    e_level_for_tier = get_e_level_for_core(core_tier)
+    kaisa = KaiSa(level=level_cfg["level"], q_level=5, w_level=5, e_level=e_level_for_tier, r_level=3)
+
+    # 본 시뮬과 동일하게 신발 포함 상태에서 코어 타이밍 판정
+    kaisa.add_item(BerserkerGreaves())
+    for idx, key in enumerate(full_path[:core_tier], start=1):
+        if key == "yuntal":
+            crit = get_yuntal_crit_for_tier(idx, core_tier)
+            kaisa.add_item(create_item_from_key(key, yuntal_crit=crit))
+        else:
+            kaisa.add_item(create_item_from_key(key))
+
+    if kaisa.has_w_evolved():
+        return True
+
+    # 요청 반영: 400원 AP 보조템(증폭의 고서 가정, AP +20)까지 고려한 W 진화 가능 판정
+    if include_ap_400_component:
+        return (kaisa.total_ap + 20.0) >= 100.0
+
+    return False
+
+
+_KAISA_4CORE_TOP1_CACHE = None
+
+
+def get_kaisa_4core_top1_build():
+    global _KAISA_4CORE_TOP1_CACHE
+    if _KAISA_4CORE_TOP1_CACHE is not None:
+        return _KAISA_4CORE_TOP1_CACHE
+
+    # simulation_kaisa 메인 연구 조건 기준(4코어 비교용)
+    core1_candidates = ["kraken", "storm", "yuntal", "statikk"]
+    core2_candidates = ["guinsoo", "terminus", "pd", "bot", "yuntal", "storm"]
+    core3_candidates = ["nashor", "guinsoo", "terminus", "pd", "bot", "storm", "ie", "ldr", "kraken"]
+    core4_candidates = ["ie", "ldr", "mortal", "terminus", "bot", "guinsoo", "storm", "nashor", "rabadon", "shadowflame", "kraken", "pd"]
+
+    ctrl1_core4_combo = tuple(sorted(["kraken", "guinsoo", "nashor", "terminus"]))
+    ctrl2_core4_combo = tuple(sorted(["kraken", "guinsoo", "terminus", "pd"]))
+    pen_exclusive = {"terminus", "ldr", "mortal"}
+
+    ad_by_key = {}
+    as_by_key = {}
+    for k in set(core1_candidates + core2_candidates + core3_candidates + core4_candidates):
+        item_obj = create_item_from_key(k)
+        ad_by_key[k] = item_obj.stats.get("ad", 0)
+        as_by_key[k] = item_obj.stats.get("as", 0.0)
+
+    all_paths = []
+    seen_paths = set()
+    for c1 in core1_candidates:
+        for c2 in core2_candidates:
+            if len({c1, c2}) < 2:
+                continue
+            if (ad_by_key[c1] + ad_by_key[c2]) < 75:
+                continue
+            if (as_by_key[c1] + as_by_key[c2]) < 0.65:
+                continue
+            for c3 in core3_candidates:
+                for c4 in core4_candidates:
+                    if len({c1, c2, c3, c4}) < 4:
+                        continue
+                    pen_count = sum(1 for k in [c1, c2, c3, c4] if k in pen_exclusive)
+                    if pen_count > 1:
+                        continue
+                    path = (c1, c2, c3, c4)
+                    if path in seen_paths:
+                        continue
+                    seen_paths.add(path)
+                    all_paths.append(path)
+
+    rows = []
+    for path in all_paths:
+        dps = []
+        costs = []
+        for tier in range(1, 5):
+            d, c, _w = simulate_kaisa_core_path(path, tier)
+            dps.append(d)
+            costs.append(c)
+        dpg = [dps[i] / (costs[i] / 1000.0) if costs[i] > 0 else 0.0 for i in range(4)]
+        combo4 = tuple(sorted(path))
+        control_label = ""
+        if combo4 == ctrl1_core4_combo:
+            control_label = "CTRL 1"
+        elif combo4 == ctrl2_core4_combo:
+            control_label = "CTRL 2"
+        rows.append({
+            "path": path,
+            "x": costs,
+            "y": dps,
+            "dpg": dpg,
+            "is_control": bool(control_label),
+            "control_label": control_label,
+        })
+
+    # main script와 동일한 4코어 중복 규칙 (윤탈 위치 민감)
+    dedupe_weight_raw = [5.0, 3.0, 2.0, 2.0]
+    for r in rows:
+        r["dedupe_eff_5322"] = sum(dedupe_weight_raw[i] * r["dpg"][i] for i in range(4))
+
+    dedupe_best_by_key = {}
+    for r in rows:
+        core4 = r["path"]
+        if "yuntal" in core4:
+            yuntal_pos = core4.index("yuntal")
+            others = [k for k in core4 if k != "yuntal"]
+            dedupe_key = ("yuntal_pos", yuntal_pos, tuple(sorted(others)))
+        else:
+            dedupe_key = ("no_yuntal", tuple(sorted(core4)))
+        prev = dedupe_best_by_key.get(dedupe_key)
+        if prev is None or r["dedupe_eff_5322"] > prev["dedupe_eff_5322"]:
+            dedupe_best_by_key[dedupe_key] = r
+    rows_dedup = list(dedupe_best_by_key.values())
+
+    # baseline control (weighted DPG 5:3:2:2 최대)
+    core_weight_raw = [5.0, 3.0, 2.0, 2.0]
+    weight_sum = sum(core_weight_raw)
+    core_weights = [w / weight_sum for w in core_weight_raw]
+    for r in rows_dedup:
+        r["weighted_dpg"] = sum(core_weights[i] * r["dpg"][i] for i in range(4))
+
+    control_rows = [r for r in rows_dedup if r["is_control"]]
+    ctrl1_rows = [r for r in control_rows if r["control_label"] == "CTRL 1"]
+    ctrl2_rows = [r for r in control_rows if r["control_label"] == "CTRL 2"]
+    filtered_controls = []
+    if ctrl1_rows:
+        filtered_controls.append(max(ctrl1_rows, key=lambda r: r["weighted_dpg"]))
+    if ctrl2_rows:
+        filtered_controls.append(max(ctrl2_rows, key=lambda r: r["weighted_dpg"]))
+    best_control = max(filtered_controls, key=lambda r: r["weighted_dpg"]) if filtered_controls else max(rows_dedup, key=lambda r: r["weighted_dpg"])
+    baseline_dpg_4 = best_control["dpg"][:4]
+
+    for r in rows_dedup:
+        core_rel_delta_pct = []
+        for i in range(4):
+            base = baseline_dpg_4[i]
+            ratio_pct = ((r["dpg"][i] / base) * 100.0) if base > 0 else 0.0
+            core_rel_delta_pct.append(ratio_pct - 100.0)
+        r["rep_score"] = sum(core_weights[i] * core_rel_delta_pct[i] for i in range(4))
+
+    ranked = sorted(rows_dedup, key=lambda r: r["rep_score"], reverse=True)
+    top1 = ranked[0]
+    _KAISA_4CORE_TOP1_CACHE = {
+        "path": top1["path"],
+        "score": top1["rep_score"],
+        "control_path": best_control["path"],
+        "total_paths_tested": len(all_paths),
+    }
+    return _KAISA_4CORE_TOP1_CACHE
+
+
 if __name__ == "__main__":
     print("\n=== Kai'Sa Build Path Power Spike (Q/W instant cast + Auto Attack, 1->2->3->4 Core + 5C extension) ===")
 
@@ -471,6 +623,65 @@ if __name__ == "__main__":
             f"{trim_text(c5a, col_opt):>{col_opt}} | {trim_text(c5b, col_opt):>{col_opt}} | "
             f"{r['rep_score']:>{col_rep}.2f}"
         )
+
+    # 요청 빌드 확인: Yun-Gui-IE-LDR에서 5코어 Nashor도 별도 출력(상위 2옵션 여부와 무관)
+    requested_core4 = ("yuntal", "guinsoo", "ie", "ldr")
+    requested_nashor_row = next(
+        (r for r in all_results if tuple(r["path"][:5]) == requested_core4 + ("nashor",)),
+        None
+    )
+    requested_core4_row = next(
+        (r for r in results if tuple(r["path"][:4]) == requested_core4),
+        None
+    )
+    if requested_nashor_row is not None:
+        y1, y2, y3, y4, y5 = requested_nashor_row["y"]
+        d1, d2, d3, d4 = requested_nashor_row["core_rel_delta_pct_4"]
+        dpg5 = requested_nashor_row["dpg"][4]
+        c5 = requested_nashor_row["x"][4]
+        delta5 = 0.0
+        if baseline_ctrl_5_dps > 0:
+            delta5 = (y5 / baseline_ctrl_5_dps) * 100.0 - 100.0
+
+        in_top2 = False
+        if requested_core4_row is not None:
+            in_top2 = any(o["item"] == "nashor" for o in requested_core4_row.get("top5_options", []))
+
+        print("\nRequested 5C Check: Yun-Gui-IE-LDR + Nashor")
+        print(
+            f"4C Row Present: {'Yes' if requested_core4_row is not None else 'No'} | "
+            f"Nashor in displayed Top2 options: {'Yes' if in_top2 else 'No'}"
+        )
+        print(
+            f"1C {y1:.1f}/{d1:+.1f}% | 2C {y2:.1f}/{d2:+.1f}% | "
+            f"3C {y3:.1f}/{d3:+.1f}% | 4C {y4:.1f}/{d4:+.1f}% | "
+            f"5C Nashor {y5:.1f}@{c5} (DPG {dpg5:.2f}, ΔvsCtrl5 {delta5:+.1f}%) | "
+            f"REP {requested_nashor_row['rep_score']:.2f}"
+        )
+
+    # 별도 표: 4코어 시점 W 진화 가능한 빌드(AP 100+ 또는 400g AP 보조템으로 도달 가능)
+    w_evo_rows = [r for r in ranked if is_kaisa_w_evolved_at_core(r["path"], 4, include_ap_400_component=True)]
+    if w_evo_rows:
+        w_top_n = min(30, len(w_evo_rows))
+        print(
+            f"\nW-Evolved at 4-Core Ranking (Top {w_top_n}, AP>=100 at 4C or +400g AP component, same REP metric)"
+        )
+        print(header_sub)
+        print("-" * len(header_sub))
+        for rank, r in enumerate(w_evo_rows[:w_top_n], start=1):
+            y1, y2, y3, y4 = r["y"][:4]
+            d1, d2, d3, d4 = r["core_rel_delta_pct_4"]
+            label = trim_text(fmt_build4(r), col_build)
+            ctrl_txt = trim_text(control_build_text.get(r["control_label"], "-"), col_ctrl)
+            c1v = fmt_core_cell(y1, d1)
+            c2v = fmt_core_cell(y2, d2)
+            c3v = fmt_core_cell(y3, d3)
+            c4v = fmt_core_cell(y4, d4)
+            print(
+                f"{rank:>3} | {label:<{col_build}} | {ctrl_txt:<{col_ctrl}} | "
+                f"{c1v:>{col_core}} | {c2v:>{col_core}} | {c3v:>{col_core}} | {c4v:>{col_core}} | "
+                f"{r['rep_score']:>{col_rep}.2f}"
+            )
 
     # 별도 표: 1코어 크라켄 고정 랭킹 (그래프 없음)
     kraken_rows = [r for r in ranked if r["path"][0] == "kraken"]
