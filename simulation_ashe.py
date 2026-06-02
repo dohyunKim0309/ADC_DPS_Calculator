@@ -102,6 +102,7 @@ def create_item_from_key(item_key, yuntal_crit=None):
 
 
 def simulate_ashe_core_path(core_item_keys, core_tier):
+    """Simulate Ashe DPS and total gold for the given core progression."""
     target = build_target_for_core(core_tier)
     level_cfg = CORE_ASHE_LEVELS[core_tier]
     ashe = Ashe(level=level_cfg["level"], q_level=level_cfg["q_level"])
@@ -185,6 +186,7 @@ def simulate_yunara_reference_path(core_tier):
 
 
 def simulate_yunara_core_path(core_item_keys, core_tier):
+    """Simulate Yunara DPS and total gold for the given core progression."""
     target = build_target_for_core(core_tier)
     level_cfg = CORE_YUNARA_LEVELS[core_tier]
     yunara = Yunara(level=level_cfg["level"], q_level=level_cfg["q_level"])
@@ -220,6 +222,19 @@ def simulate_yunara_core_path(core_item_keys, core_tier):
     yunara.activate_q(0.0)
     _, dps, _ = run_simulation(yunara, target, verbose=False)
     return dps, total_cost
+
+
+def build_ashe_like_core_report_meta(champion_name, full_path, core_tier):
+    """Build serializable metadata for Ashe/Yunara core-path report rows."""
+    active_path = tuple(full_path[:core_tier])
+    return {
+        "champion": champion_name,
+        "core_tier": core_tier,
+        "full_path": list(full_path),
+        "active_path": list(active_path),
+        "build": "-".join(full_path),
+        "active_build": "-".join(active_path),
+    }
 
 
 def _build_ashe_4core_all_paths():
@@ -274,6 +289,7 @@ def _build_ashe_4core_all_paths():
 
 
 def _rank_ashe_like_4core_paths(simulate_core_path_fn):
+    """Rank Ashe-like 4-core paths while preserving per-core DPS/gold series."""
     control_combo_key = tuple(sorted(("kraken", "pd", "ie", "ldr")))
     all_paths = _build_ashe_4core_all_paths()
 

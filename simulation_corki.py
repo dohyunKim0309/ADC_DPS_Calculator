@@ -159,6 +159,7 @@ def rune_short(rune_key):
 
 
 def simulate_corki_core_path(full_path, shoe_key, rune_key, core_tier):
+    """Simulate Corki DPS and total gold for the configured shoe/rune/path."""
     target = build_target_for_core(core_tier)
     level_cfg = CORE_LEVELS[core_tier]
     skill_cfg = CORKI_SKILL_LEVELS[core_tier]
@@ -196,6 +197,21 @@ def simulate_corki_core_path(full_path, shoe_key, rune_key, core_tier):
 
     _, dps, _ = run_simulation(corki, target, verbose=False, skill_plan=skill_plan)
     return dps, total_cost
+
+
+def build_corki_core_report_meta(full_path, shoe_key, rune_key, core_tier):
+    """Build serializable metadata for Corki report rows."""
+    active_path = tuple(full_path[:core_tier])
+    return {
+        "champion": "Corki",
+        "core_tier": core_tier,
+        "full_path": list(full_path),
+        "active_path": list(active_path),
+        "build": "-".join(full_path),
+        "active_build": "-".join(active_path),
+        "shoe": shoe_key,
+        "rune": rune_key,
+    }
 
 
 def get_corki_4core_top1_build():

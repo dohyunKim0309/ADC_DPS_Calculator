@@ -105,6 +105,7 @@ def get_yuntal_crit_for_tier(purchase_tier, current_tier):
 
 
 def simulate_kaisa_core_path(full_path, core_tier):
+    """Simulate Kai'Sa DPS, total gold, and W cast count for a core timing."""
     target = build_target_for_core(core_tier)
     level_cfg = CORE_LEVELS[core_tier]
     e_level_for_tier = get_e_level_for_core(core_tier)
@@ -149,6 +150,21 @@ def simulate_kaisa_core_path(full_path, core_tier):
     return dps, total_cost, kaisa.w_cast_count
 
 
+def build_kaisa_core_report_meta(full_path, core_tier, w_cast_count=None):
+    """Build serializable metadata for Kai'Sa report rows."""
+    active_path = tuple(full_path[:core_tier])
+    return {
+        "champion": "KaiSa",
+        "core_tier": core_tier,
+        "full_path": list(full_path),
+        "active_path": list(active_path),
+        "build": "-".join(full_path),
+        "active_build": "-".join(active_path),
+        "w_cast_count": w_cast_count,
+        "w_evolved": is_kaisa_w_evolved_at_core(full_path, core_tier),
+    }
+
+
 def is_kaisa_w_evolved_at_core(full_path, core_tier=4, include_ap_400_component=False):
     level_cfg = CORE_LEVELS[core_tier]
     e_level_for_tier = get_e_level_for_core(core_tier)
@@ -177,6 +193,7 @@ _KAISA_4CORE_TOP1_CACHE = None
 
 
 def get_kaisa_4core_top1_build():
+    """Return the ranked 4-core Kai'Sa top1 build with control metadata."""
     global _KAISA_4CORE_TOP1_CACHE
     if _KAISA_4CORE_TOP1_CACHE is not None:
         return _KAISA_4CORE_TOP1_CACHE
