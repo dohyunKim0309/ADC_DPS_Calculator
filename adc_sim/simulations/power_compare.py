@@ -4,19 +4,19 @@ from datetime import datetime
 
 import matplotlib.pyplot as plt
 
-from settings import get_result_export_settings
-from simulation_ashe import (
+from adc_sim.settings import get_result_export_settings
+from adc_sim.simulations.ashe import (
     simulate_ashe_core_path,
     get_ashe_4core_top1_build,
     build_ashe_like_core_report_meta,
 )
-from simulation_yunara import simulate_yunara_core_path, get_yunara_4core_top1_build
-from simulation_kaisa import (
+from adc_sim.simulations.yunara import simulate_yunara_core_path, get_yunara_4core_top1_build
+from adc_sim.simulations.kaisa import (
     simulate_kaisa_core_path,
     get_kaisa_4core_top1_build,
     build_kaisa_core_report_meta,
 )
-from simulation_corki import (
+from adc_sim.simulations.corki import (
     simulate_corki_core_path,
     get_corki_4core_top1_build,
     build_corki_core_report_meta,

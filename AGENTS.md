@@ -104,48 +104,7 @@ Do NOT present hypotheses as facts.
    - Hypothesis-tagged code MUST include a comment explaining the assumption being made.
 
 ---
-## 6. Agent Behavior Protocol
-
-Before writing ANY code, the agent MUST:
-
-1. Explain what it is about to implement
-2. Specify which file(s) will be modified
-3. Justify why the change is needed
-4. Wait for user confirmation (if the change is significant)
-
-The agent MUST NOT:
-
-- Modify multiple modules at once
-- Introduce new dependencies without explanation
-- Refactor entire codebase without explicit request
-
-A change is considered "significant" if it involves:
-
-- Modifying more than 1 file
-- Changing core logic of a module
-- Introducing a new module or dependency
-- Altering data flow between modules
-
-If no confirmation is received, the agent MUST NOT proceed.
-The agent MUST re-prompt or halt.
-
----
-## 7. Approval Logging
-
-All approved changes MUST be recorded in `docs/change_log.md` with:
-
-- Date/Time
-- Agent Name (Codex, Claude, etc.)
-- Changed file(s)
-- Summary of change
-- "User approved" confirmation
-
-No change is considered valid without a log entry.
-
-The agent is responsible for appending the log entry immediately after receiving user approval.
-
----
-## 8. Multi-Agent Coordination
+## 6. Multi-Agent Coordination
 
 Before modifying any file, the agent MUST:
 
@@ -155,12 +114,12 @@ Before modifying any file, the agent MUST:
 Agents MUST NOT modify the same file concurrently.
 
 Ownership is released when:
-- Task is completed and logged in `docs/change_log.md`
+- Task is completed
 - User explicitly cancels the task
 - Agent declares failure
 
 ---
-## 9. Document Scope Definition
+## 7. Document Scope Definition
 
 - `docs/assumptions.md` defines:
   - Environment

@@ -1,5 +1,5 @@
-from champion import Corki, Target
-from items import (
+from adc_sim.champion import Corki, Target
+from adc_sim.items import (
     Manamune,
     TrinityForce,
     StatikkShiv,
@@ -22,8 +22,8 @@ from items import (
     Plated_Steelcaps,
     BerserkerGreaves,
 )
-from engine import run_simulation
-from runes import Conqueror, LethalTempo, CutDown
+from adc_sim.engine import run_simulation
+from adc_sim.runes import Conqueror, LethalTempo, CutDown
 import matplotlib.pyplot as plt
 import random
 

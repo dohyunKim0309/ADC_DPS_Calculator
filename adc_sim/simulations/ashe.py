@@ -2,17 +2,17 @@ import matplotlib.pyplot as plt
 # import json # JSON 저장 제거
 # import os # JSON 저장 제거
 # from datetime import datetime # JSON 저장 제거
-from champion import Ashe, Jinx, Target, Yunara
-from items import (
+from adc_sim.champion import Ashe, Jinx, Target, Yunara
+from adc_sim.items import (
     KrakenSlayer, InfinityEdge, BerserkerGreaves, BladeOfRuinedKing,
     TheCollector, YunTalWildarrows, PhantomDancer, HextechScopeC44, Stormrazor, RunaansHurricane, StatikkShiv,
     GuinsoosRageblade, Terminus, MortalReminder, Bloodthirster, LordDominiksRegards, SerpentsFang, Item, GuardianAngel, MercurialScimitar,
     Pickaxe, BFSword, ScoutingsSlingshot, LongSword, RecurveBow, Noonquiver, VampiricScepter, HearthboundAxe, Dagger, CloakofAgility,
     EssenceReaver, DemonHunterCrossbow
 )
-from settings import SIMULATION_SETTINGS
-from runes import LethalTempo, CutDown
-from engine import run_simulation # save_results 제거
+from adc_sim.settings import SIMULATION_SETTINGS
+from adc_sim.runes import LethalTempo, CutDown
+from adc_sim.engine import run_simulation
 
 
 # 코어 단계별 고정 타겟 스탯

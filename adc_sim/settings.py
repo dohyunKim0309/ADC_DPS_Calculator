@@ -2,7 +2,7 @@
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent  # repo root (adc_sim/settings.py 기준 두 단계 상위)
 
 # 시뮬레이션 설정
 SIMULATION_SETTINGS = {

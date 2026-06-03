@@ -1,0 +1,24 @@
+# ── Python ─────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ── Virtual environment ────────────────────
+.venv/
+venv/
+
+# ── IDE / editor ───────────────────────────
+.idea/
+.vscode/
+
+# ── OS ─────────────────────────────────────
+.DS_Store
+
+# ── Tooling scratch ────────────────────────
+.air/
+
+# ── Generated outputs ──────────────────────
+# 시뮬 결과 이미지(results/)와 export 리포트(reports/)는 생성물이라 추적 제외.
+# 보관하고 싶은 결과는 Archive/ 로 직접 옮겨서 관리.
+results/
+reports/

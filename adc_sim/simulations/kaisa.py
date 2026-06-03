@@ -1,6 +1,6 @@
-from champion import KaiSa, Target
+from adc_sim.champion import KaiSa, Target
 import matplotlib.pyplot as plt
-from items import (
+from adc_sim.items import (
     BerserkerGreaves,
     KrakenSlayer,
     Stormrazor,
@@ -16,8 +16,8 @@ from items import (
     MortalReminder,
     RabadonsDeathcap, Shadowflame, ImmortalShieldbow,
 )
-from runes import LethalTempo, CutDown
-from engine import run_simulation
+from adc_sim.runes import LethalTempo, CutDown
+from adc_sim.engine import run_simulation
 
 
 # 코어 단계별 고정 타겟 스탯 (Ashe 시뮬레이션과 동일)

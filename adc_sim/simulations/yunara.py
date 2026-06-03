@@ -4,8 +4,8 @@ from datetime import datetime
 
 import matplotlib.pyplot as plt
 
-from settings import get_result_export_settings
-from simulation_ashe import (
+from adc_sim.settings import get_result_export_settings
+from adc_sim.simulations.ashe import (
     simulate_yunara_core_path,
     _build_ashe_4core_all_paths,
     build_ashe_like_core_report_meta,
