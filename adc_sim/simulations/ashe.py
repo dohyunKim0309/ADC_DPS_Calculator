@@ -62,43 +62,8 @@ def build_target_for_core(core_tier):
     )
 
 
-def create_item_from_key(item_key, yuntal_crit=None):
-    if item_key == "kraken":
-        return KrakenSlayer()
-    if item_key == "yuntal25":
-        return YunTalWildarrows(crit=0.25 if yuntal_crit is None else yuntal_crit)
-    if item_key == "bot_as18":
-        bot = BladeOfRuinedKing()
-        bot.stats['as'] += 0.18
-        bot.name = "BotRK (AS+18%)"
-        return bot
-    if item_key == "storm":
-        return Stormrazor()
-    if item_key == "statikk":
-        return StatikkShiv()
-    if item_key == "c44":
-        return HextechScopeC44()
-    if item_key == "bot":
-        return BladeOfRuinedKing()
-    if item_key == "pd":
-        return PhantomDancer()
-    if item_key == "runaan":
-        return RunaansHurricane()
-    if item_key == "terminus":
-        return Terminus()
-    if item_key == "guinsoo":
-        return GuinsoosRageblade()
-    if item_key == "ie":
-        return InfinityEdge()
-    if item_key == "ldr":
-        return LordDominiksRegards()
-    if item_key == "bt":
-        return Bloodthirster()
-    if item_key == "ga":
-        return GuardianAngel()
-    if item_key == "mercurial":
-        return MercurialScimitar()
-    raise ValueError(f"Unknown item key: {item_key}")
+# 아이템 키 → 인스턴스 생성은 통합 레지스트리 사용 (스탯/가격은 adc_sim/data/items_data.py)
+from adc_sim.data.items_registry import create_item_from_key
 
 
 def simulate_ashe_core_path(core_item_keys, core_tier):

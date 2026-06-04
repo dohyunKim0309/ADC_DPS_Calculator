@@ -55,42 +55,8 @@ def build_target_for_core(core_tier):
     )
 
 
-def create_item_from_key(item_key, yuntal_crit=None):
-    if item_key == "kraken":
-        return KrakenSlayer()
-    if item_key == "storm":
-        return Stormrazor()
-    if item_key == "yuntal":
-        return YunTalWildarrows(crit=0.25 if yuntal_crit is None else yuntal_crit)
-    if item_key == "statikk":
-        return StatikkShiv()
-    if item_key == "guinsoo":
-        return GuinsoosRageblade()
-    if item_key == "terminus":
-        return Terminus()
-    if item_key == "pd":
-        return PhantomDancer()
-    if item_key == "bot":
-        return BladeOfRuinedKing()
-    if item_key == "nashor":
-        return NashorsTooth()
-    if item_key == "ie":
-        return InfinityEdge()
-    if item_key == "ldr":
-        return LordDominiksRegards()
-    if item_key == "mortal":
-        return MortalReminder()
-    if item_key == "rabadon":
-        return RabadonsDeathcap()
-    if item_key == "shadowflame":
-        return Shadowflame()
-    if item_key == "shieldbow":
-        return ImmortalShieldbow()
-    raise ValueError(f"Unknown item key: {item_key}")
-
-
-def get_item_ad_from_key(item_key):
-    return create_item_from_key(item_key).stats.get("ad", 0)
+# 아이템 키 → 인스턴스 생성은 통합 레지스트리 사용 (스탯/가격은 adc_sim/data/items_data.py)
+from adc_sim.data.items_registry import create_item_from_key, get_item_ad_from_key
 
 
 def get_yuntal_crit_for_tier(purchase_tier, current_tier):

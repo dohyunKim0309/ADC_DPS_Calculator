@@ -22,13 +22,17 @@
 ```
 adc_sim/                  ← 소스 패키지 (코어 모듈끼리는 서로 import 안 함)
   settings.py ─ 전역 설정(그래프 스타일, export 토글/경로; PROJECT_ROOT=repo 루트)
-  items.py    ─ Item 베이스 + 아이템 서브클래스(스탯·가격·효과 훅)   ← 패치마다 가장 자주 바뀜
+  items.py    ─ Item 베이스 + 동작 서브클래스(on_hit 등 효과 훅). 스탯/가격은 data/items_data.py 가 출처
   runes.py    ─ Rune 베이스 + 룬 서브클래스(효과 훅)
   champion.py ─ Target(더미), Champion 베이스(데미지 모델·스탯·이벤트 인터페이스) + 챔피언 서브클래스
   engine.py   ─ run_simulation(): 이벤트 루프 / calculate_mitigation(): 방저·관통 적용
   simulations/
     ashe.py · yunara.py · kaisa.py · corki.py ─ 빌드 탐색·랭킹·리포트·그래프 (챔피언별)
     power_compare.py ─ 각 챔피언 Top1을 모아 교차 비교 (simulations만 `adc_sim.*` import)
+  data/
+    items_data.py ─ 아이템 스탯/가격 데이터(숫자의 단일 출처)   ← 패치마다 가장 자주 바뀜
+    items_registry.py ─ 키→인스턴스 통합 create_item_from_key(데이터 주입; 시뮬별 복제 제거)
+    cdragon.py ─ Community Dragon에서 패치 데이터 받아오기(소스 연동만; 계수→sim 매핑은 추후)
 results/{ashe,yunara}/ ─ 결과 PNG(생성물, git 제외)    reports/ ─ export 리포트(생성물, git 제외)
 experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 보관용   docs/ ─ 예약(미생성)
 ```
@@ -50,16 +54,17 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 
 ## 패치마다 갱신 (이 프로젝트의 일상)
 새 패치가 나오면 보통 아래를 손본 뒤 시뮬을 다시 돌려 랭킹을 갱신한다. **변경 전 `AGENTS.md`의 승인 절차를 따른다.**
-1. **아이템 스탯/가격 변경** → `adc_sim/items.py`의 해당 서브클래스(`stats`, `self.cost`).
-2. **신규 아이템** → `adc_sim/items.py`에 `Item` 서브클래스 추가 + **관련 시뮬 파일의 `create_item_from_key()`에 키 등록**.
-   - ⚠️ `create_item_from_key()`는 **`adc_sim/simulations/{ashe,kaisa,corki}.py`에 각각 따로 존재**하고, **키 이름이 파일마다 다르다**(예: 윤탈이 ashe=`yuntal25`, kaisa/corki=`yuntal`; corki는 신발/룬까지 키로 가짐). 한 곳만 고치면 다른 챔피언 시뮬에서 누락/`Unknown item key` 발생.
+1. **아이템 스탯/가격 변경** → `adc_sim/data/items_data.py`의 `ITEMS[key]`(`stats`/`cost`). 숫자의 단일 출처.
+2. **신규 아이템** → `adc_sim/data/items_data.py`의 `ITEMS`에 키 추가(name/cost/stats/behavior). 특수 메커니즘이 있을 때만 `adc_sim/items.py`에 동작 클래스를 추가해 `behavior`로 지정. 생성은 **통합 `create_item_from_key`**(`adc_sim/data/items_registry.py`) 하나가 처리 — 시뮬별 복제 없음(윤탈 crit 은 런타임 파라미터 `yuntal_crit`).
    - 새 키를 **탐색 후보 풀**(`ashe.py`의 `_build_ashe_4core_all_paths` 내 `coreN_candidates`, kaisa/corki의 대응 풀)에 넣어야 실제 랭킹에 등장한다. `pen_exclusive_keys = {terminus, ldr, mortal}`는 한 빌드에 1개까지만 허용.
 3. **챔피언 기본 스탯/스킬 계수 변경** → `adc_sim/champion.py`의 해당 서브클래스. 코어별 레벨표(`CORE_*_LEVELS`)·타깃 스탯(`CORE_TARGET_STATS`)도 패치 메타에 맞게 점검.
 4. **룬 변경** → `adc_sim/runes.py`.
 5. 갱신 후 시뮬 재실행 → 그래프/리포트 확인. 리포트를 남기려면 export 토글을 켠다.
+- 📥 패치 수치 출처는 **Community Dragon** — `python -m adc_sim.data.cdragon`로 연결 점검(전 챔피언+유나라 커버), `snapshot()`으로 raw JSON 덤프. **지금은 소스 연동까지만**(수동 대조용, items/champion 자동 반영 안 함). CDragon 클라 데이터의 스킬 계수는 불완전(궁 0 등)하니 정밀 base 스탯은 DDragon으로 교차검증.
 
 ## 시뮬레이션 함정·규칙 (수정 시 주의)
 - **반환 튜플 모양을 정확히 맞출 것**: 아이템 `on_hit` → `(phys, magic, true_base, true_onhit)` 4-튜플 / 챔피언·룬 온힛 → `(phys, magic)` 2-튜플 / 스킬 `on_skill_hit` → `(phys, magic, true)` 3-튜플 / `get_one_hit_damage` → `(phys_base, magic_base, phys_onhit, magic_onhit, true_base, true_onhit)` 6-튜플.
+- **아이템 스탯의 단일 출처는 `adc_sim/data/items_data.py`**. items.py 동작 클래스에 남은 레거시 스탯 리터럴은 런타임에 데이터가 덮어쓴다(2b에서 제거 예정) — 스탯 수정은 반드시 items_data.py 에서.
 - **윤탈 치명타 가정**: 구매 코어/다음 코어 여부에 따라 0%/12%/5%/25%로 분기(`simulate_*_core_path` 내부). 가정이지 실측이 아님.
 - **유나라 시뮬**은 전투 시작과 동시에 `activate_q(0.0)`로 Q 활성 상태 가정.
 - **방어구 관통**은 `add_item`에서 곱연산으로 합치지만 주석상 "단순화" 영역 — 정밀화하려면 모델 가정부터 합의.
