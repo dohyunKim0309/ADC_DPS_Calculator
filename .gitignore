@@ -22,3 +22,5 @@ venv/
 # 보관하고 싶은 결과는 Archive/ 로 직접 옮겨서 관리.
 results/
 reports/
+# CDragon 등에서 받아온 패치 데이터 스냅샷 (생성물)
+patch_data/
