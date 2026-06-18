@@ -211,9 +211,9 @@ class NavoriFlickerblade(Item):
 # ==========================================
 class StatikkShiv(Item):
     def __init__(self):
-        super().__init__("Statikk Shiv", ad=45, as_percent=0.30)
+        super().__init__("Statikk Shiv", ad=45, ap=45, as_percent=0.30)
         self.cooldown_timer = 0
-        self.cost = 2700
+        self.cost = 3000
 
     def on_hit(self, target, champion):
         # 8초 내 첫 3회 공격 시 60 마법 피해.

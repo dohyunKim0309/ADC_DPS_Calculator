@@ -23,7 +23,7 @@ ITEMS = {
     # key          name                            cost  behavior(=adc_sim.items 클래스)   stats
     "kraken":      {"name": "Kraken Slayer",            "cost": 3000, "behavior": "KrakenSlayer",        "stats": {"ad": 45, "as": 0.40}},
     "storm":       {"name": "Stormrazor",               "cost": 3200, "behavior": "Stormrazor",          "stats": {"ad": 50, "as": 0.20, "crit": 0.25}},
-    "statikk":     {"name": "Statikk Shiv",             "cost": 2700, "behavior": "StatikkShiv",         "stats": {"ad": 45, "as": 0.30}},
+    "statikk":     {"name": "Statikk Shiv",             "cost": 3000, "behavior": "StatikkShiv",         "stats": {"ad": 45, "ap": 45, "as": 0.30}},
     "c44":         {"name": "Hextech Scope C44",        "cost": 2800, "behavior": "HextechScopeC44",     "stats": {"ad": 55, "crit": 0.25}},
     "bot":         {"name": "Blade of the Ruined King", "cost": 3200, "behavior": "BladeOfRuinedKing",   "stats": {"ad": 40, "as": 0.25}},
     "botrk":       {"name": "Blade of the Ruined King", "cost": 3200, "behavior": "BladeOfRuinedKing",   "stats": {"ad": 40, "as": 0.25}},
