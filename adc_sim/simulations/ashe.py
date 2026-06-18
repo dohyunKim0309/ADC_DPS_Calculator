@@ -64,10 +64,15 @@ def build_target_for_core(core_tier):
 
 # 아이템 키 → 인스턴스 생성은 통합 레지스트리 사용 (스탯/가격은 adc_sim/data/items_data.py)
 from adc_sim.data.items_registry import create_item_from_key
+from adc_sim.data.items_data import DORAN_OPTIONS, DORAN_SHORT, ADC_PACKAGES
 
 
-def simulate_ashe_core_path(core_item_keys, core_tier):
-    """Simulate Ashe DPS and total gold for the given core progression."""
+def simulate_ashe_core_path(core_item_keys, core_tier, doran_key=None, boots_key="berserker", rune_as_bonus=0.0):
+    """Simulate Ashe DPS and total gold for the given core progression.
+
+    doran_key: 시작 도란 아이템(검/활). None이면 미포함.
+    boots_key: 신발(기본 광전사). rune_as_bonus: 공속 룬(민첩함 등)의 평타 공속 가산(골드 무료).
+    """
     target = build_target_for_core(core_tier)
     level_cfg = CORE_ASHE_LEVELS[core_tier]
     ashe = Ashe(level=level_cfg["level"], q_level=level_cfg["q_level"])
@@ -95,11 +100,13 @@ def simulate_ashe_core_path(core_item_keys, core_tier):
         else:
             core_items.append(create_item_from_key(key))
 
-    items = [BerserkerGreaves()] + core_items
+    doran_items = [create_item_from_key(doran_key)] if doran_key else []
+    items = doran_items + [create_item_from_key(boots_key)] + core_items
     total_cost = 0
     for item in items:
         total_cost += item.cost
         ashe.add_item(item)
+    ashe.bonus_as_percent += rune_as_bonus  # 공속 룬(민첩함): 골드 무료, 평타 공속 가산
 
     _, dps, _ = run_simulation(ashe, target, verbose=False)
     return dps, total_cost
@@ -150,8 +157,12 @@ def simulate_yunara_reference_path(core_tier):
     return dps, total_cost
 
 
-def simulate_yunara_core_path(core_item_keys, core_tier):
-    """Simulate Yunara DPS and total gold for the given core progression."""
+def simulate_yunara_core_path(core_item_keys, core_tier, doran_key=None, boots_key="berserker", rune_as_bonus=0.0):
+    """Simulate Yunara DPS and total gold for the given core progression.
+
+    doran_key: 시작 도란 아이템(검/활). None이면 미포함.
+    boots_key: 신발(기본 광전사). rune_as_bonus: 공속 룬(민첩함 등)의 평타 공속 가산(골드 무료).
+    """
     target = build_target_for_core(core_tier)
     level_cfg = CORE_YUNARA_LEVELS[core_tier]
     yunara = Yunara(level=level_cfg["level"], q_level=level_cfg["q_level"])
@@ -177,11 +188,13 @@ def simulate_yunara_core_path(core_item_keys, core_tier):
         else:
             core_items.append(create_item_from_key(key))
 
-    items = [BerserkerGreaves()] + core_items
+    doran_items = [create_item_from_key(doran_key)] if doran_key else []
+    items = doran_items + [create_item_from_key(boots_key)] + core_items
     total_cost = 0
     for item in items:
         total_cost += item.cost
         yunara.add_item(item)
+    yunara.bonus_as_percent += rune_as_bonus  # 공속 룬(민첩함): 골드 무료, 평타 공속 가산
 
     # 현재 비교/시뮬 기준: 전투 시작 시 Q 활성 상태
     yunara.activate_q(0.0)
@@ -254,46 +267,53 @@ def _build_ashe_4core_all_paths():
 
 
 def _rank_ashe_like_4core_paths(simulate_core_path_fn):
-    """Rank Ashe-like 4-core paths while preserving per-core DPS/gold series."""
+    """Rank Ashe-like 4-core paths while preserving per-core DPS/gold series.
+
+    각 경로를 도란검/도란활 두 경우로 평가(2배)하고, 같은 4아이템 집합은
+    (순서 × 도란) 중 최고 점수 하나로 dedup → 빌드별 최적 도란이 자동 선택된다.
+    컨트롤(기준) 빌드도 도란 최적을 고른다(가중 DPG 최대).
+    """
     control_combo_key = tuple(sorted(("kraken", "pd", "ie", "ldr")))
     all_paths = _build_ashe_4core_all_paths()
-
-    spike_results = []
-    for c1, c2, c3, c4 in all_paths:
-        dps1, cost1 = simulate_core_path_fn([c1], 1)
-        dps2, cost2 = simulate_core_path_fn([c1, c2], 2)
-        dps3, cost3 = simulate_core_path_fn([c1, c2, c3], 3)
-        dps4, cost4 = simulate_core_path_fn([c1, c2, c3, c4], 4)
-        spike_results.append({
-            "path": (c1, c2, c3, c4),
-            "x": [cost1, cost2, cost3, cost4],
-            "y": [dps1, dps2, dps3, dps4],
-        })
-
-    base_results = []
-    for res in spike_results:
-        base_key = res["path"]
-        base_results.append({
-            "base_key": base_key,
-            "x": res["x"],
-            "y": res["y"],
-            "is_control": tuple(sorted(base_key)) == control_combo_key,
-        })
-
-    control_candidates = [r for r in base_results if r["is_control"]]
-    if not control_candidates:
-        raise RuntimeError("Control build Krk-PD-IE-LDR not found in generated Ashe-like paths.")
-    best_control = control_candidates[0]
-    ctrl_y = best_control["y"]
-    ctrl_x = best_control["x"]
-    ctrl_dpg = [
-        ctrl_y[i] / (ctrl_x[i] / 1000.0) if ctrl_x[i] > 0 else 0.0
-        for i in range(4)
-    ]
 
     core_weight_raw = [5.0, 4.0, 3.0, 3.0]
     weight_sum = sum(core_weight_raw)
     core_weights = [w / weight_sum for w in core_weight_raw]
+
+    # (경로 × 패키지A/B) 전 조합 평가
+    base_results = []
+    for c1, c2, c3, c4 in all_paths:
+        for pkg in ADC_PACKAGES:
+            kw = dict(doran_key=pkg["doran"], boots_key=pkg["boots"], rune_as_bonus=pkg["rune_as"])
+            dps1, cost1 = simulate_core_path_fn([c1], 1, **kw)
+            dps2, cost2 = simulate_core_path_fn([c1, c2], 2, **kw)
+            dps3, cost3 = simulate_core_path_fn([c1, c2, c3], 3, **kw)
+            dps4, cost4 = simulate_core_path_fn([c1, c2, c3, c4], 4, **kw)
+            base_results.append({
+                "base_key": (c1, c2, c3, c4),
+                "doran": pkg["doran"],
+                "boots": pkg["boots"],
+                "rune_as": pkg["rune_as"],
+                "pkg_label": pkg["label"],
+                "x": [cost1, cost2, cost3, cost4],
+                "y": [dps1, dps2, dps3, dps4],
+                "is_control": tuple(sorted((c1, c2, c3, c4))) == control_combo_key,
+            })
+
+    def _weighted_dpg(res):
+        return sum(
+            core_weights[i] * (res["y"][i] / (res["x"][i] / 1000.0) if res["x"][i] > 0 else 0.0)
+            for i in range(4)
+        )
+
+    # 컨트롤 baseline: 컨트롤 빌드(검/활) 중 가중 DPG 최대
+    control_candidates = [r for r in base_results if r["is_control"]]
+    if not control_candidates:
+        raise RuntimeError("Control build Krk-PD-IE-LDR not found in generated Ashe-like paths.")
+    best_control = max(control_candidates, key=_weighted_dpg)
+    ctrl_x = best_control["x"]
+    ctrl_y = best_control["y"]
+    ctrl_dpg = [ctrl_y[i] / (ctrl_x[i] / 1000.0) if ctrl_x[i] > 0 else 0.0 for i in range(4)]
 
     for res in base_results:
         row_dpg = [
@@ -316,11 +336,11 @@ def _rank_ashe_like_4core_paths(simulate_core_path_fn):
         "top1": ranked[0],
         "control": next(r for r in ranked if r["is_control"]),
         "all_paths_count": len(all_paths),
+        "packages_evaluated": len(ADC_PACKAGES),
     }
 
 
 _ASHE_4CORE_TOP1_CACHE = None
-_YUNARA_4CORE_TOP1_CACHE = None
 
 
 def get_ashe_4core_top1_build():
@@ -330,25 +350,20 @@ def get_ashe_4core_top1_build():
         top1 = ranking["top1"]
         _ASHE_4CORE_TOP1_CACHE = {
             "path": top1["base_key"],
+            "doran": top1["doran"],
+            "boots": top1["boots"],
+            "rune_as": top1["rune_as"],
+            "pkg_label": top1["pkg_label"],
             "score": top1["rel_dpg_score"],
             "control_path": ranking["control"]["base_key"],
+            "control_pkg": ranking["control"]["pkg_label"],
             "total_paths_tested": ranking["all_paths_count"],
         }
     return _ASHE_4CORE_TOP1_CACHE
 
 
-def get_yunara_4core_top1_build():
-    global _YUNARA_4CORE_TOP1_CACHE
-    if _YUNARA_4CORE_TOP1_CACHE is None:
-        ranking = _rank_ashe_like_4core_paths(simulate_yunara_core_path)
-        top1 = ranking["top1"]
-        _YUNARA_4CORE_TOP1_CACHE = {
-            "path": top1["base_key"],
-            "score": top1["rel_dpg_score"],
-            "control_path": ranking["control"]["base_key"],
-            "total_paths_tested": ranking["all_paths_count"],
-        }
-    return _YUNARA_4CORE_TOP1_CACHE
+# Yunara 의 4코어 top1 랭킹은 adc_sim/simulations/yunara.py 가 정본(자체 표/그래프 포함).
+# 과거 여기 있던 중복 get_yunara_4core_top1_build 는 제거(미사용·혼란 방지).
 
 
 # 1코어 아이템 세트 생성 함수
@@ -762,18 +777,22 @@ if __name__ == "__main__":
     spike_results = []
     for path in all_paths:
         c1, c2, c3, c4 = path
-        dps1, cost1 = simulate_ashe_core_path([c1], 1)
-        dps2, cost2 = simulate_ashe_core_path([c1, c2], 2)
-        dps3, cost3 = simulate_ashe_core_path([c1, c2, c3], 3)
-        dps4, cost4 = simulate_ashe_core_path([c1, c2, c3, c4], 4)
-        spike_results.append({
-            "path": path,
-            "label": f"{item_short[c1]}-{item_short[c2]}-{item_short[c3]}-{item_short[c4]}",
-            "x": [cost1, cost2, cost3, cost4],
-            "y": [dps1, dps2, dps3, dps4],
-            "is_control": path in control_paths,
-            "control_label": control_paths.get(path, ""),
-        })
+        for pkg in ADC_PACKAGES:
+            kw = dict(doran_key=pkg["doran"], boots_key=pkg["boots"], rune_as_bonus=pkg["rune_as"])
+            dps1, cost1 = simulate_ashe_core_path([c1], 1, **kw)
+            dps2, cost2 = simulate_ashe_core_path([c1, c2], 2, **kw)
+            dps3, cost3 = simulate_ashe_core_path([c1, c2, c3], 3, **kw)
+            dps4, cost4 = simulate_ashe_core_path([c1, c2, c3, c4], 4, **kw)
+            spike_results.append({
+                "path": path,
+                "doran": pkg["doran"],
+                "pkg_label": pkg["label"],
+                "label": f"{item_short[c1]}-{item_short[c2]}-{item_short[c3]}-{item_short[c4]} [{pkg['label']}]",
+                "x": [cost1, cost2, cost3, cost4],
+                "y": [dps1, dps2, dps3, dps4],
+                "is_control": path in control_paths,
+                "control_label": control_paths.get(path, ""),
+            })
 
     control_combo_key = tuple(sorted(("kraken", "pd", "ie", "ldr")))
 
@@ -782,10 +801,13 @@ if __name__ == "__main__":
     for res in spike_results:
         c1, c2, c3, c4 = res["path"]
         base_key = (c1, c2, c3, c4)
-        if base_key not in base_results:
-            base_results[base_key] = {
+        dkey = (base_key, res["doran"])  # 패키지(도란검↔활)까지 구분해 두 경우 모두 보존
+        if dkey not in base_results:
+            base_results[dkey] = {
                 "base_key": base_key,
-                "label": f"{item_short[c1]}-{item_short[c2]}-{item_short[c3]}-{item_short[c4]}",
+                "doran": res["doran"],
+                "pkg_label": res["pkg_label"],
+                "label": res["label"],
                 "x": res["x"],
                 "y": res["y"],
                 "is_control": tuple(sorted(base_key)) == control_combo_key,
@@ -799,7 +821,14 @@ if __name__ == "__main__":
     core_weights = [w / weight_sum for w in core_weight_raw]
 
     control_results = [r for r in base_results if r["is_control"]]
-    best_control = control_results[0]
+    # 컨트롤도 도란검/도란활 중 가중 DPG 최대를 baseline 으로
+    best_control = max(
+        control_results,
+        key=lambda r: sum(
+            core_weights[i] * (r["y"][i] / (r["x"][i] / 1000.0) if r["x"][i] > 0 else 0.0)
+            for i in range(4)
+        ),
+    )
     control_y1, control_y2, control_y3, control_y4 = best_control["y"]
     ctrl_cost1, ctrl_cost2, ctrl_cost3, ctrl_cost4 = best_control["x"]
     ctrl_dpg1 = control_y1 / (ctrl_cost1 / 1000.0) if ctrl_cost1 > 0 else 0.0

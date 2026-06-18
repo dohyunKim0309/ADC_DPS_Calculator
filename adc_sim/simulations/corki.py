@@ -68,6 +68,7 @@ def build_target_for_core(core_tier):
 # 윤탈 기본 crit: 과거 corki 는 0.05 였으나, 데미지 경로는 항상 명시적 crit 을 전달하므로
 # 통합 기본값(0.25)으로 합쳐도 결과 불변(검증됨).
 from adc_sim.data.items_registry import create_item_from_key
+from adc_sim.data.items_data import DORAN_OPTIONS, DORAN_SHORT
 
 
 def short_name(item_key):
@@ -113,7 +114,7 @@ def rune_short(rune_key):
     return rune_key
 
 
-def simulate_corki_core_path(full_path, shoe_key, rune_key, core_tier, include_w=True):
+def simulate_corki_core_path(full_path, shoe_key, rune_key, core_tier, include_w=True, doran_key=None):
     """Simulate Corki DPS and total gold for the configured shoe/rune/path."""
     target = build_target_for_core(core_tier)
     level_cfg = CORE_LEVELS[core_tier]
@@ -128,7 +129,8 @@ def simulate_corki_core_path(full_path, shoe_key, rune_key, core_tier, include_w
     corki.set_rune(create_rune_from_key(rune_key))
     corki.set_sub_rune(CutDown())
 
-    items = [create_item_from_key(shoe_key)]
+    doran_items = [create_item_from_key(doran_key)] if doran_key else []
+    items = doran_items + [create_item_from_key(shoe_key)]
     for idx, key in enumerate(full_path[:core_tier], start=1):
         if key == "yuntal":
             # 윤탈 규칙:
@@ -200,60 +202,65 @@ def get_corki_4core_top1_build():
     results = []
     sim_cache = {}
 
-    def sim_cached(path, shoe, rune_key, core_tier):
-        key = (tuple(path[:core_tier]), shoe, rune_key, core_tier)
+    def sim_cached(path, shoe, rune_key, core_tier, doran):
+        key = (tuple(path[:core_tier]), shoe, rune_key, core_tier, doran)
         if key not in sim_cache:
-            sim_cache[key] = simulate_corki_core_path(path, shoe, rune_key, core_tier)
+            sim_cache[key] = simulate_corki_core_path(path, shoe, rune_key, core_tier, include_w=False, doran_key=doran)
         return sim_cache[key]
 
     for rune_key in rune_candidates:
         for shoe in shoe_candidates:
-            for c1 in core12_candidates:
-                for c2 in core12_candidates:
-                    if c1 == c2:
-                        continue
-                    if {"trinity", "essence"} == {c1, c2}:
-                        continue
-                    for c3 in core3_candidates:
-                        if c3 in (c1, c2):
+            for doran in DORAN_OPTIONS:
+                for c1 in core12_candidates:
+                    for c2 in core12_candidates:
+                        if c1 == c2:
                             continue
-                        for c4 in core4_candidates:
-                            if c4 in (c1, c2, c3):
+                        if {"trinity", "essence"} == {c1, c2}:
+                            continue
+                        for c3 in core3_candidates:
+                            if c3 in (c1, c2):
                                 continue
-                            if "trinity" in (c1, c2, c3, c4) and "essence" in (c1, c2, c3, c4):
-                                continue
-                            pen_count = sum(1 for k in (c1, c2, c3, c4) if k in pen_exclusive)
-                            if pen_count > 1:
-                                continue
+                            for c4 in core4_candidates:
+                                if c4 in (c1, c2, c3):
+                                    continue
+                                if "trinity" in (c1, c2, c3, c4) and "essence" in (c1, c2, c3, c4):
+                                    continue
+                                pen_count = sum(1 for k in (c1, c2, c3, c4) if k in pen_exclusive)
+                                if pen_count > 1:
+                                    continue
 
-                            path = (c1, c2, c3, c4)
-                            dps1, cost1 = sim_cached(path, shoe, rune_key, 1)
-                            dps2, cost2 = sim_cached(path, shoe, rune_key, 2)
-                            dps3, cost3 = sim_cached(path, shoe, rune_key, 3)
-                            dps4, cost4 = sim_cached(path, shoe, rune_key, 4)
+                                path = (c1, c2, c3, c4)
+                                dps1, cost1 = sim_cached(path, shoe, rune_key, 1, doran)
+                                dps2, cost2 = sim_cached(path, shoe, rune_key, 2, doran)
+                                dps3, cost3 = sim_cached(path, shoe, rune_key, 3, doran)
+                                dps4, cost4 = sim_cached(path, shoe, rune_key, 4, doran)
 
-                            dpg1 = dps1 / (cost1 / 1000.0) if cost1 > 0 else 0.0
-                            dpg2 = dps2 / (cost2 / 1000.0) if cost2 > 0 else 0.0
-                            dpg3 = dps3 / (cost3 / 1000.0) if cost3 > 0 else 0.0
-                            dpg4 = dps4 / (cost4 / 1000.0) if cost4 > 0 else 0.0
+                                dpg1 = dps1 / (cost1 / 1000.0) if cost1 > 0 else 0.0
+                                dpg2 = dps2 / (cost2 / 1000.0) if cost2 > 0 else 0.0
+                                dpg3 = dps3 / (cost3 / 1000.0) if cost3 > 0 else 0.0
+                                dpg4 = dps4 / (cost4 / 1000.0) if cost4 > 0 else 0.0
 
-                            results.append({
-                                "path": path,
-                                "shoe": shoe,
-                                "rune": rune_key,
-                                "dps": [dps1, dps2, dps3, dps4],
-                                "cost": [cost1, cost2, cost3, cost4],
-                                "dpg": [dpg1, dpg2, dpg3, dpg4],
-                                "is_control": (path == control_path and shoe == control_shoe and rune_key == control_rune),
-                            })
+                                results.append({
+                                    "path": path,
+                                    "shoe": shoe,
+                                    "rune": rune_key,
+                                    "doran": doran,
+                                    "dps": [dps1, dps2, dps3, dps4],
+                                    "cost": [cost1, cost2, cost3, cost4],
+                                    "dpg": [dpg1, dpg2, dpg3, dpg4],
+                                    "is_control": (path == control_path and shoe == control_shoe and rune_key == control_rune),
+                                })
 
-    control_row = next((r for r in results if r["is_control"]), None)
-    if control_row is None:
-        raise RuntimeError("Control build not found for Corki 4-core ranking.")
-
-    ctrl = control_row["dpg"]
     w = [5.0, 4.0, 3.0, 3.0]
     wsum = sum(w)
+
+    # 컨트롤도 도란검/도란활 중 가중 DPG 최대를 baseline 으로
+    control_candidates = [r for r in results if r["is_control"]]
+    if not control_candidates:
+        raise RuntimeError("Control build not found for Corki 4-core ranking.")
+    control_row = max(control_candidates, key=lambda r: sum(w[i] * r["dpg"][i] for i in range(4)))
+
+    ctrl = control_row["dpg"]
     for r in results:
         rel = []
         for i in range(4):
@@ -313,44 +320,52 @@ if __name__ == "__main__":
                             if pen_count > 1:
                                 continue
 
-                            path = (c1, c2, c3, c4)
-                            dps1, cost1 = simulate_corki_core_path(path, shoe, rune_key, 1)
-                            dps2, cost2 = simulate_corki_core_path(path, shoe, rune_key, 2)
-                            dps3, cost3 = simulate_corki_core_path(path, shoe, rune_key, 3)
-                            dps4, cost4 = simulate_corki_core_path(path, shoe, rune_key, 4)
+                            for doran in DORAN_OPTIONS:
+                                path = (c1, c2, c3, c4)
+                                # W(발키리)는 즉발 5틱 버스트가 kill_time 기반 DPS를 왜곡(3C<2C)시켜 랭킹에서 제외
+                                dps1, cost1 = simulate_corki_core_path(path, shoe, rune_key, 1, include_w=False, doran_key=doran)
+                                dps2, cost2 = simulate_corki_core_path(path, shoe, rune_key, 2, include_w=False, doran_key=doran)
+                                dps3, cost3 = simulate_corki_core_path(path, shoe, rune_key, 3, include_w=False, doran_key=doran)
+                                dps4, cost4 = simulate_corki_core_path(path, shoe, rune_key, 4, include_w=False, doran_key=doran)
 
-                            label = (
-                                f"{short_name(c1)}-{short_name(c2)}-{short_name(c3)}-{short_name(c4)}-"
-                                f"{short_name(shoe)}-{rune_short(rune_key)}"
-                            )
-                            is_control = (
-                                path == control_path and shoe == control_shoe and rune_key == control_rune
-                            )
+                                label = (
+                                    f"{short_name(c1)}-{short_name(c2)}-{short_name(c3)}-{short_name(c4)}-"
+                                    f"{short_name(shoe)}-{rune_short(rune_key)} [{DORAN_SHORT[doran]}]"
+                                )
+                                is_control = (
+                                    path == control_path and shoe == control_shoe and rune_key == control_rune
+                                )
 
-                            dpg1 = dps1 / (cost1 / 1000.0) if cost1 > 0 else 0.0
-                            dpg2 = dps2 / (cost2 / 1000.0) if cost2 > 0 else 0.0
-                            dpg3 = dps3 / (cost3 / 1000.0) if cost3 > 0 else 0.0
-                            dpg4 = dps4 / (cost4 / 1000.0) if cost4 > 0 else 0.0
+                                dpg1 = dps1 / (cost1 / 1000.0) if cost1 > 0 else 0.0
+                                dpg2 = dps2 / (cost2 / 1000.0) if cost2 > 0 else 0.0
+                                dpg3 = dps3 / (cost3 / 1000.0) if cost3 > 0 else 0.0
+                                dpg4 = dps4 / (cost4 / 1000.0) if cost4 > 0 else 0.0
 
-                            results.append({
-                                "path": path,
-                                "shoe": shoe,
-                                "rune": rune_key,
-                                "label": label,
-                                "x": [cost1, cost2, cost3, cost4],
-                                "y": [dps1, dps2, dps3, dps4],
-                                "dpg": [dpg1, dpg2, dpg3, dpg4],
-                                "is_control": is_control,
-                            })
-
-    control_row = next((r for r in results if r["is_control"]), None)
-    if control_row is None:
-        raise RuntimeError("Control build not found.")
-
-    ctrl_dpg1, ctrl_dpg2, ctrl_dpg3, ctrl_dpg4 = control_row["dpg"]
+                                results.append({
+                                    "path": path,
+                                    "shoe": shoe,
+                                    "rune": rune_key,
+                                    "doran": doran,
+                                    "label": label,
+                                    "x": [cost1, cost2, cost3, cost4],
+                                    "y": [dps1, dps2, dps3, dps4],
+                                    "dpg": [dpg1, dpg2, dpg3, dpg4],
+                                    "is_control": is_control,
+                                })
 
     w1, w2, w3, w4 = 5.0, 4.0, 3.0, 3.0
     wsum = w1 + w2 + w3 + w4
+
+    # 컨트롤도 도란검/도란활 중 가중 DPG 최대를 baseline 으로
+    control_candidates = [r for r in results if r["is_control"]]
+    if not control_candidates:
+        raise RuntimeError("Control build not found.")
+    control_row = max(
+        control_candidates,
+        key=lambda r: (w1 * r["dpg"][0] + w2 * r["dpg"][1] + w3 * r["dpg"][2] + w4 * r["dpg"][3]),
+    )
+
+    ctrl_dpg1, ctrl_dpg2, ctrl_dpg3, ctrl_dpg4 = control_row["dpg"]
 
     for r in results:
         rel1 = ((r["dpg"][0] / ctrl_dpg1) * 100.0 - 100.0) if ctrl_dpg1 > 0 else 0.0

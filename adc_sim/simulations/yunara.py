@@ -10,6 +10,7 @@ from adc_sim.simulations.ashe import (
     _build_ashe_4core_all_paths,
     build_ashe_like_core_report_meta,
 )
+from adc_sim.data.items_data import DORAN_OPTIONS, DORAN_SHORT, ADC_PACKAGES
 
 
 ITEM_SHORT = {
@@ -47,13 +48,17 @@ def _calculate_dpg_values(dps_values, gold_values):
     ]
 
 
-def _build_yunara_result_entry(path, dps_values, gold_values):
+def _build_yunara_result_entry(path, dps_values, gold_values, pkg):
     """Build a serializable ranking entry before control-relative scoring."""
     meta = build_ashe_like_core_report_meta("Yunara", path, 4)
     is_control = tuple(sorted(path)) == CONTROL_COMBO
     return {
         "path": tuple(path),
-        "label": _path_label(path),
+        "doran": pkg["doran"],
+        "boots": pkg["boots"],
+        "rune_as": pkg["rune_as"],
+        "pkg_label": pkg["label"],
+        "label": f"{_path_label(path)} [{pkg['label']}]",  # 라벨에 패키지 표기(표/그래프 전파)
         "x": list(gold_values),
         "y": list(dps_values),
         "path_meta": meta,
@@ -63,22 +68,32 @@ def _build_yunara_result_entry(path, dps_values, gold_values):
 
 
 def rank_yunara_4core_paths():
-    """Rank Yunara 4-core paths and keep the best order per 4-item set."""
+    """Rank Yunara 4-core paths and keep the best order per 4-item set.
+
+    각 경로를 정배 패키지 A/B 두 경우로 평가(2배)하고, 4아이템 집합당 최고 1개만 유지
+    → 빌드별 최적 패키지가 자동 선택된다. 컨트롤도 패키지 최적(가중 DPG 최대).
+    """
     all_paths = _build_ashe_4core_all_paths()
 
     results = []
     for c1, c2, c3, c4 in all_paths:
-        dps1, cost1 = simulate_yunara_core_path([c1], 1)
-        dps2, cost2 = simulate_yunara_core_path([c1, c2], 2)
-        dps3, cost3 = simulate_yunara_core_path([c1, c2, c3], 3)
-        dps4, cost4 = simulate_yunara_core_path([c1, c2, c3, c4], 4)
-        path = (c1, c2, c3, c4)
-        results.append(_build_yunara_result_entry(path, [dps1, dps2, dps3, dps4], [cost1, cost2, cost3, cost4]))
+        for pkg in ADC_PACKAGES:
+            kw = dict(doran_key=pkg["doran"], boots_key=pkg["boots"], rune_as_bonus=pkg["rune_as"])
+            dps1, cost1 = simulate_yunara_core_path([c1], 1, **kw)
+            dps2, cost2 = simulate_yunara_core_path([c1, c2], 2, **kw)
+            dps3, cost3 = simulate_yunara_core_path([c1, c2, c3], 3, **kw)
+            dps4, cost4 = simulate_yunara_core_path([c1, c2, c3, c4], 4, **kw)
+            path = (c1, c2, c3, c4)
+            results.append(_build_yunara_result_entry(path, [dps1, dps2, dps3, dps4], [cost1, cost2, cost3, cost4], pkg))
 
     control_candidates = [row for row in results if row["is_control"]]
     if not control_candidates:
         raise RuntimeError("Control build not found: Krk-PD-IE-LDR")
-    best_control = control_candidates[0]
+
+    def _weighted_dpg(row):
+        d = _calculate_dpg_values(row["y"], row["x"])
+        return sum(CORE_WEIGHTS[i] * d[i] for i in range(4))
+    best_control = max(control_candidates, key=_weighted_dpg)
     ctrl_dpg = _calculate_dpg_values(best_control["y"], best_control["x"])
 
     for row in results:
@@ -113,8 +128,13 @@ def get_yunara_4core_top1_build():
         top1 = ranked_data["ranked"][0]
         _YUNARA_4CORE_TOP1_CACHE = {
             "path": top1["path"],
+            "doran": top1["doran"],
+            "boots": top1["boots"],
+            "rune_as": top1["rune_as"],
+            "pkg_label": top1["pkg_label"],
             "score": top1["rel_dpg_score"],
             "control_path": ranked_data["best_control"]["path"],
+            "control_pkg": ranked_data["best_control"]["pkg_label"],
             "total_paths_tested": ranked_data["total_paths_simulated"],
             "label": top1["label"],
         }
