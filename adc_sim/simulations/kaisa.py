@@ -57,6 +57,7 @@ def build_target_for_core(core_tier):
 
 # 아이템 키 → 인스턴스 생성은 통합 레지스트리 사용 (스탯/가격은 adc_sim/data/items_data.py)
 from adc_sim.data.items_registry import create_item_from_key, get_item_ad_from_key
+from adc_sim.data.items_data import DORAN_OPTIONS, DORAN_SHORT, ADC_PACKAGES
 
 
 def get_yuntal_crit_for_tier(purchase_tier, current_tier):
@@ -70,8 +71,12 @@ def get_yuntal_crit_for_tier(purchase_tier, current_tier):
     return 0.25
 
 
-def simulate_kaisa_core_path(full_path, core_tier):
-    """Simulate Kai'Sa DPS, total gold, and W cast count for a core timing."""
+def simulate_kaisa_core_path(full_path, core_tier, doran_key=None, boots_key="berserker", rune_as_bonus=0.0):
+    """Simulate Kai'Sa DPS, total gold, and W cast count for a core timing.
+
+    doran_key: 시작 도란 아이템(검/활). None이면 미포함.
+    boots_key: 신발(기본 광전사). rune_as_bonus: 공속 룬(민첩함 등)의 평타 공속 가산(골드 무료).
+    """
     target = build_target_for_core(core_tier)
     level_cfg = CORE_LEVELS[core_tier]
     e_level_for_tier = get_e_level_for_core(core_tier)
@@ -87,7 +92,8 @@ def simulate_kaisa_core_path(full_path, core_tier):
 
     current_keys = list(full_path[:core_tier])
 
-    items = [BerserkerGreaves()]
+    doran_items = [create_item_from_key(doran_key)] if doran_key else []
+    items = doran_items + [create_item_from_key(boots_key)]
     for idx, key in enumerate(current_keys, start=1):
         if key == "yuntal":
             crit = get_yuntal_crit_for_tier(idx, core_tier)
@@ -99,6 +105,7 @@ def simulate_kaisa_core_path(full_path, core_tier):
     for item in items:
         total_cost += item.cost
         kaisa.add_item(item)
+    kaisa.bonus_as_percent += rune_as_bonus  # 공속 룬(민첩함): 골드 무료, 평타 공속 + E진화 판정에 반영
 
     # 진화 조건은 카이사 기본 규칙 사용:
     # Q: 보너스 AD >= 100, W: AP >= 100
@@ -206,32 +213,38 @@ def get_kaisa_4core_top1_build():
 
     rows = []
     for path in all_paths:
-        dps = []
-        costs = []
-        for tier in range(1, 5):
-            d, c, _w = simulate_kaisa_core_path(path, tier)
-            dps.append(d)
-            costs.append(c)
-        dpg = [dps[i] / (costs[i] / 1000.0) if costs[i] > 0 else 0.0 for i in range(4)]
-        combo4 = tuple(sorted(path))
-        control_label = ""
-        if combo4 == ctrl1_core4_combo:
-            control_label = "CTRL 1"
-        elif combo4 == ctrl2_core4_combo:
-            control_label = "CTRL 2"
-        rows.append({
-            "path": path,
-            "x": costs,
-            "y": dps,
-            "dpg": dpg,
-            "is_control": bool(control_label),
-            "control_label": control_label,
-        })
+        for pkg in ADC_PACKAGES:
+            kw = dict(doran_key=pkg["doran"], boots_key=pkg["boots"], rune_as_bonus=pkg["rune_as"])
+            dps = []
+            costs = []
+            for tier in range(1, 5):
+                d, c, _w = simulate_kaisa_core_path(path, tier, **kw)
+                dps.append(d)
+                costs.append(c)
+            dpg = [dps[i] / (costs[i] / 1000.0) if costs[i] > 0 else 0.0 for i in range(4)]
+            combo4 = tuple(sorted(path))
+            control_label = ""
+            if combo4 == ctrl1_core4_combo:
+                control_label = "CTRL 1"
+            elif combo4 == ctrl2_core4_combo:
+                control_label = "CTRL 2"
+            rows.append({
+                "path": path,
+                "doran": pkg["doran"],
+                "boots": pkg["boots"],
+                "rune_as": pkg["rune_as"],
+                "pkg_label": pkg["label"],
+                "x": costs,
+                "y": dps,
+                "dpg": dpg,
+                "is_control": bool(control_label),
+                "control_label": control_label,
+            })
 
     # main script와 동일한 4코어 중복 규칙 (윤탈 위치 민감)
-    dedupe_weight_raw = [5.0, 3.0, 2.0, 2.0]
+    dedupe_weight_raw = [5.0, 4.0, 3.0, 3.0]
     for r in rows:
-        r["dedupe_eff_5322"] = sum(dedupe_weight_raw[i] * r["dpg"][i] for i in range(4))
+        r["dedupe_eff"] = sum(dedupe_weight_raw[i] * r["dpg"][i] for i in range(4))
 
     dedupe_best_by_key = {}
     for r in rows:
@@ -243,12 +256,12 @@ def get_kaisa_4core_top1_build():
         else:
             dedupe_key = ("no_yuntal", tuple(sorted(core4)))
         prev = dedupe_best_by_key.get(dedupe_key)
-        if prev is None or r["dedupe_eff_5322"] > prev["dedupe_eff_5322"]:
+        if prev is None or r["dedupe_eff"] > prev["dedupe_eff"]:
             dedupe_best_by_key[dedupe_key] = r
     rows_dedup = list(dedupe_best_by_key.values())
 
-    # baseline control (weighted DPG 5:3:2:2 최대)
-    core_weight_raw = [5.0, 3.0, 2.0, 2.0]
+    # baseline control (weighted DPG 5:4:3:3 최대)
+    core_weight_raw = [5.0, 4.0, 3.0, 3.0]
     weight_sum = sum(core_weight_raw)
     core_weights = [w / weight_sum for w in core_weight_raw]
     for r in rows_dedup:
@@ -266,19 +279,26 @@ def get_kaisa_4core_top1_build():
     baseline_dpg_4 = best_control["dpg"][:4]
 
     for r in rows_dedup:
-        core_rel_delta_pct = []
+        # Ashe/Yunara/Corki 와 동일 스케일의 점수: 컨트롤 대비 가중 DPG 비율(×100).
+        # (기존 rep_score = rel_dpg_score - 100 이었으므로 정렬 순서는 동일, 표기 스케일만 통일)
+        core_rel_pct = []
         for i in range(4):
             base = baseline_dpg_4[i]
             ratio_pct = ((r["dpg"][i] / base) * 100.0) if base > 0 else 0.0
-            core_rel_delta_pct.append(ratio_pct - 100.0)
-        r["rep_score"] = sum(core_weights[i] * core_rel_delta_pct[i] for i in range(4))
+            core_rel_pct.append(ratio_pct)
+        r["rel_dpg_score"] = sum(core_weights[i] * core_rel_pct[i] for i in range(4))
 
-    ranked = sorted(rows_dedup, key=lambda r: r["rep_score"], reverse=True)
+    ranked = sorted(rows_dedup, key=lambda r: r["rel_dpg_score"], reverse=True)
     top1 = ranked[0]
     _KAISA_4CORE_TOP1_CACHE = {
         "path": top1["path"],
-        "score": top1["rep_score"],
+        "doran": top1["doran"],
+        "boots": top1["boots"],
+        "rune_as": top1["rune_as"],
+        "pkg_label": top1["pkg_label"],
+        "score": top1["rel_dpg_score"],
         "control_path": best_control["path"],
+        "control_pkg": best_control["pkg_label"],
         "total_paths_tested": len(all_paths),
     }
     return _KAISA_4CORE_TOP1_CACHE
@@ -356,37 +376,46 @@ if __name__ == "__main__":
 
     results = []
     for path in all_paths:
-        dps1, cost1, w1 = simulate_kaisa_core_path(path, 1)
-        dps2, cost2, w2 = simulate_kaisa_core_path(path, 2)
-        dps3, cost3, w3 = simulate_kaisa_core_path(path, 3)
-        dps4, cost4, w4 = simulate_kaisa_core_path(path, 4)
-        dps5, cost5, w5 = simulate_kaisa_core_path(path, 5)
+        for pkg in ADC_PACKAGES:
+            kw = dict(doran_key=pkg["doran"], boots_key=pkg["boots"], rune_as_bonus=pkg["rune_as"])
+            dps1, cost1, w1 = simulate_kaisa_core_path(path, 1, **kw)
+            dps2, cost2, w2 = simulate_kaisa_core_path(path, 2, **kw)
+            dps3, cost3, w3 = simulate_kaisa_core_path(path, 3, **kw)
+            dps4, cost4, w4 = simulate_kaisa_core_path(path, 4, **kw)
+            dps5, cost5, w5 = simulate_kaisa_core_path(path, 5, **kw)
 
-        combo_key = tuple(sorted(path))
-        combo_key_4 = tuple(sorted(path[:4]))
-        label = f"{item_short[path[0]]}-{item_short[path[1]]}-{item_short[path[2]]}-{item_short[path[3]]}-{item_short[path[4]]}"
-        control_label = ""
-        if combo_key_4 == ctrl1_core4_combo:
-            control_label = "CTRL 1"
-        elif combo_key_4 == ctrl2_core4_combo:
-            control_label = "CTRL 2"
+            combo_key = tuple(sorted(path))
+            combo_key_4 = tuple(sorted(path[:4]))
+            label = (
+                f"{item_short[path[0]]}-{item_short[path[1]]}-{item_short[path[2]]}-"
+                f"{item_short[path[3]]}-{item_short[path[4]]} [{pkg['label']}]"
+            )
+            control_label = ""
+            if combo_key_4 == ctrl1_core4_combo:
+                control_label = "CTRL 1"
+            elif combo_key_4 == ctrl2_core4_combo:
+                control_label = "CTRL 2"
 
-        results.append({
-            "path": path,
-            "combo_key": combo_key,
-            "combo_key_4": combo_key_4,
-            "label": label,
-            "x": [cost1, cost2, cost3, cost4, cost5],
-            "y": [dps1, dps2, dps3, dps4, dps5],
-            "w": [w1, w2, w3, w4, w5],
-            "is_control": control_label != "",
-            "control_label": control_label,
-        })
+            results.append({
+                "path": path,
+                "doran": pkg["doran"],
+                "boots": pkg["boots"],
+                "rune_as": pkg["rune_as"],
+                "pkg_label": pkg["label"],
+                "combo_key": combo_key,
+                "combo_key_4": combo_key_4,
+                "label": label,
+                "x": [cost1, cost2, cost3, cost4, cost5],
+                "y": [dps1, dps2, dps3, dps4, dps5],
+                "w": [w1, w2, w3, w4, w5],
+                "is_control": control_label != "",
+                "control_label": control_label,
+            })
 
     # 중복 조합 처리 규칙(4코어 평가 기준)
     # 1) 윤탈 포함 + 윤탈 위치가 다르면 서로 다른 빌드로 취급
-    # 2) 1이 아니면서 조합이 같고 순서만 다르면, 5:3:2:2 효율 최고 1개만 유지
-    dedupe_weight_raw = [5.0, 3.0, 2.0, 2.0]
+    # 2) 1이 아니면서 조합이 같고 순서만 다르면, 5:4:3:3 효율 최고 1개만 유지
+    dedupe_weight_raw = [5.0, 4.0, 3.0, 3.0]
 
     for r in results:
         dpg = []
@@ -395,7 +424,7 @@ if __name__ == "__main__":
             dps = r["y"][i]
             dpg.append(dps / (cost / 1000.0) if cost > 0 else 0.0)
         r["dpg"] = dpg
-        r["dedupe_eff_5322"] = sum(dedupe_weight_raw[i] * dpg[i] for i in range(4))
+        r["dedupe_eff"] = sum(dedupe_weight_raw[i] * dpg[i] for i in range(4))
 
     def dedupe_rows(rows):
         dedupe_best_by_key = {}
@@ -410,7 +439,7 @@ if __name__ == "__main__":
                 dedupe_key = ("no_yuntal", tuple(sorted(core4)))
 
             prev = dedupe_best_by_key.get(dedupe_key)
-            if prev is None or r["dedupe_eff_5322"] > prev["dedupe_eff_5322"]:
+            if prev is None or r["dedupe_eff"] > prev["dedupe_eff"]:
                 dedupe_best_by_key[dedupe_key] = r
         return list(dedupe_best_by_key.values())
 
@@ -420,7 +449,7 @@ if __name__ == "__main__":
 
     print(
         "\nPower Spike Paths Used "
-        f"({len(results)} total, yuntal-position-sensitive + no-yuntal best-order-by-5:3:2:2)"
+        f"({len(results)} total, yuntal-position-sensitive + no-yuntal best-order-by-5:4:3:3)"
     )
     for idx, r in enumerate(results, start=1):
         c1, c2, c3, c4, c5 = r["path"]
@@ -428,8 +457,8 @@ if __name__ == "__main__":
 
     # 랭킹 기준:
     # 대조군 중 최강 빌드의 코어별 DPS/1000g를 baseline으로 두고,
-    # 각 빌드의 상대 비율(부호 있는 %)을 5:3:2:2 가중 평균한 값(%)
-    core_weight_raw = [5.0, 3.0, 2.0, 2.0]
+    # 각 빌드의 상대 비율(부호 있는 %)을 5:4:3:3 가중 평균한 값(%)
+    core_weight_raw = [5.0, 4.0, 3.0, 3.0]
     weight_sum = sum(core_weight_raw)
     core_weights = [w / weight_sum for w in core_weight_raw]
 
@@ -464,7 +493,9 @@ if __name__ == "__main__":
             ratio_pct = ((r["dpg"][i] / base) * 100.0) if base > 0 else 0.0
             core_rel_delta_pct.append(ratio_pct - 100.0)
         r["core_rel_delta_pct_4"] = core_rel_delta_pct
-        r["rep_score"] = sum(core_weights[i] * core_rel_delta_pct[i] for i in range(4))
+        # rel_dpg_score: 컨트롤 대비 가중 DPG 비율(×100) — Ashe/Yunara/Corki 와 동일 스케일.
+        # core_rel_delta_pct(코어별 +X% delta)는 표의 per-core 열에 그대로 사용.
+        r["rel_dpg_score"] = sum(core_weights[i] * core_rel_delta_pct[i] for i in range(4)) + 100.0
 
     # 4코어 대표 빌드마다 5코어 후보 상위 2개를 구성
     rows_by_core4 = {}
@@ -502,7 +533,7 @@ if __name__ == "__main__":
                 break
         r["top5_options"] = top2
 
-    ranked = sorted(results, key=lambda r: r["rep_score"], reverse=True)
+    ranked = sorted(results, key=lambda r: r["rel_dpg_score"], reverse=True)
     ranked_main = ranked
     control_build_text = {
         "CTRL 1": "Krk-Gui-Nashor-Terminus",
@@ -516,7 +547,8 @@ if __name__ == "__main__":
 
     def fmt_build4(r):
         p = r["path"]
-        return f"{item_short[p[0]]}-{item_short[p[1]]}-{item_short[p[2]]}-{item_short[p[3]]}"
+        pkg_tag = f" [{r['pkg_label']}]" if r.get("pkg_label") else ""
+        return f"{item_short[p[0]]}-{item_short[p[1]]}-{item_short[p[2]]}-{item_short[p[3]]}{pkg_tag}"
 
     def fmt_core_cell(y, d):
         return f"{y:.1f}/{d:+.1f}%"
@@ -564,7 +596,7 @@ if __name__ == "__main__":
 
     print(
         f"\nTop {len(output_rows)} Rows: Top {top_n} + All Controls "
-        f"(Rep Score: weighted avg of core (DPG ratio% - 100), 5:3:2:2)"
+        f"(Rel DPG Score: control 대비 코어별 DPG 비율(×100) 가중 평균, 5:4:3:3)"
     )
     col_build = 34
     col_ctrl = 24
@@ -574,12 +606,12 @@ if __name__ == "__main__":
     header_main = (
         f"{'RK':>3} | {'BUILD(4C)':<{col_build}} | {'CONTROL':<{col_ctrl}} | "
         f"{'1C DPS/ΔDPG%':>{col_core}} | {'2C DPS/ΔDPG%':>{col_core}} | {'3C DPS/ΔDPG%':>{col_core}} | {'4C DPS/ΔDPG%':>{col_core}} | "
-        f"{'5C OPT1 (DPS/Δ%)':>{col_opt}} | {'5C OPT2 (DPS/Δ%)':>{col_opt}} | {'REP%':>{col_rep}}"
+        f"{'5C OPT1 (DPS/Δ%)':>{col_opt}} | {'5C OPT2 (DPS/Δ%)':>{col_opt}} | {'RelDPG':>{col_rep}}"
     )
     header_sub = (
         f"{'RK':>3} | {'BUILD(4C)':<{col_build}} | {'CONTROL':<{col_ctrl}} | "
         f"{'1C DPS/ΔDPG%':>{col_core}} | {'2C DPS/ΔDPG%':>{col_core}} | {'3C DPS/ΔDPG%':>{col_core}} | {'4C DPS/ΔDPG%':>{col_core}} | "
-        f"{'REP%':>{col_rep}}"
+        f"{'RelDPG':>{col_rep}}"
     )
     print(header_main)
     print("-" * len(header_main))
@@ -604,7 +636,7 @@ if __name__ == "__main__":
             f"{rank:>3} | {label:<{col_build}} | {ctrl_txt:<{col_ctrl}} | "
             f"{c1v:>{col_core}} | {c2v:>{col_core}} | {c3v:>{col_core}} | {c4v:>{col_core}} | "
             f"{trim_text(c5a, col_opt):>{col_opt}} | {trim_text(c5b, col_opt):>{col_opt}} | "
-            f"{r['rep_score']:>{col_rep}.2f}"
+            f"{r['rel_dpg_score']:>{col_rep}.2f}"
         )
 
     # 요청 빌드 확인: Yun-Gui-IE-LDR에서 5코어 Nashor도 별도 출력(상위 2옵션 여부와 무관)
@@ -639,7 +671,7 @@ if __name__ == "__main__":
             f"1C {y1:.1f}/{d1:+.1f}% | 2C {y2:.1f}/{d2:+.1f}% | "
             f"3C {y3:.1f}/{d3:+.1f}% | 4C {y4:.1f}/{d4:+.1f}% | "
             f"5C Nashor {y5:.1f}@{c5} (DPG {dpg5:.2f}, ΔvsCtrl5 {delta5:+.1f}%) | "
-            f"REP {requested_nashor_row['rep_score']:.2f}"
+            f"RelDPG {requested_nashor_row['rel_dpg_score']:.2f}"
         )
 
     # 별도 표: 4코어 시점 W 진화 가능한 빌드(AP 100+ 또는 400g AP 보조템으로 도달 가능)
@@ -647,7 +679,7 @@ if __name__ == "__main__":
     if w_evo_rows:
         w_top_n = min(30, len(w_evo_rows))
         print(
-            f"\nW-Evolved at 4-Core Ranking (Top {w_top_n}, AP>=100 at 4C or +400g AP component, same REP metric)"
+            f"\nW-Evolved at 4-Core Ranking (Top {w_top_n}, AP>=100 at 4C or +400g AP component, same RelDPG metric)"
         )
         print(header_sub)
         print("-" * len(header_sub))
@@ -663,7 +695,7 @@ if __name__ == "__main__":
             print(
                 f"{rank:>3} | {label:<{col_build}} | {ctrl_txt:<{col_ctrl}} | "
                 f"{c1v:>{col_core}} | {c2v:>{col_core}} | {c3v:>{col_core}} | {c4v:>{col_core}} | "
-                f"{r['rep_score']:>{col_rep}.2f}"
+                f"{r['rel_dpg_score']:>{col_rep}.2f}"
             )
 
     # 별도 표: 1코어 크라켄 고정 랭킹 (그래프 없음)
@@ -671,7 +703,7 @@ if __name__ == "__main__":
     if kraken_rows:
         kraken_top_n = min(30, len(kraken_rows))
         print(
-            f"\nKraken-First Ranking (Top {kraken_top_n}, no graph, same REP metric)"
+            f"\nKraken-First Ranking (Top {kraken_top_n}, no graph, same RelDPG metric)"
         )
         print(header_sub)
         print("-" * len(header_sub))
@@ -687,17 +719,17 @@ if __name__ == "__main__":
             print(
                 f"{rank:>3} | {label:<{col_build}} | {ctrl_txt:<{col_ctrl}} | "
                 f"{c1v:>{col_core}} | {c2v:>{col_core}} | {c3v:>{col_core}} | {c4v:>{col_core}} | "
-                f"{r['rep_score']:>{col_rep}.2f}"
+                f"{r['rel_dpg_score']:>{col_rep}.2f}"
             )
 
     # 별도 표: 유령무희가 2코어 또는 3코어에 포함된 빌드
     # PD 2/3코어 표는 "PD 2/3 포함 후보를 먼저 만든 뒤" 그 집합 내부에서 중복 제거
     pd_23_pool = [r for r in all_results if (r["path"][1] == "pd" or r["path"][2] == "pd")]
-    pd_23_rows = sorted(dedupe_rows(pd_23_pool), key=lambda r: r["rep_score"], reverse=True)
+    pd_23_rows = sorted(dedupe_rows(pd_23_pool), key=lambda r: r["rel_dpg_score"], reverse=True)
     if pd_23_rows:
         pd_top_n = min(30, len(pd_23_rows))
         print(
-            f"\nPD in Core2/Core3 Ranking (Top {pd_top_n}, no graph, same REP metric)"
+            f"\nPD in Core2/Core3 Ranking (Top {pd_top_n}, no graph, same RelDPG metric)"
         )
         print(header_sub)
         print("-" * len(header_sub))
@@ -713,7 +745,7 @@ if __name__ == "__main__":
             print(
                 f"{rank:>3} | {label:<{col_build}} | {ctrl_txt:<{col_ctrl}} | "
                 f"{c1v:>{col_core}} | {c2v:>{col_core}} | {c3v:>{col_core}} | {c4v:>{col_core}} | "
-                f"{r['rep_score']:>{col_rep}.2f}"
+                f"{r['rel_dpg_score']:>{col_rep}.2f}"
             )
 
     # 그래프: 4코어 기준 상위 5개 + 대조군 2개, 각 빌드의 5코어 상위 2옵션 분기
@@ -722,7 +754,7 @@ if __name__ == "__main__":
     control_best_by_label = {}
     for r in control_results:
         key = r["control_label"]
-        if key not in control_best_by_label or r["rep_score"] > control_best_by_label[key]["rep_score"]:
+        if key not in control_best_by_label or r["rel_dpg_score"] > control_best_by_label[key]["rel_dpg_score"]:
             control_best_by_label[key] = r
     graph_controls = list(control_best_by_label.values())
 
@@ -750,7 +782,7 @@ if __name__ == "__main__":
             plt.plot(
                 x4, y4,
                 color=color, linewidth=2.4, marker="D", markersize=6,
-                label=f"Top{i+1} {r['label']} (Rep {r['rep_score']:.2f}%)"
+                label=f"Top{i+1} {r['label']} (RelDPG {r['rel_dpg_score']:.2f})"
             )
             collect_dps_labels(x4, y4, color=color, series_name=f"Top{i+1}", option_idx=0)
             continue
@@ -765,7 +797,7 @@ if __name__ == "__main__":
             plt.plot(
                 xs, ys,
                 color=color, linewidth=2.2, marker=marker, markersize=6, linestyle=ls, alpha=alpha,
-                label=f"Top{i+1} {label4}+{item_short[o['item']]} (Rep {r['rep_score']:.2f}%)"
+                label=f"Top{i+1} {label4}+{item_short[o['item']]} (RelDPG {r['rel_dpg_score']:.2f})"
             )
             collect_dps_labels(xs, ys, color=color, series_name=f"Top{i+1}", option_idx=oi)
 
@@ -780,7 +812,7 @@ if __name__ == "__main__":
             plt.plot(
                 x4, y4,
                 color=color, linewidth=2.8, marker="o", markersize=7, linestyle="--",
-                label=f"{r['control_label']}({ctrl_desc}) {r['label']} (Rep {r['rep_score']:.2f}%)"
+                label=f"{r['control_label']}({ctrl_desc}) {r['label']} (RelDPG {r['rel_dpg_score']:.2f})"
             )
             collect_dps_labels(x4, y4, color=color, series_name=r["control_label"], option_idx=0)
             continue
@@ -793,7 +825,7 @@ if __name__ == "__main__":
             plt.plot(
                 xs, ys,
                 color=color, linewidth=2.6, marker="o", markersize=7, linestyle=ls, alpha=alpha,
-                label=f"{r['control_label']}({ctrl_desc}) +{item_short[o['item']]} (Rep {r['rep_score']:.2f}%)"
+                label=f"{r['control_label']}({ctrl_desc}) +{item_short[o['item']]} (RelDPG {r['rel_dpg_score']:.2f})"
             )
             collect_dps_labels(xs, ys, color=color, series_name=r["control_label"], option_idx=oi)
 
