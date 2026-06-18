@@ -19,6 +19,22 @@ STAT_KEYS = (
     "armor_pen_percent", "lethality", "magic_pen_flat", "cdr", "mana",
 )
 
+# 도란 시작 아이템 토글 — 최고 빌드 탐색 시 검/활 두 경우(2배)를 평가하고
+# 빌드별로 점수 높은 쪽을 고른다. 표/그래프 라벨에 DORAN_SHORT 로 표기.
+# (현재 Corki 만 이 자유 토글을 사용; Ashe/Yunara/KaiSa 는 ADC_PACKAGES 사용)
+DORAN_OPTIONS = ("doranblade", "doranbow")
+DORAN_SHORT = {"doranblade": "Blade", "doranbow": "Bow"}
+
+# ADC 시작 "정배" 패키지 — "피흡 + 최소 공속 확보" 가정 하의 두 조합.
+# 룬(핏빛길=피흡9% / 민첩함=공속18%)은 골드 무료. 엔진은 피흡을 무시하고 공속만 반영하므로:
+#   A = 도란검 + 광전사(공속신) + 핏빛길(피흡룬) → 피흡=룬, 공속=신발
+#   B = 도란활 + Gluttonous(피흡신) + 민첩함(공속룬) → 피흡=신발, 공속=도란활+룬
+# Ashe/Yunara/KaiSa 최고 빌드 탐색은 이 둘 중 빌드별 우수 패키지를 선택(2배 평가).
+ADC_PACKAGES = (
+    {"key": "A", "label": "Bld+Zerk", "doran": "doranblade", "boots": "berserker", "rune_as": 0.0},
+    {"key": "B", "label": "Bow+Glut", "doran": "doranbow",   "boots": "glutton",   "rune_as": 0.18},
+)
+
 ITEMS = {
     # key          name                            cost  behavior(=adc_sim.items 클래스)   stats
     "kraken":      {"name": "Kraken Slayer",            "cost": 3000, "behavior": "KrakenSlayer",        "stats": {"ad": 45, "as": 0.40}},
@@ -50,6 +66,9 @@ ITEMS = {
     "muramana":    {"name": "Muramana",                 "cost": 2900, "behavior": "Manamune",            "stats": {"ad": 35, "cdr": 15, "mana": 500}},
     "plated":      {"name": "Plated Steelcaps",         "cost": 1200, "behavior": "Plated_Steelcaps",    "stats": {}},
     "berserker":   {"name": "Berserker Greaves",        "cost": 1100, "behavior": "BerserkerGreaves",    "stats": {"as": 0.25}},
+    "glutton":     {"name": "Gluttonous Greaves",       "cost": 1000, "behavior": "GluttonousGreaves",   "stats": {}},
+    "doranblade":  {"name": "Doran's Blade",            "cost": 450,  "behavior": "Doranblade",          "stats": {"ad": 10}},
+    "doranbow":    {"name": "Doran's Bow",              "cost": 400,  "behavior": "DoransBow",           "stats": {"ad": 8, "as": 0.15}},
     "yuntal":      {"name": "Yun Tal Wildarrows",       "cost": 3100, "behavior": "YunTalWildarrows",    "stats": {"ad": 50, "as": 0.40}, "yuntal_default_crit": 0.25},
     "yuntal25":    {"name": "Yun Tal Wildarrows",       "cost": 3100, "behavior": "YunTalWildarrows",    "stats": {"ad": 50, "as": 0.40}, "yuntal_default_crit": 0.25},
 }

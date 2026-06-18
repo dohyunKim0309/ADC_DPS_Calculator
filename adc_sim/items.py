@@ -70,6 +70,13 @@ class Doranblade(Item):
         super().__init__('Doran Blade', ad=10, hp=80, omnivamp=0.025)
         self.cost = 450
 
+class DoransBow(Item):
+    def __init__(self):
+        # 스펙: AD 8, 공속 15%, 옴니뱀프 1.5% (옴니뱀프는 엔진 미사용)
+        # 스탯/가격의 단일 출처는 data/items_data.py
+        super().__init__("Doran's Bow", ad=8, as_percent=0.15, omnivamp=0.015)
+        self.cost = 400
+
 class DdongShin(Item):
     def __init__(self): 
         super().__init__('ddongshin', ms=25)
@@ -79,6 +86,13 @@ class BerserkerGreaves(Item):
     def __init__(self):
         super().__init__('Berserker Greaves', as_percent=0.25, ms=45)
         self.cost = 1100
+
+class GluttonousGreaves(Item):
+    def __init__(self):
+        # 스펙: 이속 45, 옴니뱀프 4% (둘 다 엔진 미사용 → DPS 기여 0)
+        # 처치 시 옴니뱀프 스택 패시브는 비전투/단일대상 DPS 모델과 무관해 미구현
+        super().__init__('Gluttonous Greaves', ms=45, omnivamp=0.04)
+        self.cost = 1000
 
 class IoniaGreaves(Item):
     def __init__(self):
