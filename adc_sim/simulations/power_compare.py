@@ -21,23 +21,36 @@ from adc_sim.simulations.corki import (
     get_corki_4core_top1_build,
     build_corki_core_report_meta,
 )
+from adc_sim.data.items_data import DORAN_SHORT
 
 
 def _simulate_compare_stat(champ_name, cfg, core_tier):
     """Simulate one champion at one core tier and return serializable stats."""
+    # Ashe/Yunara/KaiSa: 정배 패키지(A/B)로 도란+신발+공속룬을 함께 지정.
+    # Corki: 패키지 제약 없음 → 도란만(신발/룬은 cfg.shoe/rune 자유 탐색값).
+    pkg_kw = dict(
+        doran_key=cfg.get("doran", "doranblade"),
+        boots_key=cfg.get("boots", "berserker"),
+        rune_as_bonus=cfg.get("rune_as", 0.0),
+    )
     if champ_name == "Ashe":
-        dps, gold = simulate_ashe_core_path(cfg["path"][:core_tier], core_tier)
+        dps, gold = simulate_ashe_core_path(cfg["path"][:core_tier], core_tier, **pkg_kw)
         meta = build_ashe_like_core_report_meta("Ashe", cfg["path"], core_tier)
+        choice = cfg.get("pkg_label", "Bld+Zerk")
     elif champ_name == "Yunara":
-        dps, gold = simulate_yunara_core_path(cfg["path"], core_tier)
+        dps, gold = simulate_yunara_core_path(cfg["path"], core_tier, **pkg_kw)
         meta = build_ashe_like_core_report_meta("Yunara", cfg["path"], core_tier)
+        choice = cfg.get("pkg_label", "Bld+Zerk")
     elif champ_name == "KaiSa":
-        dps, gold, w_cast_count = simulate_kaisa_core_path(cfg["path"], core_tier)
+        dps, gold, w_cast_count = simulate_kaisa_core_path(cfg["path"], core_tier, **pkg_kw)
         meta = build_kaisa_core_report_meta(cfg["path"], core_tier, w_cast_count=w_cast_count)
+        choice = cfg.get("pkg_label", "Bld+Zerk")
     elif champ_name == "Corki":
         # 챔피언 간 비교에서는 코르키 W(발키리 트레일) 데미지 제외
-        dps, gold = simulate_corki_core_path(cfg["path"], cfg["shoe"], cfg["rune"], core_tier, include_w=False)
+        doran = cfg.get("doran", "doranblade")
+        dps, gold = simulate_corki_core_path(cfg["path"], cfg["shoe"], cfg["rune"], core_tier, include_w=False, doran_key=doran)
         meta = build_corki_core_report_meta(cfg["path"], cfg["shoe"], cfg["rune"], core_tier)
+        choice = DORAN_SHORT.get(doran, doran)
     else:
         raise ValueError(f"Unknown champion config: {champ_name}")
 
@@ -46,6 +59,7 @@ def _simulate_compare_stat(champ_name, cfg, core_tier):
         "dps": dps,
         "gold": gold,
         "dpg": dps / (gold / 1000.0) if gold > 0 else 0.0,
+        "choice": choice,
     })
     return meta
 
@@ -63,10 +77,11 @@ def _print_compare_section(title, configs):
     for row in rows:
         core = row["core"]
         stats = row["stats"]
-        winner = max(stats.items(), key=lambda kv: kv[1]["dps"])
-        print(f"[{core} Core] Winner: {winner[0]} ({winner[1]['dps']:.1f} DPS)")
-        for champ_name, value in sorted(stats.items(), key=lambda kv: kv[1]["dps"], reverse=True):
-            print(f"  - {champ_name:<6} DPS {value['dps']:.1f} | Gold {value['gold']} | DPG {value['dpg']:.2f}")
+        # 챔피언 간 순위 기준: DPG(1000골드당 DPS, 골드효율)
+        winner = max(stats.items(), key=lambda kv: kv[1]["dpg"])
+        print(f"[{core} Core] Winner: {winner[0]} ({winner[1]['dpg']:.2f} DPG)")
+        for champ_name, value in sorted(stats.items(), key=lambda kv: kv[1]["dpg"], reverse=True):
+            print(f"  - {champ_name:<6} DPG {value['dpg']:.2f} | DPS {value['dps']:.1f} | Gold {value['gold']} | Opt {value['choice']}")
         print()
     return rows
 
@@ -76,7 +91,7 @@ def _build_compare_export_rows(rows, variant):
     flat_rows = []
     summary_rows = []
     for row in rows:
-        winner = max(row["stats"].items(), key=lambda kv: kv[1]["dps"])[0]
+        winner = max(row["stats"].items(), key=lambda kv: kv[1]["dpg"])[0]
         summary_rows.append({"variant": variant, "core": row["core"], "winner": winner})
         for champ_name, stat in row["stats"].items():
             flat_rows.append({
@@ -95,6 +110,7 @@ def _build_compare_export_rows(rows, variant):
                 "w_evolved": stat.get("w_evolved"),
                 "shoe": stat.get("shoe"),
                 "rune": stat.get("rune"),
+                "choice": stat.get("choice"),
             })
     return flat_rows, summary_rows
 
@@ -117,6 +133,8 @@ def _plot_combined_compare(top1_rows, basic_rows):
         for champ in ("Ashe", "Yunara", "KaiSa", "Corki"):
             xs = [row["stats"][champ]["gold"] for row in rows]
             ys = [row["stats"][champ]["dps"] for row in rows]
+            # 선택된 옵션(패키지 A/B 또는 코르키 도란) — variant 내 챔프당 고정이라 첫 행에서 취득
+            choice = rows[0]["stats"][champ].get("choice", "") if rows else ""
             color = champ_colors[champ]
             plt.plot(
                 xs, ys,
@@ -126,7 +144,7 @@ def _plot_combined_compare(top1_rows, basic_rows):
                 markersize=5,
                 linewidth=2.2 if variant == "Top1" else 1.9,
                 alpha=alpha,
-                label=f"{champ} {variant}"
+                label=f"{champ} {variant} ({choice})"
             )
             for index in range(len(xs)):
                 xoff = 8 if variant == "Top1" else -30
@@ -238,31 +256,44 @@ def compare_builds():
     corki_shoe = corki_top1["shoe"]
     corki_rune = corki_top1["rune"]
 
+    corki_doran = DORAN_SHORT.get(corki_top1.get("doran"), "Blade")
+
     print("\n=== Cross-Champion Power Compare (1~4 Core) ===")
-    print("Configured Top1 builds:")
+    print("Configured Top1 builds (Ashe/Yunara/KaiSa: 정배 패키지 A=Bld+Zerk+핏빛길 / B=Bow+Glut+민첩함 중 최적):")
     print(
-        f"- Ashe   : {'-'.join(ashe_path)} + Berserker / LT+CutDown "
+        f"- Ashe   : [{ashe_top1.get('pkg_label','?')}] {'-'.join(ashe_path)} / LT+CutDown "
         f"(Top1 from simulation_ashe, score {ashe_top1['score']:.2f})"
     )
     print(
-        f"- Yunara : {'-'.join(yunara_path)} + Berserker / LT+CutDown (start Q active) "
+        f"- Yunara : [{yunara_top1.get('pkg_label','?')}] {'-'.join(yunara_path)} / LT+CutDown (start Q active) "
         f"(Top1 from simulation_yunara, score {yunara_top1['score']:.2f})"
     )
     print(
-        f"- KaiSa  : {'-'.join(kaisa_path)} + Berserker / LT+CutDown "
+        f"- KaiSa  : [{kaisa_top1.get('pkg_label','?')}] {'-'.join(kaisa_path)} / LT+CutDown "
         f"(Top1 from simulation_kaisa, score {kaisa_top1['score']:.2f}; current KaiSa skill plan)"
     )
     print(
-        f"- Corki  : {'-'.join(corki_path)} + {corki_shoe} / {corki_rune}+CutDown "
-        f"(Top1 from simulation_corki, score {corki_top1['score']:.2f})"
+        f"- Corki  : Doran's {corki_doran} + {'-'.join(corki_path)} + {corki_shoe} / {corki_rune}+CutDown "
+        f"(Top1 from simulation_corki, score {corki_top1['score']:.2f}; 패키지 제약 없음)"
     )
     print()
 
+    def _pkg_cfg(top1, extra=None):
+        cfg = {
+            "doran": top1.get("doran", "doranblade"),
+            "boots": top1.get("boots", "berserker"),
+            "rune_as": top1.get("rune_as", 0.0),
+            "pkg_label": top1.get("pkg_label", "Bld+Zerk"),
+        }
+        if extra:
+            cfg.update(extra)
+        return cfg
+
     top1_configs = {
-        "Ashe": {"path": ashe_path},
-        "Yunara": {"path": yunara_path},
-        "KaiSa": {"path": kaisa_path},
-        "Corki": {"path": corki_path, "shoe": corki_shoe, "rune": corki_rune},
+        "Ashe": {"path": ashe_path, **_pkg_cfg(ashe_top1)},
+        "Yunara": {"path": yunara_path, **_pkg_cfg(yunara_top1)},
+        "KaiSa": {"path": kaisa_path, **_pkg_cfg(kaisa_top1)},
+        "Corki": {"path": corki_path, "shoe": corki_shoe, "rune": corki_rune, "doran": corki_top1.get("doran", "doranblade")},
     }
     top1_rows = _print_compare_section("Cross-Champion Top1 Compare (1~4 Core)", top1_configs)
 
