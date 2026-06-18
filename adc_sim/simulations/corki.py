@@ -113,7 +113,7 @@ def rune_short(rune_key):
     return rune_key
 
 
-def simulate_corki_core_path(full_path, shoe_key, rune_key, core_tier):
+def simulate_corki_core_path(full_path, shoe_key, rune_key, core_tier, include_w=True):
     """Simulate Corki DPS and total gold for the configured shoe/rune/path."""
     target = build_target_for_core(core_tier)
     level_cfg = CORE_LEVELS[core_tier]
@@ -144,11 +144,19 @@ def simulate_corki_core_path(full_path, shoe_key, rune_key, core_tier):
         corki.add_item(item)
 
     # 스킬 시나리오를 simulation에서 정의하고 engine가 처리
-    skill_plan = {
-        "manual_casts": [(0.0, "e"), (0.0, "q"), (1.5, "r")],
-        "auto_cast": {"e": True, "q": True, "r": True},
-        "auto_order": ["e", "q", "r"],
-    }
+    if include_w:
+        skill_plan = {
+            "manual_casts": [(0.0, "e"), (0.0, "q"), (0.0, "w"), (1.5, "r")],
+            "auto_cast": {"e": True, "q": True, "w": True, "r": True},
+            "auto_order": ["e", "q", "w", "r"],
+        }
+    else:
+        # 챔피언 간 비교에서는 W(발키리 트레일) 제외
+        skill_plan = {
+            "manual_casts": [(0.0, "e"), (0.0, "q"), (1.5, "r")],
+            "auto_cast": {"e": True, "q": True, "w": False, "r": True},
+            "auto_order": ["e", "q", "r"],
+        }
 
     _, dps, _ = run_simulation(corki, target, verbose=False, skill_plan=skill_plan)
     return dps, total_cost

@@ -361,7 +361,7 @@ class Ashe(Champion):
         # 공격 속도: 20 / 30 / 40 / 50 / 60%
         self.q_as_amounts = [0.20, 0.30, 0.40, 0.50, 0.60]
         # 피해량 계수: 1.1 / 1.175 / 1.25 / 1.325 / 1.4
-        self.q_dmg_multipliers = [1.1, 1.175, 1.25, 1.325, 1.4]
+        self.q_dmg_multipliers = [1.1, 1.15, 1.20, 1.25, 1.3]
 
     def get_one_hit_damage(self, target, time=0):
         # 1. Q 지속시간 확인 및 해제 (6초)
@@ -978,7 +978,7 @@ class KaiSa(Champion):
 
 
 class Corki(Champion):
-    def __init__(self, level=1, q_level=5, e_level=5, r_level=3):
+    def __init__(self, level=1, q_level=5, e_level=5, r_level=3, w_level=5):
         super().__init__(
             name="Corki",
             base_ad=52,
@@ -1004,17 +1004,27 @@ class Corki(Champion):
 
         # 스킬 레벨
         self.q_level = q_level
+        self.w_level = w_level
         self.e_level = e_level
         self.r_level = r_level
 
         # 자동 시전
         self.auto_cast_q = True
+        self.auto_cast_w = True
         self.auto_cast_e = True
         self.auto_cast_r = True
 
         # Q: 인광탄
         self.q_cd = [9.0, 8.5, 8.0, 7.5, 7.0]
         self.q_base = [60.0, 105.0, 150.0, 195.0, 240.0]
+
+        # W: 발키리 (경로 트레일이 0.5초당 마법 피해, 2.5초 지속 = 최대 5틱)
+        # 가정(Hypothesis): 단일 고정 대상이 트레일 전체(5틱)를 맞는다고 본다.
+        self.w_cd = [20.0, 18.0, 16.0, 14.0, 12.0]
+        self.w_tick_base = [30.0, 45.0, 60.0, 75.0, 90.0]
+        self.w_tick_bonus_ad = 0.4
+        self.w_tick_ap = 0.3
+        self.w_ticks = 5
 
         # E: 개틀링 건
         self.e_cd = 12.0
@@ -1033,13 +1043,13 @@ class Corki(Champion):
         self.r_charges = 4
         self.r_max_charges = 4
         self.r_charge_remaining = None
-        self.cooldowns_remaining = {"q": 0.0, "e": 0.0, "r_cast": self.r_initial_delay}
+        self.cooldowns_remaining = {"q": 0.0, "w": 0.0, "e": 0.0, "r_cast": self.r_initial_delay}
 
         # 스킬 스케줄 상태
         self.manual_skill_casts = []
         self.manual_skill_index = 0
-        self.auto_skill_enabled = {"e": True, "q": True, "r": True}
-        self.auto_skill_order = ["e", "q", "r"]
+        self.auto_skill_enabled = {"e": True, "q": True, "w": True, "r": True}
+        self.auto_skill_order = ["e", "q", "w", "r"]
         # 첫 4발을 강화-일반-일반-강화로 시작시키기 위해 2에서 시작
         self.r_missile_count = 2
 
@@ -1050,6 +1060,16 @@ class Corki(Champion):
         idx = self.q_level - 1
         damage = self.q_base[idx] + (1.25 * self._get_bonus_ad()) + (1.0 * self.total_ap)
         self.cooldowns_remaining["q"] = self.apply_haste_to_cooldown(self.q_cd[idx])
+        self.cast_spell(time)
+        return 0.0, damage
+
+    def _cast_w(self, time):
+        # 발키리 트레일: 0.5초당 [30~90] + 0.4 추가AD + 0.3 AP, 2.5초간 5틱.
+        # 단일 고정 대상이 트레일 전체를 맞는다고 가정 → 한 번에 5틱 합산 마법 피해.
+        idx = self.w_level - 1
+        per_tick = self.w_tick_base[idx] + (self.w_tick_bonus_ad * self._get_bonus_ad()) + (self.w_tick_ap * self.total_ap)
+        damage = per_tick * self.w_ticks
+        self.cooldowns_remaining["w"] = self.apply_haste_to_cooldown(self.w_cd[idx])
         self.cast_spell(time)
         return 0.0, damage
 
@@ -1116,7 +1136,7 @@ class Corki(Champion):
 
     def init_combat_state(self, skill_plan=None):
         super().init_combat_state(skill_plan)
-        self.cooldowns_remaining = {"q": 0.0, "e": 0.0, "r_cast": self.r_initial_delay}
+        self.cooldowns_remaining = {"q": 0.0, "w": 0.0, "e": 0.0, "r_cast": self.r_initial_delay}
         self.e_debuff_target = None
         self.e_debuff_end_time = 0.0
         self.e_debuff_armor = 0.0
@@ -1130,9 +1150,10 @@ class Corki(Champion):
         self.auto_skill_enabled = {
             "e": auto_cfg.get("e", self.auto_cast_e),
             "q": auto_cfg.get("q", self.auto_cast_q),
+            "w": auto_cfg.get("w", self.auto_cast_w),
             "r": auto_cfg.get("r", self.auto_cast_r),
         }
-        self.auto_skill_order = list(plan.get("auto_order", ["e", "q", "r"]))
+        self.auto_skill_order = list(plan.get("auto_order", ["e", "q", "w", "r"]))
         self.manual_skill_casts = sorted(list(plan.get("manual_casts", [])), key=lambda x: x[0])
         self.manual_skill_index = 0
 
@@ -1153,6 +1174,8 @@ class Corki(Champion):
             return self.r_charges > 0 and self.cooldowns_remaining["r_cast"] <= eps
         if skill_name == "q":
             return self.cooldowns_remaining["q"] <= eps
+        if skill_name == "w":
+            return self.cooldowns_remaining["w"] <= eps
         if skill_name == "e":
             return self.cooldowns_remaining["e"] <= eps
         return False
@@ -1160,6 +1183,9 @@ class Corki(Champion):
     def _cast_skill(self, skill_name, target, time):
         if skill_name == "q":
             p, m = self._cast_q(time)
+            return skill_name, p, m, True
+        if skill_name == "w":
+            p, m = self._cast_w(time)
             return skill_name, p, m, True
         if skill_name == "e":
             p, m = self._cast_e(time, target)
@@ -1181,6 +1207,8 @@ class Corki(Champion):
             candidates.append(max(0.0, self.cooldowns_remaining["e"]))
         if self.auto_skill_enabled.get("q", False):
             candidates.append(max(0.0, self.cooldowns_remaining["q"]))
+        if self.auto_skill_enabled.get("w", False):
+            candidates.append(max(0.0, self.cooldowns_remaining["w"]))
         if self.auto_skill_enabled.get("r", False) and self.r_charges > 0:
             candidates.append(max(0.0, self.cooldowns_remaining["r_cast"]))
 

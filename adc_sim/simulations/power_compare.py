@@ -35,7 +35,8 @@ def _simulate_compare_stat(champ_name, cfg, core_tier):
         dps, gold, w_cast_count = simulate_kaisa_core_path(cfg["path"], core_tier)
         meta = build_kaisa_core_report_meta(cfg["path"], core_tier, w_cast_count=w_cast_count)
     elif champ_name == "Corki":
-        dps, gold = simulate_corki_core_path(cfg["path"], cfg["shoe"], cfg["rune"], core_tier)
+        # 챔피언 간 비교에서는 코르키 W(발키리 트레일) 데미지 제외
+        dps, gold = simulate_corki_core_path(cfg["path"], cfg["shoe"], cfg["rune"], core_tier, include_w=False)
         meta = build_corki_core_report_meta(cfg["path"], cfg["shoe"], cfg["rune"], core_tier)
     else:
         raise ValueError(f"Unknown champion config: {champ_name}")
