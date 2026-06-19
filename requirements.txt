@@ -1,0 +1,3 @@
+# 직접 의존성만 명시 (numpy 등 나머지는 matplotlib가 끌어옴)
+# 테스트 환경: Python 3.10 / .venv
+matplotlib==3.10.9
