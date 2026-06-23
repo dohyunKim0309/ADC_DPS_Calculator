@@ -1392,12 +1392,93 @@ class Ezreal(Champion):
             return max(0.0, self.stack_expire_time - current_time)
         return float("inf")
 
-    # Task1 한정 스텁(Task2에서 실제 구현으로 교체)
+    def _can_cast(self, name):
+        return self.cooldowns_remaining.get(name, float("inf")) <= 1e-9
+
     def get_time_to_next_skill_event(self, current_time):
-        return float("inf")
+        eps = 1e-9
+        candidates = []
+        if self.manual_skill_index < len(self.manual_skill_casts):
+            t, _ = self.manual_skill_casts[self.manual_skill_index]
+            candidates.append(max(0.0, t - current_time))
+        for name, enabled in self.auto_skill_enabled.items():
+            if enabled:
+                candidates.append(max(0.0, self.cooldowns_remaining.get(name, float("inf"))))
+        valid = [dt for dt in candidates if dt >= -eps]
+        return max(0.0, min(valid)) if valid else float("inf")
 
     def pop_due_skill_events(self, current_time, target):
-        return []
+        eps = 1e-9
+        events = []
+        while self.manual_skill_index < len(self.manual_skill_casts):
+            t, name = self.manual_skill_casts[self.manual_skill_index]
+            if t > current_time + eps:
+                break
+            self.manual_skill_index += 1
+            if self._can_cast(name):
+                events.append(self._cast_skill(name, target, current_time))
+        for name in self.auto_skill_order:
+            if self.auto_skill_enabled.get(name, False) and self._can_cast(name):
+                events.append(self._cast_skill(name, target, current_time))
+        return events
+
+    def _cast_skill(self, name, target, time):
+        if name == "q":
+            p, m = self._cast_q(target, time)
+            return ("q", p, m, True)
+        return (name, 0.0, 0.0, False)
+
+    def _assemble_q_onhit(self, target):
+        """Q에 적용할 평타 온힛 중 allow-list 아이템만 합산. [Hypothesis H-EZ-6]
+
+        - Manamune/Muramana: 엔진 스킬경로(on_skill_hit)가 처리 → 여기서 제외(이중계산 방지).
+        - 주문검/에너자이즈드: Q서 미적용(주문검은 _cast_q의 cast_spell로 장전만).
+        - proc_count(구인수 팬텀히트)는 평타 경로와 동일하게 allow-list 번들 전체에 적용.
+        - 현 allow-list 아이템은 고정(true) 온힛이 없어 (phys,magic)만 합산(검증됨).
+        반환: (phys, magic)
+        """
+        def bundle_once():
+            p = 0.0; m = 0.0
+            for item in self.inventory:
+                if item.name in self.Q_ONHIT_ALLOW:
+                    ip, im, _t_base, _t_onhit = item.on_hit(target, self)
+                    p += ip; m += im
+            return p, m
+
+        proc = 1
+        for item in self.inventory:
+            if item.name in self.Q_ONHIT_ALLOW and hasattr(item, "get_onhit_proc_count"):
+                proc = max(proc, item.get_onhit_proc_count(self))
+
+        phys = 0.0; magic = 0.0
+        for _ in range(proc):
+            bp, bm = bundle_once()
+            phys += bp; magic += bm
+        return phys, magic
+
+    def _cast_q(self, target, time):
+        """Q Mystic Shot. 물리(비치명) + allow-list 온힛. 적중 시 전 스킬 −1.5초. [H]
+
+        반환: (phys, magic). Manamune/Muramana·룬 스킬훅은 엔진 스킬경로가 자동 처리.
+        """
+        self._combat_time = time
+        idx = self.q_level - 1
+        q_phys = self.q_base[idx] + (self.q_total_ad_ratio * self.total_ad) + (self.q_ap_ratio * self.total_ap)
+
+        # allow-list 온힛(주문검/Manamune 제외)
+        onhit_p, onhit_m = self._assemble_q_onhit(target)
+
+        # 자기 쿨 설정 후, 적중 쿨 환급(−1.5초)을 전 스킬에 적용(자기 포함)
+        self.cooldowns_remaining["q"] = self.apply_haste_to_cooldown(self.q_cd[idx])
+        for k in self.cooldowns_remaining:
+            self.cooldowns_remaining[k] = max(0.0, self.cooldowns_remaining[k] - self.q_cd_refund)
+
+        # 주문검 장전(다음 평타서 발동)
+        self.cast_spell(time)
+        # 패시브 스택
+        self._add_spell_stack(time)
+
+        return q_phys + onhit_p, onhit_m
 
     def get_one_hit_damage(self, target, time=0):
         # 평타 시점에 패시브 만료 동기화 후 부모 평타 로직(치명/주문검발동/온힛/증폭).
