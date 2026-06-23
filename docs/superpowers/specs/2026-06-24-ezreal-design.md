@@ -92,9 +92,9 @@
   → Q/W/E는 `cast_spell`로 **장전만** 하고, 발동은 **다음 평타**가 담당. Q 자체는 주문검 발동 안 함.
 - **에너자이즈드(Statikk/RFC/Stormrazor)**: 평타 기반 → **Q에 적용 안 함**.
 
-### 4.3 결정: Q 온힛 충실도 (스펙 리뷰 확인 대상 §8)
+### 4.3 결정: Q 온힛 충실도 — **풀 allow-list 확정**(§8.1, 사용자 2026-06-24)
 이즈리얼의 주력 피해(스팸되는 Q)가 온힛 아이템을 못 살리면 **온힛 빌드가 과소평가**되어
-랭킹이 왜곡된다. 따라서 v1 **권고안**:
+랭킹이 왜곡된다. 따라서 v1 **확정안**:
 - Q는 스킬 이벤트로 방출(엔진이 Manamune/Muramana + 룬 스킬훅 자동 처리).
 - **추가로**, `Ezreal._cast_q` 내부에서 **명시적 allow-list**의 "진짜 온힛 피해" 아이템만
   로컬 호출해 Q 온힛 피해에 합산: **Kraken / BotRK / Guinsoo(+proc_count) / Wit's End /
@@ -159,12 +159,13 @@ Corki/Kai'Sa의 이벤트 인터페이스를 그대로 미러링:
   (특히 베이스 클래스 보조 메서드 추가 시 — 행위보존 보장).
 - **통합**: `python -m adc_sim.simulations.ezreal` 실행 → 표 육안검사(컨트롤 존재, 코어별 DPG 정합).
 
-## 8. 스펙 리뷰 확인 요청 (사용자)
-1. **Q 온힛 충실도**: §4.3 권고안(allow-list 온힛) vs 축소안(스킬경로만)?
-2. **컨트롤 빌드**: `trinity-muramana-ie-ldr` 채택? 다른 선호?
-3. **`as_ratio`=0.625** 확인(또는 실제값).
-4. **저영향 AP 충돌 기본값**: Q AP 0.15(CDragon) 채택 OK? (Wiki 0.40)
-5. **EZREAL_SKILL_LEVELS**(Q선마 가정) 및 코어 레벨표 OK?
+## 8. 스펙 리뷰 — 확정 (2026-06-24 사용자)
+1. **Q 온힛 충실도**: ✅ **풀 allow-list 채택**(§4.3). Kraken/BotRK/Guinsoo/Wit's/Terminus/
+   Nashor's 로컬 적용 + Manamune/Muramana·룬은 엔진 스킬경로.
+2. **컨트롤 빌드**: ✅ `trinity-muramana-ie-ldr`(탐색 경로 내 필수).
+3. **`as_ratio`**: ✅ 0.625.
+4. **Q AP 계수**: ✅ 0.15(CDragon). (Wiki 0.40은 저영향, 가설 H-EZ-4로 추적.)
+5. **EZREAL_SKILL_LEVELS**: ✅ Q선마 가정 채택. 구현 시 코어별 표 명시(튜닝 가능).
 
 ## 9. 가설 레지스터 (AGENTS.md §4 — 전부 `Hypothesis`)
 - H-EZ-1: `ad_growth=3.75`(DDragon raw=0 충돌, Wiki 채택).
