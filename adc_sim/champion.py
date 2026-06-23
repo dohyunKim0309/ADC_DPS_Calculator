@@ -1281,6 +1281,7 @@ class Ezreal(Champion):
     """
 
     # Q 온힛 allow-list(이름 기준). Manamune(스킬경로)/주문검(평타)/에너자이즈드(평타) 제외.
+    # 주의: Wit's End 는 현재 items_data 미등록(빌드 불가)이라 사실상 비활성 — 추후 등록 시 자동 적용.
     Q_ONHIT_ALLOW = {
         "Kraken Slayer", "Blade of the Ruined King", "Guinsoo's Rageblade",
         "Terminus", "Nashor's Tooth", "Wit's End",
@@ -1340,7 +1341,7 @@ class Ezreal(Champion):
 
     # ---- 패시브 스택 ----
     def _sync_stack_as(self):
-        """현재 스택 수에 맞춰 bonus_as_percent 보정(이전 적용분 환원 후 재적용)."""
+        """현재 스택 수에 맞춰 bonus_as_percent 보정(이전 적용분 환원 후 재적용). [H 패시브 모델]"""
         target_as = self.spell_stacks * self.spell_stack_as
         delta = target_as - self._stack_as_applied
         if delta != 0.0:
@@ -1354,7 +1355,7 @@ class Ezreal(Champion):
         self._sync_stack_as()
 
     def _expire_stacks_if_due(self, time):
-        """만료시간 경과 시 스택 0 + 공속 환원."""
+        """만료시간 경과 시 스택 0 + 공속 환원(패시브 6초 만료 가정). [H]"""
         if self.spell_stacks > 0 and time >= self.stack_expire_time:
             self.spell_stacks = 0
             self._sync_stack_as()
