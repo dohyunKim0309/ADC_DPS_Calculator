@@ -1264,3 +1264,142 @@ class Corki(Champion):
             self._update_r_charges(0.0)
 
         return p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit
+
+
+class Ezreal(Champion):
+    """이즈리얼 — 스킬샷 포크형 원딜. [Hypothesis 다수 — 스펙 §9 참조]
+
+    모델: 평타 연속 + Q/W/E 쿨마다 시전(R 제외). 마나 자원 미모델(무한마나)이나
+    마나무네 스택은 on_hit/on_skill_hit로 정확 충전됨.
+    - 패시브 Rising Spell Force[H]: 스킬 적중당 공속 +10%/스택, 최대 5, 6초(적중 시 갱신).
+    - Q Mystic Shot[H]: 물리(비치명) base + 1.30*총AD + 0.15*AP. 적중 시 전 스킬 −1.5초.
+      온힛 적용(Manamune/Muramana·룬=엔진 스킬경로; Kraken/BotRK/Guinsoo/Terminus/Nashor's/
+      Wit's End=allow-list 로컬). 주문검은 장전만(다음 평타서 발동).
+    - W Essence Flux[H]: 마법 base + 1.0*추가AD + 0.9*AP(단일 더미 즉시 기폭 단순화).
+    - E Arcane Shift[H]: 마법 base + 0.6*추가AD + 0.75*AP.
+    수치/가설 출처: docs/superpowers/specs/2026-06-24-ezreal-design.md
+    """
+
+    # Q 온힛 allow-list(이름 기준). Manamune(스킬경로)/주문검(평타)/에너자이즈드(평타) 제외.
+    Q_ONHIT_ALLOW = {
+        "Kraken Slayer", "Blade of the Ruined King", "Guinsoo's Rageblade",
+        "Terminus", "Nashor's Tooth", "Wit's End",
+    }
+
+    def __init__(self, level=1, q_level=5, w_level=5, e_level=5, r_level=3):
+        super().__init__(
+            name="Ezreal", base_ad=60, base_as=0.625, as_ratio=0.625,
+            as_growth=2.5, base_range=550, level=level, ad_growth=3.75,
+        )
+        # 보관(비-DPS): 미래 1대1 모델용
+        self.base_hp = 600; self.hp_growth = 102
+        self.base_mana = 375; self.mana_growth = 70
+        self.base_armor = 24; self.armor_growth = 4.2
+        self.base_mr = 30; self.mr_growth = 1.3
+
+        self.q_level = q_level; self.w_level = w_level
+        self.e_level = e_level; self.r_level = r_level
+
+        # 패시브 Rising Spell Force [H]
+        self.spell_stacks = 0
+        self.max_spell_stacks = 5
+        self.spell_stack_as = 0.10        # 스택당 공속
+        self.spell_stack_duration = 6.0
+        self.stack_expire_time = 0.0
+        self._stack_as_applied = 0.0      # 현재 bonus_as_percent에 반영된 패시브 공속(환원용)
+
+        # Q/W/E 데이터 [H]
+        self.q_cd = [5.5, 5.25, 5.0, 4.75, 4.5]
+        self.q_base = [20.0, 45.0, 70.0, 95.0, 120.0]
+        self.q_total_ad_ratio = 1.30
+        self.q_ap_ratio = 0.15
+        self.q_cd_refund = 1.5
+
+        self.w_cd = [8.0, 8.0, 8.0, 8.0, 8.0]
+        self.w_base = [80.0, 135.0, 190.0, 245.0, 300.0]
+        self.w_bonus_ad_ratio = 1.0
+        self.w_ap_ratio = 0.9
+
+        self.e_cd = [26.0, 23.0, 20.0, 17.0, 14.0]
+        self.e_base = [80.0, 130.0, 180.0, 230.0, 280.0]
+        self.e_bonus_ad_ratio = 0.6
+        self.e_ap_ratio = 0.75
+
+        # 자동 시전(R 제외)
+        self.auto_cast_q = True; self.auto_cast_w = True; self.auto_cast_e = True
+        self.cooldowns_remaining = {"q": 0.0, "w": 0.0, "e": 0.0}
+        self.manual_skill_casts = []
+        self.manual_skill_index = 0
+        self.auto_skill_enabled = {"q": True, "w": True, "e": True}
+        self.auto_skill_order = ["q", "w", "e"]
+
+    # ---- 추가AD(W/E 계수용) ----
+    def _bonus_ad(self):
+        """아이템+동적(마나무네 경탄 등) 추가 AD = total_ad - 현재레벨 기본 AD."""
+        return max(0.0, self.total_ad - self.base_attack_ad)
+
+    # ---- 패시브 스택 ----
+    def _sync_stack_as(self):
+        """현재 스택 수에 맞춰 bonus_as_percent 보정(이전 적용분 환원 후 재적용)."""
+        target_as = self.spell_stacks * self.spell_stack_as
+        delta = target_as - self._stack_as_applied
+        if delta != 0.0:
+            self.bonus_as_percent += delta
+            self._stack_as_applied = target_as
+
+    def _add_spell_stack(self, time):
+        """스킬 적중 1회 → 스택 +1(캡), 만료시간 갱신, 공속 반영. [H]"""
+        self.spell_stacks = min(self.max_spell_stacks, self.spell_stacks + 1)
+        self.stack_expire_time = time + self.spell_stack_duration
+        self._sync_stack_as()
+
+    def _expire_stacks_if_due(self, time):
+        """만료시간 경과 시 스택 0 + 공속 환원."""
+        if self.spell_stacks > 0 and time >= self.stack_expire_time:
+            self.spell_stacks = 0
+            self._sync_stack_as()
+
+    # ---- 이벤트 인터페이스 ----
+    def init_combat_state(self, skill_plan=None):
+        super().init_combat_state(skill_plan)
+        self.cooldowns_remaining = {"q": 0.0, "w": 0.0, "e": 0.0}
+        # 패시브 초기화(이전 전투 잔여 공속 환원)
+        self.spell_stacks = 0
+        self.stack_expire_time = 0.0
+        self._sync_stack_as()  # _stack_as_applied 만큼 환원
+        self._stack_as_applied = 0.0
+
+        plan = skill_plan or {}
+        auto_cfg = plan.get("auto_cast", {})
+        self.auto_skill_enabled = {
+            "q": auto_cfg.get("q", self.auto_cast_q),
+            "w": auto_cfg.get("w", self.auto_cast_w),
+            "e": auto_cfg.get("e", self.auto_cast_e),
+        }
+        self.auto_skill_order = list(plan.get("auto_order", ["q", "w", "e"]))
+        self.manual_skill_casts = sorted(list(plan.get("manual_casts", [])), key=lambda x: x[0])
+        self.manual_skill_index = 0
+
+    def advance_combat_time(self, delta_time, current_time, target):
+        super().advance_combat_time(delta_time, current_time, target)
+        if delta_time > 0:
+            for k in self.cooldowns_remaining:
+                self.cooldowns_remaining[k] = max(0.0, self.cooldowns_remaining[k] - delta_time)
+        self._expire_stacks_if_due(current_time)
+
+    def get_time_to_next_state_event(self, current_time):
+        if self.spell_stacks > 0:
+            return max(0.0, self.stack_expire_time - current_time)
+        return float("inf")
+
+    # Task1 한정 스텁(Task2에서 실제 구현으로 교체)
+    def get_time_to_next_skill_event(self, current_time):
+        return float("inf")
+
+    def pop_due_skill_events(self, current_time, target):
+        return []
+
+    def get_one_hit_damage(self, target, time=0):
+        # 평타 시점에 패시브 만료 동기화 후 부모 평타 로직(치명/주문검발동/온힛/증폭).
+        self._expire_stacks_if_due(time)
+        return super().get_one_hit_damage(target, time)
