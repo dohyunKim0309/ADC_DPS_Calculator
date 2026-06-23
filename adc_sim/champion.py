@@ -1426,6 +1426,12 @@ class Ezreal(Champion):
         if name == "q":
             p, m = self._cast_q(target, time)
             return ("q", p, m, True)
+        if name == "w":
+            p, m = self._cast_w(time)
+            return ("w", p, m, True)
+        if name == "e":
+            p, m = self._cast_e(time)
+            return ("e", p, m, True)
         return (name, 0.0, 0.0, False)
 
     def _assemble_q_onhit(self, target):
@@ -1479,6 +1485,26 @@ class Ezreal(Champion):
         self._add_spell_stack(time)
 
         return q_phys + onhit_p, onhit_m
+
+    def _cast_w(self, time):
+        """W Essence Flux — 단일 더미 즉시 기폭 단순화. 마법. [H]"""
+        self._combat_time = time
+        idx = self.w_level - 1
+        magic = self.w_base[idx] + (self.w_bonus_ad_ratio * self._bonus_ad()) + (self.w_ap_ratio * self.total_ap)
+        self.cooldowns_remaining["w"] = self.apply_haste_to_cooldown(self.w_cd[idx])
+        self.cast_spell(time)      # 주문검 장전
+        self._add_spell_stack(time)
+        return 0.0, magic
+
+    def _cast_e(self, time):
+        """E Arcane Shift — 순간이동 후 마법 볼트. [H]"""
+        self._combat_time = time
+        idx = self.e_level - 1
+        magic = self.e_base[idx] + (self.e_bonus_ad_ratio * self._bonus_ad()) + (self.e_ap_ratio * self.total_ap)
+        self.cooldowns_remaining["e"] = self.apply_haste_to_cooldown(self.e_cd[idx])
+        self.cast_spell(time)      # 주문검 장전
+        self._add_spell_stack(time)
+        return 0.0, magic
 
     def get_one_hit_damage(self, target, time=0):
         # 평타 시점에 패시브 만료 동기화 후 부모 평타 로직(치명/주문검발동/온힛/증폭).
