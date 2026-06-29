@@ -400,6 +400,7 @@ class Ashe(Champion):
         self.mana_growth = 35.0
         self.base_mp5 = 7.0
         self.mp5_growth = 0.65
+        self.q_mana_cost = 30.0  # Ranger's Focus, 확정 §3.5. [H-MANA-3]
 
         # Q 데이터 (레벨별)
         # 공격 속도: 20 / 30 / 40 / 50 / 60%
@@ -444,10 +445,15 @@ class Ashe(Champion):
         return super().get_attack_interval()
 
     def activate_q(self, time):
+        # [H-MANA-3] 마나 부족 시 활성 지연(버프 효과는 보존, 활성만 게이트)
+        if not self.can_afford(self.q_mana_cost):
+            return
+        self.spend_mana(self.q_mana_cost)
+
         self.q_active = True
         self.q_start_time = time
         self.q_attack_reset_pending = True
-        
+
         # 공속 버프 적용
         if not self.q_as_buff_applied:
             idx = self.q_level - 1
@@ -564,6 +570,7 @@ class Yunara(Champion):
         self.mana_growth = 45.0
         self.base_mp5 = 7.5
         self.mp5_growth = 0.75
+        self.q_mana_cost = 30.0  # Cultivation of Spirit, 확정 §3.5. [H-MANA-3]
 
         # Q 데이터 (레벨별)
         # 추가 공속: 20 / 30 / 40 / 50 / 60%
@@ -660,6 +667,11 @@ class Yunara(Champion):
         return p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit
 
     def activate_q(self, time):
+        # [H-MANA-3] 마나 부족 시 활성 지연(버프 효과는 보존, 활성만 게이트)
+        if not self.can_afford(self.q_mana_cost):
+            return
+        self.spend_mana(self.q_mana_cost)
+
         self.q_active = True
         self.q_start_time = time
         self.q_stacks = 0
