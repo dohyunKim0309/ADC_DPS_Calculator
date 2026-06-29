@@ -709,6 +709,8 @@ class KaiSa(Champion):
 
         # 쿨타임/버프 상태
         self.cooldowns_remaining = {"q": 0.0, "w": 0.0, "e": 0.0, "r": 0.0}
+        # 스킬 마나 비용 (실제 수치는 Task 6 확정 데이터로 교체). [H-MANA-2]
+        self.mana_cost = {"q": 0.0, "w": 0.0, "e": 0.0, "r": 0.0}
         self.e_active = False
         self.e_end_time = 0.0
         self.e_buff_applied = False
@@ -878,9 +880,12 @@ class KaiSa(Champion):
             return False
         if skill_name == "e" and self.e_active:
             return False
+        if not self.can_afford(self.mana_cost.get(skill_name, 0.0)):
+            return False
         return True
 
     def _cast_skill(self, skill_name, target, time):
+        self.spend_mana(self.mana_cost.get(skill_name, 0.0))
         if skill_name == "q":
             p, m = self._cast_q(time)
             return skill_name, p, m, True
@@ -967,7 +972,8 @@ class KaiSa(Champion):
             if skill_name == "e" and self.e_active:
                 continue
             remaining = self.cooldowns_remaining.get(skill_name, float("inf"))
-            candidates.append(max(0.0, remaining))
+            afford = self._afford_in(self.mana_cost.get(skill_name, 0.0))
+            candidates.append(max(0.0, remaining, afford))   # [0-dt 스핀 방지]
 
         valid = [dt for dt in candidates if dt >= -eps]
         if not valid:
@@ -1082,6 +1088,7 @@ class Corki(Champion):
         self.r_max_charges = 4
         self.r_charge_remaining = None
         self.cooldowns_remaining = {"q": 0.0, "w": 0.0, "e": 0.0, "r_cast": self.r_initial_delay}
+        self.mana_cost = {"q": 0.0, "w": 0.0, "e": 0.0, "r": 0.0}   # 실수치 Task 6
 
         # 스킬 스케줄 상태
         self.manual_skill_casts = []
@@ -1208,6 +1215,8 @@ class Corki(Champion):
 
     def _can_cast_skill(self, skill_name):
         eps = 1e-9
+        if not self.can_afford(self.mana_cost.get(skill_name, 0.0)):
+            return False
         if skill_name == "r":
             return self.r_charges > 0 and self.cooldowns_remaining["r_cast"] <= eps
         if skill_name == "q":
@@ -1219,6 +1228,7 @@ class Corki(Champion):
         return False
 
     def _cast_skill(self, skill_name, target, time):
+        self.spend_mana(self.mana_cost.get(skill_name, 0.0))
         if skill_name == "q":
             p, m = self._cast_q(time)
             return skill_name, p, m, True
@@ -1242,13 +1252,13 @@ class Corki(Champion):
             candidates.append(max(0.0, next_manual_time - current_time))
 
         if self.auto_skill_enabled.get("e", False):
-            candidates.append(max(0.0, self.cooldowns_remaining["e"]))
+            candidates.append(max(0.0, self.cooldowns_remaining["e"], self._afford_in(self.mana_cost.get("e", 0.0))))
         if self.auto_skill_enabled.get("q", False):
-            candidates.append(max(0.0, self.cooldowns_remaining["q"]))
+            candidates.append(max(0.0, self.cooldowns_remaining["q"], self._afford_in(self.mana_cost.get("q", 0.0))))
         if self.auto_skill_enabled.get("w", False):
-            candidates.append(max(0.0, self.cooldowns_remaining["w"]))
+            candidates.append(max(0.0, self.cooldowns_remaining["w"], self._afford_in(self.mana_cost.get("w", 0.0))))
         if self.auto_skill_enabled.get("r", False) and self.r_charges > 0:
-            candidates.append(max(0.0, self.cooldowns_remaining["r_cast"]))
+            candidates.append(max(0.0, self.cooldowns_remaining["r_cast"], self._afford_in(self.mana_cost.get("r", 0.0))))
 
         valid = [dt for dt in candidates if dt >= -eps]
         if not valid:
@@ -1371,6 +1381,7 @@ class Ezreal(Champion):
         self.manual_skill_index = 0
         self.auto_skill_enabled = {"q": True, "w": True, "e": True}
         self.auto_skill_order = ["q", "w", "e"]
+        self.mana_cost = {"q": 0.0, "w": 0.0, "e": 0.0}   # 실수치 Task 6
 
     # ---- 추가AD(W/E 계수용) ----
     def _bonus_ad(self):
@@ -1432,6 +1443,8 @@ class Ezreal(Champion):
         return float("inf")
 
     def _can_cast(self, name):
+        if not self.can_afford(self.mana_cost.get(name, 0.0)):
+            return False
         return self.cooldowns_remaining.get(name, float("inf")) <= 1e-9
 
     def get_time_to_next_skill_event(self, current_time):
@@ -1442,7 +1455,8 @@ class Ezreal(Champion):
             candidates.append(max(0.0, t - current_time))
         for name, enabled in self.auto_skill_enabled.items():
             if enabled:
-                candidates.append(max(0.0, self.cooldowns_remaining.get(name, float("inf"))))
+                candidates.append(max(0.0, self.cooldowns_remaining.get(name, float("inf")),
+                                      self._afford_in(self.mana_cost.get(name, 0.0))))
         valid = [dt for dt in candidates if dt >= -eps]
         return max(0.0, min(valid)) if valid else float("inf")
 
@@ -1462,6 +1476,7 @@ class Ezreal(Champion):
         return events
 
     def _cast_skill(self, name, target, time):
+        self.spend_mana(self.mana_cost.get(name, 0.0))
         if name == "q":
             p, m = self._cast_q(target, time)
             return ("q", p, m, True)
