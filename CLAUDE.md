@@ -67,6 +67,7 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 - **아이템 스탯의 단일 출처는 `adc_sim/data/items_data.py`**. items.py 동작 클래스에 남은 레거시 스탯 리터럴은 런타임에 데이터가 덮어쓴다(2b에서 제거 예정) — 스탯 수정은 반드시 items_data.py 에서.
 - **윤탈 치명타 가정**: 구매 코어/다음 코어 여부에 따라 0%/12%/5%/25%로 분기(`simulate_*_core_path` 내부). 가정이지 실측이 아님.
 - **유나라 시뮬**은 전투 시작과 동시에 `activate_q(0.0)`로 Q 활성 상태 가정.
+- **유나라 W**(`adc_sim/champion.py`)는 엔진 스킬 이벤트로 모델링: Q활성(초월)이면 강화 W(파멸의 궤적, 궁 레벨 색인 160/320/480 +1.2추가AD +0.75AP, 쿨5s), 비활성이면 기본 W(심판의 궤적, W 레벨 색인, 적중+6초 DoT, 쿨10s). **`[Hypothesis]` 나무위키 수치(CDragon API 미검증)**. W 레벨/궁 레벨은 `CORE_YUNARA_LEVELS`의 `w_level`/`r_level`(Q선마→W차선마 가정). `Yunara(w_enabled=False)`로 W 이전 동작 복귀(검증/AB용). 평타는 안 끊는 가정(스킬/평타 타이머 독립).
 - **방어구 관통**은 `add_item`에서 곱연산으로 합치지만 주석상 "단순화" 영역 — 정밀화하려면 모델 가정부터 합의.
 - **가설은 가설로 표시**: 모델 안에 이미 가설 코드가 있다(예: `adc_sim/champion.py`의 유나라 패시브 재귀 증폭, Shadowflame 상호작용). 새 메커니즘은 `AGENTS.md` 4장대로 `Hypothesis/Experimental/Unsupported`로 명시하고 단정하지 말 것.
 - **Jinx는 전용 시뮬 파일이 없다** — `adc_sim/simulations/ashe.py` 안의 레퍼런스 빌드로만 등장.

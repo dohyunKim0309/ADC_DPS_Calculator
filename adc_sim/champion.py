@@ -497,23 +497,51 @@ class Jinx(Champion):
 
 
 class Yunara(Champion):
-    def __init__(self, level=1, q_level=5):
+    def __init__(self, level=1, q_level=5, w_level=5, r_level=3, w_enabled=True):
         # Base AD 55, AS 0.65, AS Ratio 0.65, AS Growth 2.75, AD Growth 2.5
         super().__init__(name="Yunara", base_ad=55, base_as=0.650, as_ratio=0.650, as_growth=2.75, base_range=575, level=level, ad_growth=2.5)
-        
+
         self.q_level = q_level
-        
+
         # Q 상태 관리
         self.q_active = False
         self.q_start_time = 0.0
         self.q_as_buff_applied = False
         self.q_stacks = 0 # 방출 스택 (최대 8)
-        
+
         # Q 데이터 (레벨별)
         # 추가 공속: 20 / 30 / 40 / 50 / 60%
         self.q_as_amounts = [0.20, 0.30, 0.40, 0.50, 0.60]
         # 적중 시 마법 피해: 5 / 10 / 15 / 20 / 25 (+0.1 AP)
         self.q_onhit_base = [5, 10, 15, 20, 25]
+
+        # ---------------------------------------------------------
+        # W: 심판의 궤적(기본) / 파멸의 궤적(궁 강화)
+        # [Hypothesis] 나무위키 수치 — CDragon API 미검증(세션 내 egress 차단 403).
+        #   내부 정합성(기본 W 적중+6초 DoT=최대, AD/AP 계수 합)은 확인됨.
+        # 사용자 합의(2026-06):
+        #   · Q활성(초월) 중에는 강화 W(파멸의 궤적, 궁 레벨 색인), 비활성 시 기본 W(W 레벨 색인).
+        #   · 평타는 안 끊김(엔진상 스킬/평타 타이머 독립 → 스킬 이벤트로 두면 자동 충족).
+        #   · w_enabled=False 면 W 추가 이전 동작으로 복귀(검증/AB용).
+        self.w_enabled = w_enabled
+        self.w_level = w_level  # 기본 W 스킬 레벨(1~5)
+        self.r_level = r_level  # 궁 레벨(1~3) → 강화 W 색인
+
+        # 기본 W 심판의 궤적 (W 스킬 레벨 색인, 5랭크)
+        self.base_w_impact = [55.0, 95.0, 135.0, 175.0, 215.0]  # 적중 마법피해
+        self.base_w_impact_ad_ratio = 0.85   # +총 공격력
+        self.base_w_impact_ap_ratio = 0.50   # +주문력
+        self.base_w_dot = [33.0, 57.0, 81.0, 105.0, 129.0]      # 초당 마법피해
+        self.base_w_dot_ad_ratio = 0.51      # +추가 공격력
+        self.base_w_dot_ap_ratio = 0.30      # +주문력
+        self.base_w_dot_ticks = 6            # 6초(6틱)
+        self.base_w_cd = 10.0                # 쿨다운(초)
+
+        # 강화 W 파멸의 궤적 (궁 레벨 색인, 3랭크) — 단일 마법피해
+        self.ult_w_base = [160.0, 320.0, 480.0]
+        self.ult_w_bonus_ad_ratio = 1.20     # +추가 공격력
+        self.ult_w_ap_ratio = 0.75           # +주문력
+        self.ult_w_cd = 5.0                  # 쿨다운(초)
 
     def get_champion_onhit(self, target):
         """유나라 Q 스킬 온힛 대미지 (구인수 적용)"""
@@ -622,6 +650,76 @@ class Yunara(Champion):
             as_bonus = self.q_as_amounts[idx]
             self.bonus_as_percent -= as_bonus
             self.q_as_buff_applied = False
+
+    # ---- 엔진 주도 스킬 이벤트: W (심판의 궤적 / 파멸의 궤적) ----
+    def init_combat_state(self, skill_plan=None):
+        """전투 상태 초기화. W는 교전 시작 시 즉시 1회 사용 가능(쿨 0)."""
+        super().init_combat_state(skill_plan)
+        self.cooldowns_remaining = {"w": 0.0}
+        self.pending_w_dot = []  # [(tick_time, magic_dmg)] 심판의 궤적 DoT 예약
+
+    def advance_combat_time(self, delta_time, current_time, target):
+        super().advance_combat_time(delta_time, current_time, target)
+        if delta_time > 0 and hasattr(self, "cooldowns_remaining"):
+            self.cooldowns_remaining["w"] = max(0.0, self.cooldowns_remaining["w"] - delta_time)
+
+    def get_time_to_next_skill_event(self, current_time):
+        if not self.w_enabled:
+            return float("inf")
+        candidates = [max(0.0, self.cooldowns_remaining["w"])]
+        for tick_time, _ in self.pending_w_dot:
+            candidates.append(max(0.0, tick_time - current_time))
+        return min(candidates)
+
+    def pop_due_skill_events(self, current_time, target):
+        """쿨마다 W 1회 + 예약된 DoT 틱. 평타는 끊지 않음(독립 타이머).
+
+        Q활성(초월) → 파멸의 궤적(궁 레벨 색인, 단일 마법피해, 쿨 5s).
+        Q비활성 → 심판의 궤적(W 레벨 색인, 적중 + 6초 DoT, 쿨 10s).
+        반환 튜플: (skill_name, raw_phys, raw_magic, is_skill_hit).
+        """
+        eps = 1e-9
+        if not self.w_enabled:
+            return []
+        events = []
+
+        # 1) 예약된 심판의 궤적 DoT 틱
+        remaining = []
+        for tick_time, dmg in self.pending_w_dot:
+            if tick_time <= current_time + eps:
+                events.append(("w_dot", 0.0, dmg, True))
+            else:
+                remaining.append((tick_time, dmg))
+        self.pending_w_dot = remaining
+
+        # 2) W 본체 (쿨 도달 시)
+        if self.cooldowns_remaining["w"] <= eps:
+            bonus_ad = max(0.0, self.total_ad - self.base_attack_ad)  # 추가 공격력
+            ap = self.total_ap
+            if self.q_active:
+                # 파멸의 궤적(궁 강화) — 궁 레벨 색인
+                idx = max(0, min(2, self.r_level - 1))
+                w_magic = (self.ult_w_base[idx]
+                           + self.ult_w_bonus_ad_ratio * bonus_ad
+                           + self.ult_w_ap_ratio * ap)
+                self.cooldowns_remaining["w"] = self.apply_haste_to_cooldown(self.ult_w_cd)
+                events.append(("w", 0.0, w_magic, True))
+            else:
+                # 심판의 궤적(기본) — W 레벨 색인, 적중 + 6초 DoT
+                idx = max(0, min(4, self.w_level - 1))
+                impact = (self.base_w_impact[idx]
+                          + self.base_w_impact_ad_ratio * self.total_ad
+                          + self.base_w_impact_ap_ratio * ap)
+                dot_per_sec = (self.base_w_dot[idx]
+                               + self.base_w_dot_ad_ratio * bonus_ad
+                               + self.base_w_dot_ap_ratio * ap)
+                self.cooldowns_remaining["w"] = self.apply_haste_to_cooldown(self.base_w_cd)
+                events.append(("w", 0.0, impact, True))
+                for k in range(1, self.base_w_dot_ticks + 1):
+                    self.pending_w_dot.append((current_time + k * 1.0, dot_per_sec))
+            self.cast_spell(current_time)
+
+        return events
 
 
 class KaiSa(Champion):

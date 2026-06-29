@@ -43,12 +43,15 @@ CORE_JINX_LEVELS = {
 }
 
 # 코어 타이밍별 유나라 레벨/Q 레벨 (챔피언 레벨은 애쉬와 동일)
+# [Hypothesis] 스킬오더 가정: Q 선마 → W 차선마 → E, 궁(R) 6/11/16.
+# 순수 맥스 오더로 도출 → 레벨 9/11/13/15/17 시점의 W 레벨 3/4/5/5/5, 궁 레벨 1/2/2/2/3.
+# (기존 q_level 가정은 건드리지 않고 W/R만 추가)
 CORE_YUNARA_LEVELS = {
-    1: {"level": CORE_ASHE_LEVELS[1]["level"], "q_level": 3},
-    2: {"level": CORE_ASHE_LEVELS[2]["level"], "q_level": 4},
-    3: {"level": CORE_ASHE_LEVELS[3]["level"], "q_level": 5},
-    4: {"level": CORE_ASHE_LEVELS[4]["level"], "q_level": 5},
-    5: {"level": CORE_ASHE_LEVELS[5]["level"], "q_level": 5},
+    1: {"level": CORE_ASHE_LEVELS[1]["level"], "q_level": 3, "w_level": 3, "r_level": 1},
+    2: {"level": CORE_ASHE_LEVELS[2]["level"], "q_level": 4, "w_level": 4, "r_level": 2},
+    3: {"level": CORE_ASHE_LEVELS[3]["level"], "q_level": 5, "w_level": 5, "r_level": 2},
+    4: {"level": CORE_ASHE_LEVELS[4]["level"], "q_level": 5, "w_level": 5, "r_level": 2},
+    5: {"level": CORE_ASHE_LEVELS[5]["level"], "q_level": 5, "w_level": 5, "r_level": 3},
 }
 
 
@@ -138,7 +141,8 @@ def simulate_yunara_reference_path(core_tier):
     yunara_core_order = ["kraken", "pd", "ie", "ldr"]
     target = build_target_for_core(core_tier)
     level_cfg = CORE_YUNARA_LEVELS[core_tier]
-    yunara = Yunara(level=level_cfg["level"], q_level=level_cfg["q_level"])
+    yunara = Yunara(level=level_cfg["level"], q_level=level_cfg["q_level"],
+                    w_level=level_cfg["w_level"], r_level=level_cfg["r_level"])
     yunara.set_rune(LethalTempo())
     yunara.set_sub_rune(CutDown())
 
@@ -165,7 +169,8 @@ def simulate_yunara_core_path(core_item_keys, core_tier, doran_key=None, boots_k
     """
     target = build_target_for_core(core_tier)
     level_cfg = CORE_YUNARA_LEVELS[core_tier]
-    yunara = Yunara(level=level_cfg["level"], q_level=level_cfg["q_level"])
+    yunara = Yunara(level=level_cfg["level"], q_level=level_cfg["q_level"],
+                    w_level=level_cfg["w_level"], r_level=level_cfg["r_level"])
     yunara.set_rune(LethalTempo())
     yunara.set_sub_rune(CutDown())
 
