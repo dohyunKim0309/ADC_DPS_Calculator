@@ -69,7 +69,7 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 - **윤탈 치명타 가정**: 구매 코어/다음 코어 여부에 따라 0%/12%/5%/25%로 분기(`simulate_*_core_path` 내부). 가정이지 실측이 아님.
 - **유나라 시뮬 코드는 `adc_sim/simulations/yunara.py`에 자체 보관**(타깃 스탯/레벨표/`simulate_yunara_*` 모두). 애쉬 파일에 두지 말 것. 공유 인프라(`_build_ashe_4core_all_paths`/`build_ashe_like_core_report_meta`)만 ashe.py에서 import. 레벨표(`CORE_YUNARA_LEVELS`)는 Ashe 참조 없이 독립.
 - **유나라 로테이션**(`adc_sim/champion.py` Yunara): 첫 평타(궁 전이라 Q 비활성) → 직후 궁=초월(Q 활성) + **첫 평타 딜레이 캔슬**(다음 평타 간격 1/AS를 0.33s로 클리핑) → 둘째 평타 이후 평타 지속 + W는 쿨마다. 평타 윈드업은 모델 없음(첫 평타 t=0 즉시). (구 가정 `activate_q(0.0)` 강제활성은 폐기)
-- **Q 평캔/재적립 규칙(Ashe·Yunara 공통)**: Q 만료 후 평타로 **전용 스택**을 재적립해야 재사용(Ashe `q_stacks`≥4, Yunara `q_stacks`≥8=4평타; 활성 시 0 리셋). Ashe Q는 전역 `hit_count`가 아닌 전용 스택 사용(과거 즉시 재활성 버그 수정). Q 매 (재)활성 직후 다음 평타 간격을 **`ANIM_CANCEL_CLIP`(=0.33s, `champion.py` 모듈 상수)** 로 상한 클리핑(평타캔슬 가정).
+- **Q 평캔/재적립 규칙(Ashe·Yunara 공통)**: Q 만료 후 평타로 **전용 스택**을 재적립해야 재사용(Ashe `q_stacks`≥4, Yunara `q_stacks`≥8=4평타; 활성 시 0 리셋). Ashe Q는 전역 `hit_count`가 아닌 전용 스택 사용(과거 즉시 재활성 버그 수정). **모든 스킬 평캔(Q (재)활성·유나라 W 시전 등) 직후** 다음 평타 간격을 **`ANIM_CANCEL_CLIP`(=0.33s, `champion.py` 모듈 상수)** 로 상한 클리핑(평타캔슬 가정).
 - **유나라 W**(`adc_sim/champion.py`)는 엔진 스킬 이벤트로 모델링: Q활성(초월)이면 강화 W(파멸의 궤적, 궁 레벨 색인 160/320/480 +1.2추가AD +0.75AP, 쿨5s), 비활성이면 기본 W(심판의 궤적, W 레벨 색인, 적중+6초 DoT, 쿨10s). **`[Hypothesis]` 나무위키 수치(CDragon API 미검증)**. W 레벨/궁 레벨은 `CORE_YUNARA_LEVELS`의 `w_level`/`r_level`(Q선마→W차선마 가정). `Yunara(w_enabled=False)`로 W 이전 동작 복귀(검증/AB용). 평타는 안 끊는 가정(스킬/평타 타이머 독립).
 - **방어구 관통**은 `add_item`에서 곱연산으로 합치지만 주석상 "단순화" 영역 — 정밀화하려면 모델 가정부터 합의.
 - **가설은 가설로 표시**: 모델 안에 이미 가설 코드가 있다(예: `adc_sim/champion.py`의 유나라 패시브 재귀 증폭, Shadowflame 상호작용). 새 메커니즘은 `AGENTS.md` 4장대로 `Hypothesis/Experimental/Unsupported`로 명시하고 단정하지 말 것.

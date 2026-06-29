@@ -753,6 +753,7 @@ class Yunara(Champion):
                 for k in range(1, self.base_w_dot_ticks + 1):
                     self.pending_w_dot.append((current_time + k * 1.0, dot_per_sec))
             self.cast_spell(current_time)
+            self._clip_next_interval = True  # W 시전도 평타캔슬 → 다음 평타 0.33 클리핑
 
         return events
 
