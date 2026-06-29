@@ -98,22 +98,23 @@
 - 그 외 버프형 비-DPS 스킬(Ashe W/E·Jinx W/E·Yunara E 등)은 현재 DPS 루프 미모델 → 마나 비용도
   미부과(모델 일관성). 데이터(존재 비용)는 참고로 기록만.
 
-## 3.5 전 챔피언 마나 데이터 — 스키마 & 출처 (확정 전 **사용자 확인**)
+## 3.5 전 챔피언 마나 데이터 — 확정 (DDragon 16.13.1 + 사용자 확정 2026-06-29)
 스키마(챔프별): `base_mana, mana_growth, base_mp5, mp5_growth, mana_cost{skill: 값}`.
-출처 표기: ✓=2소스+ 일치, [code]=기존 코드값, [src?]=구현 1단계서 wiki+DDragon 교차검증 후 확정.
+출처 표기: ✓=DDragon 16.13.1 확정값(사용자 2026-06-29 확정). Cog'Maw는 4소스 §4.1.
 
-| 챔프 | base_mana | mana_growth | base_mp5 | mp5_growth | 스킬 비용(주력) |
+| 챔프 | base_mana | mana_growth | base_mp5 | mp5_growth | 모델 스킬 마나비용 |
 |---|---|---|---|---|---|
-| **Cog'Maw** | 325 ✓ | 40 ✓ | 8.75 ✓ | 0.7 ✓ | **Q 40 ✓** · W 40 ✓ · E [40,55,70,85,100] ✓ · R 40+40/스택(≤9, 40–400) ✓ |
-| Kai'Sa | 345 [code] | 40 [code] | 8.2 [code] | 0.7 [code] | Q/W/E/R [src?] |
-| Corki | 350 [code] | 40 [code] | [src?] | [src?] | Q/W/E/R [src?] |
-| Ezreal | 375 [code] | 70 [code] | [src?] | [src?] | Q/W/E/R [src?] |
-| Ashe | **[src?]** | [src?] | [src?] | [src?] | **Q 50(파악) [src?]** · W/R [src?] |
-| Jinx | **[src?]** | [src?] | [src?] | [src?] | **Q 0(파악) [src?]** · W/E [src?] |
-| Yunara | **[src?]** | [src?] | [src?] | [src?] | **Q [src?]** |
+| **Cog'Maw** | 325 ✓ | 40 ✓ | 8.75 ✓ | 0.7 ✓ | Q 40 · W 40 · E [40,55,70,85,100] · R 40+40/스택(≤9, 40–400) *(Phase 1)* |
+| Kai'Sa | 345 ✓ | 40 ✓ | 8.2 ✓ | 0.7 ✓ | Q 55 · W 75(@5) · E 30 · R 100 |
+| Corki | 350 ✓ | 40 ✓ | 7.4 ✓ | 0.7 ✓ | Q 80(@5) · W 100(@5) · E 70(@5) · R 35/미사일 |
+| Ezreal | 375 ✓ | 70 ✓ | 8.5 ✓ | 1.0 ✓ | Q 40(@5) · W 50 · E 70 · R 100(미모델) |
+| Ashe | 280 ✓ | 35 ✓ | 7.0 ✓ | 0.65 ✓ | **Q(Ranger's Focus) 30** |
+| Jinx | 260 ✓ | 50 ✓ | 6.7 ✓ | 1.0 ✓ | **평타 무비용**(미니건 기준; Fishbones 20/평타는 [user 결정] 미모델 — Jinx는 데이터만) |
+| Yunara | 275 ✓ | 45 ✓ | 7.5 ✓ | 0.75 ✓ | **Q(Cultivation of Spirit) 30** |
 
-- **구현 1단계 = 데이터 소싱 태스크**: 누락분을 wiki+DDragon 교차검증해 표를 채우고, 본 스펙에
-  확정 반영 + 사용자 확인 후 코드화(데이터 워크플로 준수, 추정 금지).
+- **소싱·확정 완료(2026-06-29)**: 전 챔프 base/성장/MP5 + 모델 스킬비용을 DDragon 16.13.1 교차검증,
+  사용자 확정. 소싱이 잡은 **가정 정정 3건**: Ashe Q `50→30`, Kai'Sa E `0→30`(W 75@5), Jinx fishbones
+  `무료→20/평타`(단 [user 결정] '평타 무비용' 원칙 유지 위해 미모델). H-MANA-3/4 갱신.
 - 데이터 위치: 챔프 base/성장/MP5 + `mana_cost`는 각 챔프 서브클래스(`champion.py`)에 둔다(기존
   base_mana/growth가 거기 있는 관례 유지).
 
