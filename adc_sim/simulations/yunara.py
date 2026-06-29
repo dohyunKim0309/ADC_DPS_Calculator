@@ -10,12 +10,66 @@ from adc_sim.engine import run_simulation
 from adc_sim.settings import get_result_export_settings
 from adc_sim.data.items_registry import create_item_from_key
 from adc_sim.data.items_data import DORAN_OPTIONS, DORAN_SHORT, ADC_PACKAGES
-# 공유 인프라(챔피언 비특이적): 4코어 후보 경로 풀 + 리포트 메타 생성기.
-# (유나라 고유 가정 아님 — 애쉬 랭킹과 동일한 탐색공간/리포트 포맷)
-from adc_sim.simulations.ashe import (
-    _build_ashe_4core_all_paths,
-    build_ashe_like_core_report_meta,
-)
+
+
+# pen 배타(챔피언 무관 필수 규칙): 한 빌드에 방관 1개·마관 1개까지만.
+#   방관 배타 = {ldr, mortal, terminus}, 마관 배타 = {void, terminus}.
+#   (terminus 는 방관·마관 겸비라 양쪽 모두에 속함 → 공허와도 공존 불가)
+ARMOR_PEN_EXCLUSIVE = {"ldr", "mortal", "terminus"}
+MAGIC_PEN_EXCLUSIVE = {"void", "terminus"}
+
+
+def _build_yunara_4core_all_paths():
+    """유나라 전용 4코어 후보 경로 풀 (AP 아이템 포함; 애쉬 풀과 분리).
+
+    유나라는 AP 스케일링(Q온힛/패시브/W)이라 애쉬의 AD 전용 풀과 달리
+    nashor/shadowflame/rabadon/void 등 AP 아이템을 후보에 포함한다.
+    슬롯 구조(코어1~4 후보)는 유지하고 pen 배타 규칙을 반드시 적용한다.
+    """
+    core1_candidates = ["kraken", "yuntal25", "storm", "c44", "bot", "guinsoo", "terminus",
+                        "nashor", "statikk"]
+    core2_candidates = ["kraken", "yuntal25", "storm", "c44", "bot", "pd", "runaan", "terminus",
+                        "guinsoo", "nashor", "statikk", "shadowflame"]
+    core3_candidates = ["ie", "ldr", "guinsoo", "terminus", "shadowflame", "nashor", "rabadon",
+                        "mortal", "void"]
+    core4_candidates = ["ie", "ldr", "storm", "c44", "pd", "runaan", "kraken", "statikk", "guinsoo",
+                        "terminus", "nashor", "shadowflame", "rabadon", "mortal", "void"]
+
+    all_paths = []
+    seen = set()
+    for c1 in core1_candidates:
+        for c2 in core2_candidates:
+            if c2 == c1:
+                continue
+            for c3 in core3_candidates:
+                if c3 in (c1, c2):
+                    continue
+                for c4 in core4_candidates:
+                    if c4 in (c1, c2, c3):
+                        continue
+                    keys = (c1, c2, c3, c4)
+                    if sum(1 for k in keys if k in ARMOR_PEN_EXCLUSIVE) > 1:
+                        continue
+                    if sum(1 for k in keys if k in MAGIC_PEN_EXCLUSIVE) > 1:
+                        continue
+                    if keys in seen:
+                        continue
+                    seen.add(keys)
+                    all_paths.append(keys)
+    return all_paths
+
+
+def build_ashe_like_core_report_meta(champion_name, full_path, core_tier):
+    """코어 경로 리포트용 직렬화 메타(유나라 자체 정의; 애쉬 의존 제거)."""
+    active_path = tuple(full_path[:core_tier])
+    return {
+        "champion": champion_name,
+        "core_tier": core_tier,
+        "full_path": list(full_path),
+        "active_path": list(active_path),
+        "build": "-".join(full_path),
+        "active_build": "-".join(active_path),
+    }
 
 
 # === 유나라 전용 시뮬 설정 (애쉬 파일에서 분리; Ashe 가정에 의존하지 않음) ===
@@ -129,6 +183,11 @@ ITEM_SHORT = {
     "guinsoo": "Gui",
     "ie": "IE",
     "ldr": "LDR",
+    "mortal": "Mortal",
+    "nashor": "Nashor",
+    "shadowflame": "SF",
+    "rabadon": "Deathcap",
+    "void": "Void",
 }
 
 CONTROL_COMBO = tuple(sorted(("kraken", "pd", "ie", "ldr")))
@@ -176,7 +235,7 @@ def rank_yunara_4core_paths():
     각 경로를 정배 패키지 A/B 두 경우로 평가(2배)하고, 4아이템 집합당 최고 1개만 유지
     → 빌드별 최적 패키지가 자동 선택된다. 컨트롤도 패키지 최적(가중 DPG 최대).
     """
-    all_paths = _build_ashe_4core_all_paths()
+    all_paths = _build_yunara_4core_all_paths()
 
     results = []
     for c1, c2, c3, c4 in all_paths:

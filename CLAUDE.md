@@ -56,7 +56,8 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 새 패치가 나오면 보통 아래를 손본 뒤 시뮬을 다시 돌려 랭킹을 갱신한다. **변경 전 `AGENTS.md`의 승인 절차를 따른다.**
 1. **아이템 스탯/가격 변경** → `adc_sim/data/items_data.py`의 `ITEMS[key]`(`stats`/`cost`). 숫자의 단일 출처.
 2. **신규 아이템** → `adc_sim/data/items_data.py`의 `ITEMS`에 키 추가(name/cost/stats/behavior). 특수 메커니즘이 있을 때만 `adc_sim/items.py`에 동작 클래스를 추가해 `behavior`로 지정. 생성은 **통합 `create_item_from_key`**(`adc_sim/data/items_registry.py`) 하나가 처리 — 시뮬별 복제 없음(윤탈 crit 은 런타임 파라미터 `yuntal_crit`).
-   - 새 키를 **탐색 후보 풀**(`ashe.py`의 `_build_ashe_4core_all_paths` 내 `coreN_candidates`, kaisa/corki의 대응 풀)에 넣어야 실제 랭킹에 등장한다. `pen_exclusive_keys = {terminus, ldr, mortal}`는 한 빌드에 1개까지만 허용.
+   - 새 키를 **탐색 후보 풀**에 넣어야 실제 랭킹에 등장한다. **유나라는 자체 풀 `_build_yunara_4core_all_paths`(yunara.py, AP 아이템 포함)**, 애쉬는 `ashe.py`의 `_build_ashe_4core_all_paths`, kaisa/corki는 대응 풀. **pen 배타(챔피언 무관 필수)**: 방관 `{ldr, mortal, terminus}` 한 빌드 1개 + 마관 `{void, terminus}` 한 빌드 1개(terminus는 양쪽 겸비 → 공허와도 공존 불가).
+   - **%마법관통** 스탯은 `magic_pen_percent`(STAT_KEYS 포함, `add_item`에서 곱연산). 예: 공허의 지팡이(`void`, AP95/마관40%).
 3. **챔피언 기본 스탯/스킬 계수 변경** → `adc_sim/champion.py`의 해당 서브클래스. 코어별 레벨표(`CORE_*_LEVELS`)·타깃 스탯(`CORE_TARGET_STATS`)도 패치 메타에 맞게 점검.
 4. **룬 변경** → `adc_sim/runes.py`.
 5. 갱신 후 시뮬 재실행 → 그래프/리포트 확인. 리포트를 남기려면 export 토글을 켠다.

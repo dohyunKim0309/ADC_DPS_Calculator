@@ -68,6 +68,8 @@ class Champion:
         self.lethality += item.stats.get('lethality', 0)
         self.crit_damage_modifier += item.stats.get('add_crit_damage', 0)
         self.magic_pen_flat += item.stats.get('magic_pen_flat', 0)
+        self.magic_pen_percent = 1 - (1 - self.magic_pen_percent) * (
+                    1 - item.stats.get('magic_pen_percent', 0))  # %마법관통(공허 등): 곱연산 합성
         self.ability_haste += item.stats.get('cdr', 0)
 
     # 룬 장착 함수

@@ -16,7 +16,7 @@ yuntal/yuntal25 의 crit 은 구매 코어 타이밍별 런타임 파라미터�
 # 엔진이 소비하는 스탯 키 (champion.add_item 이 읽는 것과 동일)
 STAT_KEYS = (
     "ad", "ap", "as", "crit", "add_crit_damage",
-    "armor_pen_percent", "lethality", "magic_pen_flat", "cdr", "mana",
+    "armor_pen_percent", "lethality", "magic_pen_flat", "magic_pen_percent", "cdr", "mana",
 )
 
 # 도란 시작 아이템 토글 — 최고 빌드 탐색 시 검/활 두 경우(2배)를 평가하고
@@ -57,6 +57,7 @@ ITEMS = {
     "nashor":      {"name": "Nashor's Tooth",           "cost": 2900, "behavior": "NashorsTooth",        "stats": {"ap": 80, "as": 0.50, "cdr": 15}},
     "rabadon":     {"name": "Rabadon's Deathcap",       "cost": 3500, "behavior": "RabadonsDeathcap",    "stats": {"ap": 130}},
     "shadowflame": {"name": "Shadowflame",              "cost": 3200, "behavior": "Shadowflame",         "stats": {"ap": 110, "magic_pen_flat": 15}},
+    "void":        {"name": "Void Staff",               "cost": 3000, "behavior": "VoidStaff",           "stats": {"ap": 95, "magic_pen_percent": 0.40}},
     "shieldbow":   {"name": "Immortal Shieldbow",       "cost": 3000, "behavior": "ImmortalShieldbow",   "stats": {"ad": 55, "crit": 0.25}},
     "trinity":     {"name": "Trinity Force",            "cost": 3333, "behavior": "TrinityForce",        "stats": {"ad": 36, "as": 0.30, "cdr": 15}},
     "essence":     {"name": "Essence Reaver",           "cost": 3050, "behavior": "EssenceReaver",       "stats": {"ad": 50, "crit": 0.25, "cdr": 20}},
