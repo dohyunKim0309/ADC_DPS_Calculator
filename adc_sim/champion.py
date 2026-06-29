@@ -49,7 +49,12 @@ class Champion:
         self.magic_pen_flat = 0 # 마법 관통력 (고정)
         self.ability_haste = 0.0 # 스킬 가속
         self._combat_time = 0.0
-        
+
+        # 마나 자원 (Phase 0). total_mana = 풀; current_mana = 전투 중 현재값.
+        self.current_mana = 0.0
+        self.base_mp5 = 0.0      # 5초당 기본 마나재생 (챔프별 데이터, Task 6)
+        self.mp5_growth = 0.0    # 레벨당 MP5 성장
+
         # 시뮬레이션 설정
         self.target_count = 1 # 적 수 (루난 효율 계산용)
 
@@ -130,6 +135,37 @@ class Champion:
                 dynamic_bonus_mana += item.get_bonus_mana(self)
         return base_mana + growth_mana + self.bonus_mana + dynamic_bonus_mana
 
+    @property
+    def mana_regen_per_sec(self):
+        """초당 마나 재생 = (기본 MP5 + 성장 + 아이템 MP5)/5. [H-MANA-1] 복합 패시브 무시."""
+        base = self.base_mp5 + self.mp5_growth * (self.level - 1)
+        item_mp5 = 0.0
+        for item in self.inventory:
+            item_mp5 += getattr(item, "stats", {}).get("mana_regen", 0.0)
+        return (base + item_mp5) / 5.0
+
+    def can_afford(self, cost):
+        """[H-MANA-2] 하드 바운드: 현재 마나로 cost를 감당 가능한가."""
+        return self.current_mana + 1e-9 >= cost
+
+    def spend_mana(self, cost):
+        """마나 차감(0 미만 클램프)."""
+        self.current_mana = max(0.0, self.current_mana - cost)
+
+    def regen_mana(self, dt):
+        """dt초 동안 마나 재생(total_mana 상한 클램프)."""
+        if dt > 0:
+            self.current_mana = min(self.total_mana, self.current_mana + self.mana_regen_per_sec * dt)
+
+    def _afford_in(self, cost):
+        """cost를 감당할 때까지 남은 시간(초). 0=즉시, inf=재생 0이라 영영 불가. [0-dt 스핀 방지용]"""
+        if self.can_afford(cost):
+            return 0.0
+        rps = self.mana_regen_per_sec
+        if rps <= 0:
+            return float("inf")
+        return (cost - self.current_mana) / rps
+
     def get_total_bonus_as_percent(self):
         """총 추가 공격 속도(%) 반환 (아이템 + 성장 + 룬)"""
         level_bonus = (self.as_growth * (self.level - 1)) / 100
@@ -179,9 +215,11 @@ class Champion:
     # 엔진 주도 이벤트 인터페이스 (기본: 스킬 이벤트 없음)
     def init_combat_state(self, skill_plan=None):
         self._combat_time = 0.0
+        self.current_mana = self.total_mana   # 전투 시작 시 풀충전
 
     def advance_combat_time(self, delta_time, current_time, target):
         self._combat_time = current_time
+        self.regen_mana(delta_time)           # [H-MANA-1] 중앙집중 재생; 서브클래스는 super() 호출로 상속
 
     def get_time_to_next_skill_event(self, current_time):
         return float("inf")
