@@ -348,10 +348,9 @@ class Ashe(Champion):
         
         # 스킬 레벨 설정
         self.q_level = q_level
-        # 시뮬레이션 시작 조건 변경:
-        # Q 준비 스택을 2부터 시작시키기 위해(평-평-Q평 캔슬),
-        # 현재 Q 준비 조건에 사용 중인 hit_count를 2로 초기화한다.
-        self.hit_count = 2
+        # Q 준비 스택(전용 카운터): 시작 2부터 → 평-평-Q평. 활성 시 0으로 리셋되어
+        # Q 만료 후 평타로 재적립해야 재사용(전역 hit_count 와 분리).
+        self.q_stacks = 2
         
         # Q 상태 관리
         self.q_active = False
@@ -371,13 +370,16 @@ class Ashe(Champion):
             if time - self.q_start_time > 6.0:
                 self.deactivate_q()
 
-        # 2. Q 활성화 조건 확인
-        # 평타 4회 적중 시 스택이 쌓이고, 그 다음 공격(5번째)부터 Q 사용 가능으로 가정
-        if not self.q_active and self.hit_count >= 4:
+        # 2. Q 활성화 조건: 전용 스택 4 이상 (평타로 적립; 활성 후 0 리셋 → 재적립 필요)
+        if not self.q_active and self.q_stacks >= 4:
             self.activate_q(time)
 
         # 3. 부모 클래스의 기본 대미지 계산 (기댓값 로직 포함)
         p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit = super().get_one_hit_damage(target, time)
+
+        # 3.5 Q 비활성 시 평타로 스택 적립(활성 중엔 안 쌓임)
+        if not self.q_active:
+            self.q_stacks += 1
 
         # 4. Q 활성화 시 기본 공격 피해 증폭
         if self.q_active:
@@ -395,16 +397,17 @@ class Ashe(Champion):
         return p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit
 
     def get_attack_interval(self):
-        # Q 4스택 후 활성화되는 공격 직후에는 평타 딜레이 캔슬을 반영해 다음 평타를 0.2초로 처리
+        # Q 활성(평캔) 직후 다음 평타 간격을 0.33초로 클리핑(상한)
         if self.q_attack_reset_pending:
             self.q_attack_reset_pending = False
-            return 0.2
+            return min(super().get_attack_interval(), 0.33)
         return super().get_attack_interval()
 
     def activate_q(self, time):
         self.q_active = True
         self.q_start_time = time
         self.q_attack_reset_pending = True
+        self.q_stacks = 0  # 활성 시 스택 리셋 → 만료 후 재적립 필요
         
         # 공속 버프 적용
         if not self.q_as_buff_applied:
@@ -649,6 +652,7 @@ class Yunara(Champion):
         self.q_active = True
         self.q_start_time = time
         self.q_stacks = 0
+        self._clip_next_interval = True  # Q(평캔) 활성마다 다음 평타 간격 0.33 클리핑
         if not self.q_as_buff_applied:
             idx = self.q_level - 1
             as_bonus = self.q_as_amounts[idx]
