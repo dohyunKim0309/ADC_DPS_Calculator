@@ -578,6 +578,15 @@ class Yunara(Champion):
         # 적중 시 마법 피해: 5 / 10 / 15 / 20 / 25 (+0.1 AP)
         self.q_onhit_base = [5, 10, 15, 20, 25]
 
+    def init_combat_state(self, skill_plan=None):
+        super().init_combat_state(skill_plan)
+        # [버그수정] 유나라 시뮬은 전투 시작과 동시에 Q 활성 가정. 기존 sim은 run_simulation 전에
+        # activate_q(0.0)를 호출하나 그 시점엔 current_mana=0(미충전)이라 Task6 마나 게이트에 막힌다.
+        # super()가 current_mana=total_mana로 채운 직후 여기서 활성해 baseline 거동 복원.
+        # mid-fight 재활성은 여전히 H-MANA-3 마나 게이트를 따른다.
+        if not self.q_active:
+            self.activate_q(0.0)
+
     def get_champion_onhit(self, target):
         """유나라 Q 스킬 온힛 대미지 (구인수 적용)"""
         idx = self.q_level - 1

@@ -24,19 +24,23 @@ def test_ashe_q_activates_and_spends_when_affordable():
 
 
 def test_yunara_q_blocked_when_oom():
+    # init_combat_state now auto-activates Q (bugfix). Test mid-combat re-activation gating.
     y = Yunara(level=11, q_level=5)
     y.q_mana_cost = 50.0
     y.init_combat_state()
-    y.current_mana = 0.0          # force OOM
-    y.q_stacks = 8                # activation condition met
+    y.deactivate_q()               # simulate Q expiry mid-fight
+    y.current_mana = 0.0           # force OOM
+    y.q_stacks = 8                 # re-activation condition met
     y.get_one_hit_damage(Target(hp=2000, armor=60, magic_resist=40), time=1.0)
-    assert y.q_active is False, "Yunara Q must not activate while OOM"
+    assert y.q_active is False, "Yunara Q must not re-activate while OOM"
 
 
 def test_yunara_q_activates_and_spends_when_affordable():
+    # init_combat_state now auto-activates Q (bugfix). Test mid-combat re-activation spending.
     y = Yunara(level=11, q_level=5)
     y.q_mana_cost = 50.0
     y.init_combat_state()
+    y.deactivate_q()               # simulate Q expiry mid-fight
     y.current_mana = 500.0
     y.q_stacks = 8
     y.get_one_hit_damage(Target(hp=2000, armor=60, magic_resist=40), time=1.0)
