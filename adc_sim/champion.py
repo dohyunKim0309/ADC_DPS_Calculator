@@ -67,7 +67,7 @@ class Champion:
         self.bonus_ap += item.stats.get('ap', 0)
         self.bonus_mana += item.stats.get('mana', 0)
         self.bonus_as_percent += item.stats.get('as', 0)
-        self.crit_chance += item.stats.get('crit', 0)
+        self.crit_chance = min(1.0, self.crit_chance + item.stats.get('crit', 0))  # 치명타 100% 캡(초과분 무효)
         self.armor_pen_percent = 1 - (1 - self.armor_pen_percent) * (
                     1 - item.stats.get('armor_pen_percent', 0))  # 방관은 곱연산 적용이 정확하나 여기선 단순화 가능
         self.lethality += item.stats.get('lethality', 0)
