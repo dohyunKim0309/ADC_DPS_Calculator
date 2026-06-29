@@ -175,13 +175,10 @@ def simulate_yunara_core_path(core_item_keys, core_tier, doran_key=None, boots_k
         if key == "yuntal25":
             current_tier = len(active_core_keys)
             purchase_tier = idx
+            # [Hypothesis] 윤탈 치명타 누적 가정: 구매한 그 코어 시점=10%(전 코어 통일),
+            # 다음 코어부터는 항상 25%. 실측이 아닌 스택 누적 속도에 대한 단순 가정.
             if current_tier == purchase_tier:
-                if idx == 1:
-                    yuntal_crit = 0.0
-                elif idx == 2:
-                    yuntal_crit = 0.12
-                else:
-                    yuntal_crit = 0.05
+                yuntal_crit = 0.10
             else:
                 yuntal_crit = 0.25
             core_items.append(create_item_from_key(key, yuntal_crit=yuntal_crit))
