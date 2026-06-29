@@ -543,6 +543,10 @@ class Yunara(Champion):
         self.ult_w_ap_ratio = 0.75           # +주문력
         self.ult_w_cd = 5.0                  # 쿨다운(초)
 
+        # 로테이션: 첫 평타 → 궁(초월 Q활성) → 평타 → 이후 평타+W(쿨마다).
+        # 궁 캔슬 = 첫 평타 직후 다음 평타 간격(1/AS)을 0.33초로 클리핑(상한).
+        self.ult_cancel_clip = 0.33
+
     def get_champion_onhit(self, target):
         """유나라 Q 스킬 온힛 대미지 (구인수 적용)"""
         idx = self.q_level - 1
@@ -629,6 +633,14 @@ class Yunara(Champion):
                 p_onhit *= onhit_multiplier
                 m_onhit *= onhit_multiplier
 
+        # 첫 평타 직후 궁극기 시전 → 초월(Q) 활성 + 다음 평타 간격 캔슬(클리핑).
+        # [Hypothesis] 사용자 지정 로테이션(평타→궁→평타→W). super()가 hit_count를
+        # 막 +1 했으므로 hit_count==1 == 방금 첫 평타를 마친 시점.
+        if getattr(self, "_ult_pending", False) and self.hit_count >= 1:
+            self._ult_pending = False
+            self.activate_q(time)            # 궁극기 = 초월(Q) 활성
+            self._clip_next_interval = True  # 다음 평타 간격을 0.33s로 클리핑
+
         return p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit
 
     def activate_q(self, time):
@@ -651,10 +663,13 @@ class Yunara(Champion):
             self.bonus_as_percent -= as_bonus
             self.q_as_buff_applied = False
 
-    # ---- 엔진 주도 스킬 이벤트: W (심판의 궤적 / 파멸의 궤적) ----
+    # ---- 엔진 주도 로테이션: 평타 → 궁(초월) → 평타 → 평타+W(쿨마다) ----
     def init_combat_state(self, skill_plan=None):
-        """전투 상태 초기화. W는 교전 시작 시 즉시 1회 사용 가능(쿨 0)."""
+        """전투 상태 초기화. 첫 평타 전 Q 비활성, W는 둘째 평타 이후부터."""
         super().init_combat_state(skill_plan)
+        self.hit_count = 0
+        self._ult_pending = True       # 첫 평타 직후 궁(초월) 시전 대기
+        self._clip_next_interval = False  # 궁 캔슬로 다음 평타 간격 클리핑
         self.cooldowns_remaining = {"w": 0.0}
         self.pending_w_dot = []  # [(tick_time, magic_dmg)] 심판의 궤적 DoT 예약
 
@@ -663,8 +678,17 @@ class Yunara(Champion):
         if delta_time > 0 and hasattr(self, "cooldowns_remaining"):
             self.cooldowns_remaining["w"] = max(0.0, self.cooldowns_remaining["w"] - delta_time)
 
+    def get_attack_interval(self):
+        """평타 간격(1/AS). 궁 캔슬 직후 1회만 0.33초로 클리핑(상한)."""
+        base = super().get_attack_interval()
+        if self._clip_next_interval:
+            self._clip_next_interval = False
+            return min(base, self.ult_cancel_clip)
+        return base
+
     def get_time_to_next_skill_event(self, current_time):
-        if not self.w_enabled:
+        # W는 "평타→궁→평타" 이후(둘째 평타 완료, hit_count>=2)부터 쿨마다 시전
+        if not self.w_enabled or self.hit_count < 2:
             return float("inf")
         candidates = [max(0.0, self.cooldowns_remaining["w"])]
         for tick_time, _ in self.pending_w_dot:
@@ -679,7 +703,7 @@ class Yunara(Champion):
         반환 튜플: (skill_name, raw_phys, raw_magic, is_skill_hit).
         """
         eps = 1e-9
-        if not self.w_enabled:
+        if not self.w_enabled or self.hit_count < 2:
             return []
         events = []
 
