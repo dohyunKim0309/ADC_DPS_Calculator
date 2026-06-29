@@ -2,6 +2,11 @@
 
 
 # 1. 적 챔피언 (타겟) 클래스
+# 평타 캔슬 상수: Q(초월/궁) 등 스킬 활성 직후 평타 딜레이를 캔슬해
+# 다음 평타 간격(1/AS)을 이 값으로 상한 클리핑(초). Ashe·Yunara 공통.
+ANIM_CANCEL_CLIP = 0.33
+
+
 class Target:
     def __init__(self, hp, armor, magic_resist, bonus_hp=0):
         self.max_hp = hp
@@ -400,7 +405,7 @@ class Ashe(Champion):
         # Q 활성(평캔) 직후 다음 평타 간격을 0.33초로 클리핑(상한)
         if self.q_attack_reset_pending:
             self.q_attack_reset_pending = False
-            return min(super().get_attack_interval(), 0.33)
+            return min(super().get_attack_interval(), ANIM_CANCEL_CLIP)
         return super().get_attack_interval()
 
     def activate_q(self, time):
@@ -549,8 +554,8 @@ class Yunara(Champion):
         self.ult_w_cd = 5.0                  # 쿨다운(초)
 
         # 로테이션: 첫 평타 → 궁(초월 Q활성) → 평타 → 이후 평타+W(쿨마다).
-        # 궁 캔슬 = 첫 평타 직후 다음 평타 간격(1/AS)을 0.33초로 클리핑(상한).
-        self.ult_cancel_clip = 0.33
+        # 궁/평캔 = Q 활성 직후 다음 평타 간격(1/AS)을 ANIM_CANCEL_CLIP 로 클리핑(상한).
+        self.ult_cancel_clip = ANIM_CANCEL_CLIP
 
     def get_champion_onhit(self, target):
         """유나라 Q 스킬 온힛 대미지 (구인수 적용)"""

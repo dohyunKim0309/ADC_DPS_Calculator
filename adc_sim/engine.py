@@ -22,13 +22,15 @@ def calculate_mitigation(raw_phys, raw_magic, target, champion):
     return actual_phys, actual_magic
 
 
-def run_simulation(champion, target, verbose=True, skill_plan=None, respawn_to_full_kills=1):
-    """이벤트 루프. respawn_to_full_kills>1 이면 처치 시 오버킬을 이월한 채 타깃을
-    풀피로 리필해 해당 횟수만큼 처치할 때까지 지속(지속딜 측정용).
+def run_simulation(champion, target, verbose=True, skill_plan=None, respawn_to_full_kills=2):
+    """이벤트 루프. 처치 시 오버킬을 이월한 채 타깃을 풀피로 리필해
+    respawn_to_full_kills 회만큼 처치할 때까지 지속(지속딜 측정).
 
     같은 크기의 체력바를 여러 번 처치 → 시작 버스트(W/궁캔슬)가 여러 바에 분산되어
     지속(steady-state) DPS 에 수렴. 바 크기를 키우지 않으므로 몰왕검(현재체력%)은
     과대평가되지 않는다. dps = 총 누적피해(오버킬 포함) / 마지막 처치 시각.
+
+    **기본 K=2(리스폰 1회)** 가 프로젝트 표준. respawn_to_full_kills=1 로 단일 처치 복원.
     """
     eps = 1e-9
     current_time = 0.0
