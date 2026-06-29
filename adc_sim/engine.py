@@ -22,13 +22,21 @@ def calculate_mitigation(raw_phys, raw_magic, target, champion):
     return actual_phys, actual_magic
 
 
-def run_simulation(champion, target, verbose=True, skill_plan=None):
+def run_simulation(champion, target, verbose=True, skill_plan=None, respawn_to_full_kills=1):
+    """이벤트 루프. respawn_to_full_kills>1 이면 처치 시 오버킬을 이월한 채 타깃을
+    풀피로 리필해 해당 횟수만큼 처치할 때까지 지속(지속딜 측정용).
+
+    같은 크기의 체력바를 여러 번 처치 → 시작 버스트(W/궁캔슬)가 여러 바에 분산되어
+    지속(steady-state) DPS 에 수렴. 바 크기를 키우지 않으므로 몰왕검(현재체력%)은
+    과대평가되지 않는다. dps = 총 누적피해(오버킬 포함) / 마지막 처치 시각.
+    """
     eps = 1e-9
     current_time = 0.0
     next_attack_in = 0.0
     history = [(0.0, target.current_hp)]
     attack_count = 0
     total_damage_dealt = 0.0
+    kills_done = 0
 
     champion.init_combat_state(skill_plan)
 
@@ -93,7 +101,11 @@ def run_simulation(champion, target, verbose=True, skill_plan=None):
 
                 if target.current_hp <= 0:
                     history.append((round(current_time, 2), 0.0))
-                    break
+                    kills_done += 1
+                    if kills_done >= respawn_to_full_kills:
+                        break
+                    target.current_hp += target.max_hp  # 오버킬 이월 + 풀피 리필
+                    break  # 이번 스텝의 남은 스킬 이벤트는 다음 바로 넘김
 
         # 2) 기본 공격 이벤트 처리
         if target.current_hp > 0 and next_attack_in <= eps:
@@ -124,7 +136,10 @@ def run_simulation(champion, target, verbose=True, skill_plan=None):
 
             history.append((round(current_time, 2), max(0.0, target.current_hp)))
             if target.current_hp <= 0:
-                break
+                kills_done += 1
+                if kills_done >= respawn_to_full_kills:
+                    break
+                target.current_hp += target.max_hp  # 오버킬 이월 + 풀피 리필
 
             next_attack_in = champion.get_attack_interval()
 

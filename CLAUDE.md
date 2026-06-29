@@ -45,7 +45,7 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 4. `engine.calculate_mitigation`에서 방어력/마저 + 관통 적용: `eff = stat*(1-%pen) - flat_pen`(음수 클램프), `실피해 = raw * 100/(100+eff)`. 고정(true) 피해는 경감 없이 합산.
 
 ## 핵심 지표·개념
-- **DPS** = 누적 피해 / 처치 시간.
+- **DPS** = 누적 피해 / 처치 시간. (엔진 `run_simulation(respawn_to_full_kills=K)`: 처치 시 오버킬 이월+풀피 리필로 K개 체력바를 처치하는 지속딜 측정 — 시작 버스트(W/궁캔슬) 분산, 바 크기 유지로 몰왕검(현재체력%) 과대평가 방지. 기본 K=1=단일 처치, 기존 동작.)
 - **DPG** = `DPS / (gold/1000)` — 1000골드당 DPS, 즉 골드 효율.
 - **rel_dpg_score**(주 랭킹 지표) = 각 코어 구간의 `row_DPG / control_DPG` 비율을 **코어 1~4 가중치 5:4:3:3**으로 가중합 ×100. 즉 **컨트롤 빌드 대비 상대 골드효율**.
 - **Control(기준) 빌드** = `kraken-pd-ie-ldr` 로 하드코딩. 탐색 경로 안에 반드시 존재해야 하며 없으면 `RuntimeError`. 후보 풀이나 키 이름을 바꿀 때 이 빌드가 빠지지 않게 할 것.
