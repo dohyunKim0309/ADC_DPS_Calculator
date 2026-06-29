@@ -395,6 +395,12 @@ class Ashe(Champion):
         self.q_as_buff_applied = False # 공속 버프 중복 적용 방지
         self.q_attack_reset_pending = False  # Q 활성화 직후 다음 평타 간격 0.2초 적용
         
+        # 마나 (Task 5 확정). [데이터 출처: spec §3.5]
+        self.base_mana = 280.0
+        self.mana_growth = 35.0
+        self.base_mp5 = 7.0
+        self.mp5_growth = 0.65
+
         # Q 데이터 (레벨별)
         # 공격 속도: 20 / 30 / 40 / 50 / 60%
         self.q_as_amounts = [0.20, 0.30, 0.40, 0.50, 0.60]
@@ -504,6 +510,12 @@ class Jinx(Champion):
         self.fishbones_ad_multiplier = 1.10
         self.fishbones_bonus_as_multiplier = 0.90
 
+        # 마나 (Task 5 확정). [데이터 출처: spec §3.5]
+        self.base_mana = 260.0
+        self.mana_growth = 50.0
+        self.base_mp5 = 6.7
+        self.mp5_growth = 1.0
+
     def get_total_bonus_as_percent(self):
         # 파워스파이크 비교에서는 유지딜 기준으로 Q 모드를 고정 반영.
         base_bonus = super().get_total_bonus_as_percent()
@@ -547,6 +559,12 @@ class Yunara(Champion):
         self.q_as_buff_applied = False
         self.q_stacks = 0 # 방출 스택 (최대 8)
         
+        # 마나 (Task 5 확정). [데이터 출처: spec §3.5]
+        self.base_mana = 275.0
+        self.mana_growth = 45.0
+        self.base_mp5 = 7.5
+        self.mp5_growth = 0.75
+
         # Q 데이터 (레벨별)
         # 추가 공속: 20 / 30 / 40 / 50 / 60%
         self.q_as_amounts = [0.20, 0.30, 0.40, 0.50, 0.60]
@@ -684,6 +702,9 @@ class KaiSa(Champion):
         self.mana_growth = 40
         self.base_mana_regen = 8.2
         self.mana_regen_growth = 0.7
+        # base_mp5/mp5_growth: Champion.mana_regen_per_sec가 읽는 이름 (Task 5 확정). [spec §3.5]
+        self.base_mp5 = 8.2
+        self.mp5_growth = 0.7
         self.base_armor = 25
         self.armor_growth = 4.2
         self.base_mr = 30
@@ -709,8 +730,8 @@ class KaiSa(Champion):
 
         # 쿨타임/버프 상태
         self.cooldowns_remaining = {"q": 0.0, "w": 0.0, "e": 0.0, "r": 0.0}
-        # 스킬 마나 비용 (실제 수치는 Task 6 확정 데이터로 교체). [H-MANA-2]
-        self.mana_cost = {"q": 0.0, "w": 0.0, "e": 0.0, "r": 0.0}
+        # 스킬 마나 비용 (Task 5 확정). [spec §3.5]
+        self.mana_cost = {"q": 55.0, "w": 75.0, "e": 30.0, "r": 100.0}
         self.e_active = False
         self.e_end_time = 0.0
         self.e_buff_applied = False
@@ -1041,6 +1062,9 @@ class Corki(Champion):
         self.hp_regen_growth = 0.55
         self.base_mana = 350
         self.mana_growth = 40
+        # base_mp5/mp5_growth: Champion.mana_regen_per_sec가 읽는 이름 (Task 5 확정). [spec §3.5]
+        self.base_mp5 = 7.4
+        self.mp5_growth = 0.7
         self.base_armor = 27
         self.armor_growth = 4.5
         self.base_mr = 30
@@ -1088,7 +1112,8 @@ class Corki(Champion):
         self.r_max_charges = 4
         self.r_charge_remaining = None
         self.cooldowns_remaining = {"q": 0.0, "w": 0.0, "e": 0.0, "r_cast": self.r_initial_delay}
-        self.mana_cost = {"q": 0.0, "w": 0.0, "e": 0.0, "r": 0.0}   # 실수치 Task 6
+        # 스킬 마나 비용 (Task 5 확정). [spec §3.5]
+        self.mana_cost = {"q": 80.0, "w": 100.0, "e": 70.0, "r": 35.0}
 
         # 스킬 스케줄 상태
         self.manual_skill_casts = []
@@ -1343,6 +1368,8 @@ class Ezreal(Champion):
         # 보관(비-DPS): 미래 1대1 모델용
         self.base_hp = 600; self.hp_growth = 102
         self.base_mana = 375; self.mana_growth = 70
+        # base_mp5/mp5_growth: Champion.mana_regen_per_sec가 읽는 이름 (Task 5 확정). [spec §3.5]
+        self.base_mp5 = 8.5; self.mp5_growth = 1.0
         self.base_armor = 24; self.armor_growth = 4.2
         self.base_mr = 30; self.mr_growth = 1.3
 
@@ -1381,7 +1408,8 @@ class Ezreal(Champion):
         self.manual_skill_index = 0
         self.auto_skill_enabled = {"q": True, "w": True, "e": True}
         self.auto_skill_order = ["q", "w", "e"]
-        self.mana_cost = {"q": 0.0, "w": 0.0, "e": 0.0}   # 실수치 Task 6
+        # 스킬 마나 비용 (Task 5 확정, R 미모델). [spec §3.5]
+        self.mana_cost = {"q": 40.0, "w": 50.0, "e": 70.0}
 
     # ---- 추가AD(W/E 계수용) ----
     def _bonus_ad(self):
