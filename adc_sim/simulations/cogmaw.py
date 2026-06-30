@@ -80,9 +80,9 @@ def get_cogmaw_4core_top1_build():
         return _COGMAW_4CORE_TOP1_CACHE
 
     core1_candidates = ["guinsoo", "kraken", "nashor", "terminus", "bot", "rfc", "statikk", "storm", "pd", "ie", "yuntal", "shadowflame"]
-    core2_candidates = ["guinsoo", "kraken", "nashor", "terminus", "bot", "rfc", "statikk", "storm", "pd", "ie", "yuntal", "shadowflame"]
-    core3_candidates = ["guinsoo", "nashor", "terminus", "bot", "kraken", "rfc", "pd", "ie", "ldr", "rabadon", "shadowflame"]
-    core4_candidates = ["nashor", "rabadon", "shadowflame", "ie", "ldr", "mortal", "terminus", "bot", "guinsoo", "kraken", "pd"]
+    core2_candidates = ["guinsoo", "kraken", "nashor", "terminus", "bot", "rfc", "statikk", "storm", "pd", "ie", "yuntal", "shadowflame", "void"]
+    core3_candidates = ["guinsoo", "nashor", "terminus", "bot", "kraken", "rfc", "pd", "ie", "ldr", "rabadon", "shadowflame", "void"]
+    core4_candidates = ["nashor", "rabadon", "shadowflame", "ie", "ldr", "mortal", "terminus", "bot", "guinsoo", "kraken", "pd", "void"]
     pen_exclusive = {"terminus", "ldr", "mortal"}
     ctrl_combo = tuple(sorted(CONTROL_PATH))
 
@@ -198,9 +198,9 @@ if __name__ == "__main__":
     print("\n=== Cog'Maw Build Path Power Spike (W/Q/E/R auto-cast, 1→4 Core) ===")
 
     core1_candidates = ["guinsoo", "kraken", "nashor", "terminus", "bot", "rfc", "statikk", "storm", "pd", "ie", "yuntal", "shadowflame"]
-    core2_candidates = ["guinsoo", "kraken", "nashor", "terminus", "bot", "rfc", "statikk", "storm", "pd", "ie", "yuntal", "shadowflame"]
-    core3_candidates = ["guinsoo", "nashor", "terminus", "bot", "kraken", "rfc", "pd", "ie", "ldr", "rabadon", "shadowflame"]
-    core4_candidates = ["nashor", "rabadon", "shadowflame", "ie", "ldr", "mortal", "terminus", "bot", "guinsoo", "kraken", "pd"]
+    core2_candidates = ["guinsoo", "kraken", "nashor", "terminus", "bot", "rfc", "statikk", "storm", "pd", "ie", "yuntal", "shadowflame", "void"]
+    core3_candidates = ["guinsoo", "nashor", "terminus", "bot", "kraken", "rfc", "pd", "ie", "ldr", "rabadon", "shadowflame", "void"]
+    core4_candidates = ["nashor", "rabadon", "shadowflame", "ie", "ldr", "mortal", "terminus", "bot", "guinsoo", "kraken", "pd", "void"]
     pen_exclusive = {"terminus", "ldr", "mortal"}
     ctrl_combo = tuple(sorted(CONTROL_PATH))
 
@@ -208,7 +208,7 @@ if __name__ == "__main__":
         "guinsoo": "Gui", "kraken": "Krk", "nashor": "Nashor", "terminus": "Terminus",
         "bot": "BotRK", "rfc": "RFC", "statikk": "Statikk", "storm": "Storm",
         "pd": "PD", "ie": "IE", "yuntal": "Yun", "ldr": "LDR",
-        "rabadon": "Rabadon", "shadowflame": "ShadowFlame", "mortal": "Mortal",
+        "rabadon": "Rabadon", "shadowflame": "ShadowFlame", "mortal": "Mortal", "void": "Void",
     }
 
     all_paths = []
@@ -313,7 +313,7 @@ if __name__ == "__main__":
     def fmt_build4(r):
         p = r["path"]
         s = item_short
-        return f"{s[p[0]]}-{s[p[1]]}-{s[p[2]]}-{s[p[3]]} [{r['pkg_label']}]"
+        return f"{s.get(p[0], p[0])}-{s.get(p[1], p[1])}-{s.get(p[2], p[2])}-{s.get(p[3], p[3])} [{r['pkg_label']}]"
 
     def fmt_core_cell(dps, delta):
         return f"{dps:.1f}/{delta:+.1f}%"
@@ -361,7 +361,7 @@ if __name__ == "__main__":
         color = top_colors[i % len(top_colors)]
         p = r["path"]
         lbl = (
-            f"Top{i+1} {item_short[p[0]]}-{item_short[p[1]]}-{item_short[p[2]]}-{item_short[p[3]]}"
+            f"Top{i+1} {item_short.get(p[0], p[0])}-{item_short.get(p[1], p[1])}-{item_short.get(p[2], p[2])}-{item_short.get(p[3], p[3])}"
             f" [{r['pkg_label']}] (RelDPG {r['rel_dpg_score']:.2f})"
         )
         plt.plot(r["x"][:4], r["y"][:4], color=color, linewidth=2.4, marker="D", markersize=6, label=lbl)
@@ -372,7 +372,7 @@ if __name__ == "__main__":
         color = ctrl_colors[i % len(ctrl_colors)]
         p = r["path"]
         lbl = (
-            f"[CTRL] {item_short[p[0]]}-{item_short[p[1]]}-{item_short[p[2]]}-{item_short[p[3]]}"
+            f"[CTRL] {item_short.get(p[0], p[0])}-{item_short.get(p[1], p[1])}-{item_short.get(p[2], p[2])}-{item_short.get(p[3], p[3])}"
             f" [{r['pkg_label']}] (RelDPG {r['rel_dpg_score']:.2f})"
         )
         plt.plot(r["x"][:4], r["y"][:4], color=color, linewidth=2.8, marker="o", markersize=7, linestyle="--", label=lbl)
