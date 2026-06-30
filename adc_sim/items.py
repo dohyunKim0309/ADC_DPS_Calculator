@@ -37,7 +37,13 @@ class Item:
         기본값은 1회.
         """
         return 1
-    
+
+    def get_extra_onhit_applications(self, champion):
+        """온힛 효과를 '추가로' 몇 회 더 적용할지(가산). 주문검류(황혼과 새벽)용.
+        proc_count(max)와 달리 합산되어 구인수(2회)와 겹쳐도 시너지가 유지된다. 기본 0회.
+        """
+        return 0
+
     def on_spell_cast(self, champion, time):
         """스킬 사용 시 호출 (주문검 활성화 등)"""
         pass
@@ -435,6 +441,46 @@ class EssenceReaver(Item):
             return damage, 0, 0, 0 # 물리 피해
             
         return 0, 0, 0, 0
+
+
+class DuskAndDawn(Item):
+    """황혼과 새벽 (Dusk and Dawn) — 주문검 + 온힛 1회 추가. [H-DAWN-1]
+
+    스탯(체력300/AP60/AH20/AS20%)은 items_data.py 가 주입(단일 출처). HP는 STAT_KEYS
+    미포함이라 DPS 엔진 미반영(가격엔 포함 → DPG에 '죽은 골드'로 정확히 반영).
+    주문 검(쿨 2초): 스킬 사용 후 다음 평타에 (기본AD 75% + AP 10%) 추가 마법피해 +
+    온힛 효과 1회 추가 적용. 회복(AP10%+추가체력3%)은 생존 효과라 DPS 모델에서 무시.
+    쿨은 EssenceReaver와 동일하게 시전시각 기준, 0.2초 추가타 딜레이는 같은 평타에 합산.
+    (나무위키/LoL Wiki V26.09/Community Dragon id2510 교차검증)
+    """
+    def __init__(self):
+        super().__init__("Dusk and Dawn", ap=60, as_percent=0.20, cdr=20)
+        self.cost = 3100
+        self.is_spellblade_active = False
+        self.spellblade_cd = 2.0
+        self.last_activation_time = -999.0
+        self.last_spellblade_damage = 0.0
+
+    def on_spell_cast(self, champion, time):
+        # 주문검 내부 쿨: 마지막 활성화 시점 기준 2초 (EssenceReaver와 동일 가정)
+        if time >= self.last_activation_time + self.spellblade_cd:
+            self.is_spellblade_active = True
+            self.last_activation_time = time
+
+    def on_hit(self, target, champion):
+        self.last_spellblade_damage = 0.0
+        # 강화 평타 1회: 기본 공격력 75% + 주문력 10% 추가 마법피해 (버스트 1회 소비)
+        if self.is_spellblade_active:
+            magic = champion.base_attack_ad * 0.75 + champion.total_ap * 0.10
+            self.last_spellblade_damage = magic
+            self.is_spellblade_active = False
+            return 0, magic, 0, 0  # 마법 온힛(증폭·그림자불꽃·마저는 부모 루프에서 적용)
+        return 0, 0, 0, 0
+
+    def get_extra_onhit_applications(self, champion):
+        # 강화 평타에서 온힛 효과 1회 추가(구인수와 합산). 버스트와 같은 armed 상태에서 1.
+        # 부모 get_one_hit_damage 가 온힛 루프 전(armed)에 읽고, 루프의 on_hit 이 버스트를 소비.
+        return 1 if self.is_spellblade_active else 0
 
 
 class TrinityForce(Item):

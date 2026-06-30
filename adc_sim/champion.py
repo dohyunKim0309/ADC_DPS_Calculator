@@ -304,11 +304,20 @@ class Champion:
             return p_sum, m_sum, pt_base_sum, pt_onhit_sum
 
         # 2.1 실행 횟수(proc_count) 결정
-        # 아이템이 온힛 처리 횟수를 확장할 수 있도록 훅 제공 (예: 구인수)
+        # 아이템이 온힛 처리 횟수를 확장할 수 있도록 훅 제공 (예: 구인수 = max 2회)
         proc_count = 1
         for item in self.inventory:
             if hasattr(item, "get_onhit_proc_count"):
                 proc_count = max(proc_count, item.get_onhit_proc_count(self))
+
+        # 2.1b 추가 온힛 적용(가산) — 주문검류 '온힛 1회 추가'는 proc_count(max)에 합산돼야
+        # 구인수(2회)와 겹쳐도 시너지가 유지된다(예: 황혼과 새벽 강화평타 = 구인수2 + 주문검1 = 3회).
+        # armed 상태에서 읽고(아래 루프의 on_hit 이 버스트를 1회 소비), 미보유 빌드는 0이라 기존 동작 불변. [H-DAWN-1]
+        extra_applications = 0
+        for item in self.inventory:
+            if hasattr(item, "get_extra_onhit_applications"):
+                extra_applications += item.get_extra_onhit_applications(self)
+        total_applications = proc_count + extra_applications
 
         # 2.2 결정된 횟수만큼 온힛 루프 실행
         total_phys_onhit = 0
@@ -316,7 +325,7 @@ class Champion:
         total_true_base = 0
         total_true_onhit = 0
 
-        for _ in range(proc_count):
+        for _ in range(total_applications):
             p, m, pt_b, pt_o = get_all_onhit()
             total_phys_onhit += p
             total_magic_onhit += m

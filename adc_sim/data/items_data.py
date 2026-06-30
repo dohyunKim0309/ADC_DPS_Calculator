@@ -71,6 +71,8 @@ ITEMS = {
     "shieldbow":   {"name": "Immortal Shieldbow",       "cost": 3000, "behavior": "ImmortalShieldbow",   "stats": {"ad": 55, "crit": 0.25}},
     "trinity":     {"name": "Trinity Force",            "cost": 3333, "behavior": "TrinityForce",        "stats": {"ad": 36, "as": 0.30, "cdr": 15}},
     "essence":     {"name": "Essence Reaver",           "cost": 3050, "behavior": "EssenceReaver",       "stats": {"ad": 50, "crit": 0.25, "cdr": 20}},
+    # 황혼과 새벽: AP60/AH20(cdr)/AS20% 는 DPS 반영. 체력300 은 STAT_KEYS 미포함이라 보존 안 됨(DPS 무영향, 가격엔 포함).
+    "dawn":        {"name": "Dusk and Dawn",            "cost": 3100, "behavior": "DuskAndDawn",         "stats": {"ap": 60, "as": 0.20, "cdr": 20}},
     "collector":   {"name": "The Collector",            "cost": 3000, "behavior": "TheCollector",        "stats": {"ad": 50, "crit": 0.25, "lethality": 10}},
     "rfc":         {"name": "Rapid Firecannon",         "cost": 2650, "behavior": "RapidFirecannon",     "stats": {"as": 0.35, "crit": 0.25}},
     "manamune":    {"name": "Manamune",                 "cost": 2900, "behavior": "Manamune",            "stats": {"ad": 35, "cdr": 15, "mana": 500}},

@@ -43,7 +43,7 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 
 **데미지 모델(`Champion.get_one_hit_damage`)** 의 적용 순서(특수 케이스 다수):
 1. 룬 `on_attack` 발동 → 기대 평타 물리 = `total_ad*(crit_dmg_mod*crit + (1-crit))`. **치명타 확률은 `add_item`에서 100% 캡(초과분 무효)** — 이 모델엔 초과 치확→AD 환산 아이템이 없으므로.
-2. 온힛 합산: 아이템 `on_hit` + 룬 `get_on_hit_damage` + 챔피언 `get_champion_onhit`. `get_onhit_proc_count`로 횟수 확장(**구인수=2회**).
+2. 온힛 합산: 아이템 `on_hit` + 룬 `get_on_hit_damage` + 챔피언 `get_champion_onhit`. 적용 횟수 = `get_onhit_proc_count`(**구인수=2회**, max 합성) **+** `get_extra_onhit_applications`(가산). 주문검류 '온힛 1회 추가'는 가산이라 구인수와 겹쳐도 살아남음(**황혼과 새벽=+1** → 강화평타 온힛 2+1=3회). 미보유 빌드는 가산 0이라 기존 동작 불변.
 3. 증폭 합산(아이템 `get_damage_modifier` + 룬). **C44는 별도 배수**, **Shadowflame은 타깃 HP≤40%에서만**, **Rabadon은 AP ×1.30**.
 4. `engine.calculate_mitigation`에서 방어력/마저 + 관통 적용: `eff = stat*(1-%pen) - flat_pen`(음수 클램프), `실피해 = raw * 100/(100+eff)`. 고정(true) 피해는 경감 없이 합산.
 
@@ -69,7 +69,8 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 
 ### Cog'Maw (`champion.py` CogMaw + `simulations/cogmaw.py`) [수치 4소스 교차검증·가설은 spec 참조]
 - **W 바이오아케인**(쿨관리 버프 8s/17s/마나40): 활성 중 평타가 **대상 최대체력 `[3,3.75,4.5,5.25,6]%` + 0.00015·AP 마법 온힛**(`get_champion_onhit`→구인수 2배·증폭·Shadowflame 적용). **Q 패시브**=공속 상수, **Q 액티브**=마법넛지+방/마저 %셔레드(Corki E식), **E**=마법넛지, **R**=`(base+0.75추가AD+apMin·AP)×잃은체력배율`(≤40%HP ×2) + 마나램프(40→400)로 자연 스로틀. ad_growth=3.11.
-- **전용 sim**: kaisa.py 미러(4코어 전수→`rel_dpg` 5:4:3:3). 컨트롤 `kraken-guinsoo-nashor-terminus`. 풀=온힛+AP(guinsoo/kraken/nashor/terminus/bot/rfc/pd/ie/yuntal/statikk/storm + 4코어 rabadon/shadowflame; **shadowflame은 1~4코어 전부**). power_compare 연동·skill-level 튜닝은 미완(todo).
+- **전용 sim**: kaisa.py 미러(4코어 전수→`rel_dpg` 5:4:3:3). 컨트롤 `kraken-guinsoo-nashor-terminus`. 풀=온힛+AP(guinsoo/kraken/nashor/terminus/bot/rfc/pd/ie/yuntal/statikk/storm + 4코어 rabadon/shadowflame; **shadowflame은 1~4코어 전부**, **void 2~4코어**, **황혼과 새벽(`dawn`) 1~4코어 전부**). power_compare 연동·skill-level 튜닝은 미완(todo).
+- **황혼과 새벽(`dawn`, 주문검)** [H-DAWN-1, 나무위키/LoL Wiki V26.09/CDragon id2510 교차검증]: 3100G·AP60/AS20%/AH20(체력300은 STAT_KEYS 미포함→DPS 미반영, 가격엔 포함). 스킬 시전 후 다음 평타에 **(기본AD75%+AP10%) 마법 버스트**(`DuskAndDawn.on_hit`, 1회 소비) + **온힛 효과 1회 추가**(`get_extra_onhit_applications`=가산 → 코그모 W 최대체력%·나셔 온힛 시너지). 쿨2s는 시전시각 기준(EssenceReaver와 동일), 회복은 DPS 모델 무시. Q/E/R/W 시전 모두 `cast_spell`→`on_spell_cast`로 arm. 테스트 `tests/test_dusk_dawn.py`.
 
 ## 패치마다 갱신 (이 프로젝트의 일상)
 새 패치가 나오면 보통 아래를 손본 뒤 시뮬을 다시 돌려 랭킹을 갱신한다. **변경 전 `AGENTS.md`의 승인 절차를 따른다.**
