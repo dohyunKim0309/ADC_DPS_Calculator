@@ -483,6 +483,35 @@ class DuskAndDawn(Item):
         return 1 if self.is_spellblade_active else 0
 
 
+class WitsEnd(Item):
+    """마법사의 최후 (Wit's End) — 온힛 45 마법(Fray). 공속50%/MR45/인내20%.
+    스탯은 items_data.py 가 주입(MR45=add_item 미소비=DPS 무영향 보존, 인내=미모델).
+    온힛이라 구인수 proc_count·황혼과새벽 가산·증폭·Shadowflame 은 부모 get_one_hit_damage 가 처리.
+    [수치 LoL Wiki / 온힛 45 단일출처]
+    """
+    def __init__(self):
+        super().__init__("Wit's End", as_percent=0.50)
+        self.cost = 2800
+        self.fray_magic = 45
+
+    def on_hit(self, target, champion):
+        return 0, self.fray_magic, 0, 0
+
+
+class NavoriFlickerblade(Item):
+    """나보리 신속검 (Navori Flickerblade) — 공속40%/치확25%/이속4%(이속 미모델). [H-NAVORI-1]
+
+    패시브 Transcendence: 평타마다 기본스킬(Q/W/E) 남은 쿨 15% 감소(치명타 무관, 궁=R 제외).
+    실제 쿨감은 챔피언이 평타당 1회(`CogMaw.on_basic_attack`)에서 `cooldowns_remaining` 에 적용 —
+    `on_hit` 이 아님(구인수 proc_count 에 안 곱해지도록). 아이템은 플래그/계수만 들고 있음.
+    """
+    def __init__(self):
+        super().__init__("Navori Flickerblade", as_percent=0.40, crit=0.25)
+        self.cost = 2650
+        self.is_navori = True
+        self.ability_cdr_per_attack = 0.15
+
+
 class TrinityForce(Item):
     def __init__(self):
         # AD 36, AS 30%, HP 333, AH 15

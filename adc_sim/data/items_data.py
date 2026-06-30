@@ -73,6 +73,10 @@ ITEMS = {
     "essence":     {"name": "Essence Reaver",           "cost": 3050, "behavior": "EssenceReaver",       "stats": {"ad": 50, "crit": 0.25, "cdr": 20}},
     # 황혼과 새벽: AP60/AH20(cdr)/AS20% 는 DPS 반영. 체력300 은 STAT_KEYS 미포함이라 보존 안 됨(DPS 무영향, 가격엔 포함).
     "dawn":        {"name": "Dusk and Dawn",            "cost": 3100, "behavior": "DuskAndDawn",         "stats": {"ap": 60, "as": 0.20, "cdr": 20}},
+    # 마법사의 최후: 공속50%/MR45(보존,DPS무영향) + 온힛 45마법(클래스). 인내20%는 미모델.
+    "wit":         {"name": "Wit's End",               "cost": 2800, "behavior": "WitsEnd",            "stats": {"as": 0.50, "mr": 45}},
+    # 나보리: 공속40%/치확25% + 패시브(평타마다 Q/W/E 쿨 15%↓, CogMaw.on_basic_attack에서 처리). 이속4%는 미모델.
+    "navori":      {"name": "Navori Flickerblade",     "cost": 2650, "behavior": "NavoriFlickerblade",  "stats": {"as": 0.40, "crit": 0.25}},
     "collector":   {"name": "The Collector",            "cost": 3000, "behavior": "TheCollector",        "stats": {"ad": 50, "crit": 0.25, "lethality": 10}},
     "rfc":         {"name": "Rapid Firecannon",         "cost": 2650, "behavior": "RapidFirecannon",     "stats": {"as": 0.35, "crit": 0.25}},
     "manamune":    {"name": "Manamune",                 "cost": 2900, "behavior": "Manamune",            "stats": {"ad": 35, "cdr": 15, "mana": 500}},

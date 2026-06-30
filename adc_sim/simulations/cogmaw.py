@@ -1,6 +1,6 @@
 from adc_sim.champion import CogMaw, Target
 import matplotlib.pyplot as plt
-from adc_sim.runes import LethalTempo, CutDown
+from adc_sim.runes import LethalTempo, PressTheAttack, CutDown
 from adc_sim.engine import run_simulation
 from adc_sim.data.items_registry import create_item_from_key
 from adc_sim.data.items_data import ADC_PACKAGES
@@ -35,13 +35,14 @@ def _skill_levels_for_core(core_tier):
 
 
 def simulate_cogmaw_core_path(full_path, core_tier, doran_key="doranblade",
-                              boots_key="berserker", rune_as_bonus=0.0):
-    """Cog'Maw DPS + total gold for a core timing. W/Q/E/R 쿨마다 시전(마나 바운드)."""
+                              boots_key="berserker", rune_as_bonus=0.0, keystone_cls=LethalTempo):
+    """Cog'Maw DPS + total gold for a core timing. W/Q/E/R 쿨마다 시전(마나 바운드).
+    keystone_cls: 키스톤 룬 클래스(LethalTempo|PressTheAttack). 보조룬은 CutDown 고정."""
     target = build_target_for_core(core_tier)
     lvl = CORE_COGMAW_LEVELS[core_tier]["level"]
     q, w, e, r = _skill_levels_for_core(core_tier)
     cog = CogMaw(level=lvl, q_level=q, w_level=w, e_level=e, r_level=r)
-    cog.set_rune(LethalTempo())
+    cog.set_rune(keystone_cls())
     cog.set_sub_rune(CutDown())
 
     items = ([create_item_from_key(doran_key)] if doran_key else []) + [create_item_from_key(boots_key)]
@@ -79,10 +80,10 @@ def get_cogmaw_4core_top1_build():
     if _COGMAW_4CORE_TOP1_CACHE is not None:
         return _COGMAW_4CORE_TOP1_CACHE
 
-    core1_candidates = ["guinsoo", "kraken", "nashor", "terminus", "bot", "rfc", "statikk", "storm", "pd", "ie", "yuntal", "shadowflame", "dawn"]
-    core2_candidates = ["guinsoo", "kraken", "nashor", "terminus", "bot", "rfc", "statikk", "storm", "pd", "ie", "yuntal", "shadowflame", "void", "dawn"]
-    core3_candidates = ["guinsoo", "nashor", "terminus", "bot", "kraken", "rfc", "pd", "ie", "ldr", "rabadon", "shadowflame", "void", "dawn"]
-    core4_candidates = ["nashor", "rabadon", "shadowflame", "ie", "ldr", "mortal", "terminus", "bot", "guinsoo", "kraken", "pd", "void", "dawn"]
+    core1_candidates = ["guinsoo", "kraken", "nashor", "terminus", "bot", "rfc", "statikk", "storm", "pd", "ie", "yuntal", "shadowflame", "dawn", "navori", "wit"]
+    core2_candidates = ["guinsoo", "kraken", "nashor", "terminus", "bot", "rfc", "statikk", "storm", "pd", "ie", "yuntal", "shadowflame", "void", "dawn", "navori", "wit"]
+    core3_candidates = ["guinsoo", "nashor", "terminus", "bot", "kraken", "rfc", "pd", "ie", "ldr", "rabadon", "shadowflame", "void", "dawn", "navori", "wit"]
+    core4_candidates = ["nashor", "rabadon", "shadowflame", "ie", "ldr", "mortal", "terminus", "bot", "guinsoo", "kraken", "pd", "void", "dawn", "navori", "wit"]
     pen_exclusive = {"terminus", "ldr", "mortal"}
     ctrl_combo = tuple(sorted(CONTROL_PATH))
 
@@ -194,43 +195,9 @@ def build_cogmaw_core_report_meta(full_path, core_tier):
     }
 
 
-if __name__ == "__main__":
-    print("\n=== Cog'Maw Build Path Power Spike (W/Q/E/R auto-cast, 1→4 Core) ===")
-
-    core1_candidates = ["guinsoo", "kraken", "nashor", "terminus", "bot", "rfc", "statikk", "storm", "pd", "ie", "yuntal", "shadowflame", "dawn"]
-    core2_candidates = ["guinsoo", "kraken", "nashor", "terminus", "bot", "rfc", "statikk", "storm", "pd", "ie", "yuntal", "shadowflame", "void", "dawn"]
-    core3_candidates = ["guinsoo", "nashor", "terminus", "bot", "kraken", "rfc", "pd", "ie", "ldr", "rabadon", "shadowflame", "void", "dawn"]
-    core4_candidates = ["nashor", "rabadon", "shadowflame", "ie", "ldr", "mortal", "terminus", "bot", "guinsoo", "kraken", "pd", "void", "dawn"]
-    pen_exclusive = {"terminus", "ldr", "mortal"}
-    ctrl_combo = tuple(sorted(CONTROL_PATH))
-
-    item_short = {
-        "guinsoo": "Gui", "kraken": "Krk", "nashor": "Nashor", "terminus": "Terminus",
-        "bot": "BotRK", "rfc": "RFC", "statikk": "Statikk", "storm": "Storm",
-        "pd": "PD", "ie": "IE", "yuntal": "Yun", "ldr": "LDR",
-        "rabadon": "Rabadon", "shadowflame": "ShadowFlame", "mortal": "Mortal", "void": "Void", "dawn": "D&D",
-    }
-
-    all_paths = []
-    seen_paths = set()
-    for c1 in core1_candidates:
-        for c2 in core2_candidates:
-            if len({c1, c2}) < 2:
-                continue
-            for c3 in core3_candidates:
-                for c4 in core4_candidates:
-                    if len({c1, c2, c3, c4}) < 4:
-                        continue
-                    if sum(1 for k in (c1, c2, c3, c4) if k in pen_exclusive) > 1:
-                        continue
-                    path = (c1, c2, c3, c4)
-                    if path in seen_paths:
-                        continue
-                    seen_paths.add(path)
-                    all_paths.append(path)
-
-    print(f"\nTotal unique paths in search space: {len(all_paths)}")
-
+def _run_cogmaw_ranking(keystone_cls, keystone_label, all_paths, item_short, ctrl_combo):
+    """주어진 keystone(룬)으로 전 빌드 시뮬→dedup→5:4:3:3 rel-DPG 랭킹→표 출력. ranked 반환.
+    룬-2배: __main__ 이 치명적 속도·집중공격 두 번 호출. 보조룬은 CutDown 고정(simulate 내부)."""
     dedupe_weight_raw = [5.0, 4.0, 3.0, 3.0]
     core_weight_raw = [5.0, 4.0, 3.0, 3.0]
     weight_sum = sum(core_weight_raw)
@@ -239,7 +206,8 @@ if __name__ == "__main__":
     rows = []
     for path in all_paths:
         for pkg in ADC_PACKAGES:
-            kw = dict(doran_key=pkg["doran"], boots_key=pkg["boots"], rune_as_bonus=pkg["rune_as"])
+            kw = dict(doran_key=pkg["doran"], boots_key=pkg["boots"],
+                      rune_as_bonus=pkg["rune_as"], keystone_cls=keystone_cls)
             dps_list, cost_list = [], []
             for tier in range(1, 5):
                 d, c = simulate_cogmaw_core_path(path, tier, **kw)
@@ -273,9 +241,8 @@ if __name__ == "__main__":
     if ctrl_cands:
         rows_dedup.append(max(ctrl_cands, key=lambda r: r["dedupe_eff"]))
 
-    print(
-        f"Builds after dedup (best-order-by-5:4:3:3, control fixed to canonical): {len(rows_dedup)}"
-    )
+    print(f"\n{'=' * 28}  RUNE: {keystone_label}  {'=' * 28}")
+    print(f"Builds after dedup (best-order-by-5:4:3:3, control fixed to canonical): {len(rows_dedup)}")
 
     for r in rows_dedup:
         r["weighted_dpg"] = sum(core_weights[i] * r["dpg"][i] for i in range(4))
@@ -287,7 +254,7 @@ if __name__ == "__main__":
     baseline_dpg_4 = best_control["dpg"][:4]
 
     print(
-        f"\nBaseline Control: {'-'.join(best_control['path'])} [{best_control['pkg_label']}] "
+        f"Baseline Control: {'-'.join(best_control['path'])} [{best_control['pkg_label']}] "
         f"| Weighted DPG {best_control['weighted_dpg']:.2f}"
     )
 
@@ -345,6 +312,57 @@ if __name__ == "__main__":
             f"{fmt_core_cell(y3,d3):>{col_core}} | {fmt_core_cell(y4,d4):>{col_core}} | "
             f"{r['rel_dpg_score']:>{col_rep}.2f}"
         )
+
+    return ranked
+
+
+if __name__ == "__main__":
+    print("\n=== Cog'Maw Build Path Power Spike (W/Q/E/R auto-cast, 1→4 Core) ===")
+
+    core1_candidates = ["guinsoo", "kraken", "nashor", "terminus", "bot", "rfc", "statikk", "storm", "pd", "ie", "yuntal", "shadowflame", "dawn", "navori", "wit"]
+    core2_candidates = ["guinsoo", "kraken", "nashor", "terminus", "bot", "rfc", "statikk", "storm", "pd", "ie", "yuntal", "shadowflame", "void", "dawn", "navori", "wit"]
+    core3_candidates = ["guinsoo", "nashor", "terminus", "bot", "kraken", "rfc", "pd", "ie", "ldr", "rabadon", "shadowflame", "void", "dawn", "navori", "wit"]
+    core4_candidates = ["nashor", "rabadon", "shadowflame", "ie", "ldr", "mortal", "terminus", "bot", "guinsoo", "kraken", "pd", "void", "dawn", "navori", "wit"]
+    pen_exclusive = {"terminus", "ldr", "mortal"}
+    ctrl_combo = tuple(sorted(CONTROL_PATH))
+
+    item_short = {
+        "guinsoo": "Gui", "kraken": "Krk", "nashor": "Nashor", "terminus": "Terminus",
+        "bot": "BotRK", "rfc": "RFC", "statikk": "Statikk", "storm": "Storm",
+        "pd": "PD", "ie": "IE", "yuntal": "Yun", "ldr": "LDR",
+        "rabadon": "Rabadon", "shadowflame": "ShadowFlame", "mortal": "Mortal", "void": "Void", "dawn": "D&D",
+        "navori": "Navori", "wit": "Wit's",
+    }
+
+    all_paths = []
+    seen_paths = set()
+    for c1 in core1_candidates:
+        for c2 in core2_candidates:
+            if len({c1, c2}) < 2:
+                continue
+            for c3 in core3_candidates:
+                for c4 in core4_candidates:
+                    if len({c1, c2, c3, c4}) < 4:
+                        continue
+                    if sum(1 for k in (c1, c2, c3, c4) if k in pen_exclusive) > 1:
+                        continue
+                    path = (c1, c2, c3, c4)
+                    if path in seen_paths:
+                        continue
+                    seen_paths.add(path)
+                    all_paths.append(path)
+
+    print(f"\nTotal unique paths in search space: {len(all_paths)}")
+
+    keystones = [(LethalTempo, "치명적 속도 (Lethal Tempo)"),
+                 (PressTheAttack, "집중공격 (Press the Attack)")]
+    ranked_by_rune = []
+    for _ks, _klabel in keystones:
+        ranked_by_rune.append(_run_cogmaw_ranking(_ks, _klabel, all_paths, item_short, ctrl_combo))
+
+    # 그래프는 첫 룬(치명적 속도) 기준 1장
+    ranked = ranked_by_rune[0]
+    control_rows = [r for r in ranked if r["is_control"]]
 
     # ── Graph: Top 5 non-control + Control, 4-core DPS curves ──
     top5_non_ctrl = [r for r in ranked if not r["is_control"]][:5]

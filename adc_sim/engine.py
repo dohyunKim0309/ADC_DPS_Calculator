@@ -126,6 +126,9 @@ def run_simulation(champion, target, verbose=True, skill_plan=None, respawn_to_f
             total_damage_dealt += total_damage
             attack_count += 1
 
+            # 평타당 1회 챔피언 훅(나보리 스킬 쿨감 등). 구인수 proc_count 에 안 곱해지도록 여기서 1회만.
+            champion.on_basic_attack(current_time)
+
             if verbose:
                 rune_stacks = champion.rune.stacks if champion.rune and hasattr(champion.rune, "stacks") else 0
                 rune_bonus_as = champion.rune.get_bonus_as() if champion.rune else 0.0

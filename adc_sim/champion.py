@@ -97,6 +97,11 @@ class Champion:
         for item in self.inventory:
             if hasattr(item, 'on_spell_cast'):
                 item.on_spell_cast(self, time)
+
+    def on_basic_attack(self, time):
+        """기본 공격 1회 완료 시 엔진이 호출(평타당 1회). 기본은 no-op.
+        서브클래스가 평타-트리거 효과(예: 나보리 스킬 쿨감)를 여기서 처리."""
+        pass
                 
     def cast_ultimate(self, time):
         """궁극기 사용 시 호출 (아이템 효과 활성화 등)"""
@@ -1939,6 +1944,17 @@ class CogMaw(Champion):
         self.w_end_time = time + self.W_DURATION
         self.cooldowns_remaining["w"] = self.apply_haste_to_cooldown(self.W_CD)
         self.cast_spell(time)
+
+    def on_basic_attack(self, time):
+        """나보리 신속검: 평타마다 기본스킬(Q/W/E) 남은 쿨 ×(1-cdr). 궁(R)은 기본스킬 아님 → 제외.
+        평타당 1회(엔진이 호출) — on_hit 이 아니라 여기서 처리해야 구인수 proc_count 에 안 곱해진다. [H-NAVORI-1]"""
+        factor = 1.0
+        for it in self.inventory:
+            if getattr(it, "is_navori", False):
+                factor *= (1.0 - getattr(it, "ability_cdr_per_attack", 0.0))
+        if factor < 1.0:
+            for k in ("q", "w", "e"):
+                self.cooldowns_remaining[k] *= factor
 
     def _clear_shred(self):
         if self.shred_target is not None:
