@@ -2,6 +2,11 @@
 
 
 # 1. 적 챔피언 (타겟) 클래스
+# 평타 캔슬 상수: Q(초월/궁) 등 스킬 활성 직후 평타 딜레이를 캔슬해
+# 다음 평타 간격(1/AS)을 이 값으로 상한 클리핑(초). Ashe·Yunara 공통.
+ANIM_CANCEL_CLIP = 0.33
+
+
 class Target:
     def __init__(self, hp, armor, magic_resist, bonus_hp=0):
         self.max_hp = hp
@@ -62,12 +67,14 @@ class Champion:
         self.bonus_ap += item.stats.get('ap', 0)
         self.bonus_mana += item.stats.get('mana', 0)
         self.bonus_as_percent += item.stats.get('as', 0)
-        self.crit_chance += item.stats.get('crit', 0)
+        self.crit_chance = min(1.0, self.crit_chance + item.stats.get('crit', 0))  # 치명타 100% 캡(초과분 무효)
         self.armor_pen_percent = 1 - (1 - self.armor_pen_percent) * (
                     1 - item.stats.get('armor_pen_percent', 0))  # 방관은 곱연산 적용이 정확하나 여기선 단순화 가능
         self.lethality += item.stats.get('lethality', 0)
         self.crit_damage_modifier += item.stats.get('add_crit_damage', 0)
         self.magic_pen_flat += item.stats.get('magic_pen_flat', 0)
+        self.magic_pen_percent = 1 - (1 - self.magic_pen_percent) * (
+                    1 - item.stats.get('magic_pen_percent', 0))  # %마법관통(공허 등): 곱연산 합성
         self.ability_haste += item.stats.get('cdr', 0)
 
     # 룬 장착 함수
@@ -346,10 +353,9 @@ class Ashe(Champion):
         
         # 스킬 레벨 설정
         self.q_level = q_level
-        # 시뮬레이션 시작 조건 변경:
-        # Q 준비 스택을 2부터 시작시키기 위해(평-평-Q평 캔슬),
-        # 현재 Q 준비 조건에 사용 중인 hit_count를 2로 초기화한다.
-        self.hit_count = 2
+        # Q 준비 스택(전용 카운터): 시작 2부터 → 평-평-Q평. 활성 시 0으로 리셋되어
+        # Q 만료 후 평타로 재적립해야 재사용(전역 hit_count 와 분리).
+        self.q_stacks = 2
         
         # Q 상태 관리
         self.q_active = False
@@ -369,13 +375,16 @@ class Ashe(Champion):
             if time - self.q_start_time > 6.0:
                 self.deactivate_q()
 
-        # 2. Q 활성화 조건 확인
-        # 평타 4회 적중 시 스택이 쌓이고, 그 다음 공격(5번째)부터 Q 사용 가능으로 가정
-        if not self.q_active and self.hit_count >= 4:
+        # 2. Q 활성화 조건: 전용 스택 4 이상 (평타로 적립; 활성 후 0 리셋 → 재적립 필요)
+        if not self.q_active and self.q_stacks >= 4:
             self.activate_q(time)
 
         # 3. 부모 클래스의 기본 대미지 계산 (기댓값 로직 포함)
         p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit = super().get_one_hit_damage(target, time)
+
+        # 3.5 Q 비활성 시 평타로 스택 적립(활성 중엔 안 쌓임)
+        if not self.q_active:
+            self.q_stacks += 1
 
         # 4. Q 활성화 시 기본 공격 피해 증폭
         if self.q_active:
@@ -393,16 +402,17 @@ class Ashe(Champion):
         return p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit
 
     def get_attack_interval(self):
-        # Q 4스택 후 활성화되는 공격 직후에는 평타 딜레이 캔슬을 반영해 다음 평타를 0.2초로 처리
+        # Q 활성(평캔) 직후 다음 평타 간격을 0.33초로 클리핑(상한)
         if self.q_attack_reset_pending:
             self.q_attack_reset_pending = False
-            return 0.2
+            return min(super().get_attack_interval(), ANIM_CANCEL_CLIP)
         return super().get_attack_interval()
 
     def activate_q(self, time):
         self.q_active = True
         self.q_start_time = time
         self.q_attack_reset_pending = True
+        self.q_stacks = 0  # 활성 시 스택 리셋 → 만료 후 재적립 필요
         
         # 공속 버프 적용
         if not self.q_as_buff_applied:
@@ -497,23 +507,55 @@ class Jinx(Champion):
 
 
 class Yunara(Champion):
-    def __init__(self, level=1, q_level=5):
+    def __init__(self, level=1, q_level=5, w_level=5, r_level=3, w_enabled=True):
         # Base AD 55, AS 0.65, AS Ratio 0.65, AS Growth 2.75, AD Growth 2.5
         super().__init__(name="Yunara", base_ad=55, base_as=0.650, as_ratio=0.650, as_growth=2.75, base_range=575, level=level, ad_growth=2.5)
-        
+
         self.q_level = q_level
-        
+
         # Q 상태 관리
         self.q_active = False
         self.q_start_time = 0.0
         self.q_as_buff_applied = False
         self.q_stacks = 0 # 방출 스택 (최대 8)
-        
+
         # Q 데이터 (레벨별)
         # 추가 공속: 20 / 30 / 40 / 50 / 60%
         self.q_as_amounts = [0.20, 0.30, 0.40, 0.50, 0.60]
         # 적중 시 마법 피해: 5 / 10 / 15 / 20 / 25 (+0.1 AP)
         self.q_onhit_base = [5, 10, 15, 20, 25]
+
+        # ---------------------------------------------------------
+        # W: 심판의 궤적(기본) / 파멸의 궤적(궁 강화)
+        # [Hypothesis] 나무위키 수치 — CDragon API 미검증(세션 내 egress 차단 403).
+        #   내부 정합성(기본 W 적중+6초 DoT=최대, AD/AP 계수 합)은 확인됨.
+        # 사용자 합의(2026-06):
+        #   · Q활성(초월) 중에는 강화 W(파멸의 궤적, 궁 레벨 색인), 비활성 시 기본 W(W 레벨 색인).
+        #   · 평타는 안 끊김(엔진상 스킬/평타 타이머 독립 → 스킬 이벤트로 두면 자동 충족).
+        #   · w_enabled=False 면 W 추가 이전 동작으로 복귀(검증/AB용).
+        self.w_enabled = w_enabled
+        self.w_level = w_level  # 기본 W 스킬 레벨(1~5)
+        self.r_level = r_level  # 궁 레벨(1~3) → 강화 W 색인
+
+        # 기본 W 심판의 궤적 (W 스킬 레벨 색인, 5랭크)
+        self.base_w_impact = [55.0, 95.0, 135.0, 175.0, 215.0]  # 적중 마법피해
+        self.base_w_impact_ad_ratio = 0.85   # +총 공격력
+        self.base_w_impact_ap_ratio = 0.50   # +주문력
+        self.base_w_dot = [33.0, 57.0, 81.0, 105.0, 129.0]      # 초당 마법피해
+        self.base_w_dot_ad_ratio = 0.51      # +추가 공격력
+        self.base_w_dot_ap_ratio = 0.30      # +주문력
+        self.base_w_dot_ticks = 6            # 6초(6틱)
+        self.base_w_cd = 10.0                # 쿨다운(초)
+
+        # 강화 W 파멸의 궤적 (궁 레벨 색인, 3랭크) — 단일 마법피해
+        self.ult_w_base = [160.0, 320.0, 480.0]
+        self.ult_w_bonus_ad_ratio = 1.20     # +추가 공격력
+        self.ult_w_ap_ratio = 0.75           # +주문력
+        self.ult_w_cd = 5.0                  # 쿨다운(초)
+
+        # 로테이션: 첫 평타 → 궁(초월 Q활성) → 평타 → 이후 평타+W(쿨마다).
+        # 궁/평캔 = Q 활성 직후 다음 평타 간격(1/AS)을 ANIM_CANCEL_CLIP 로 클리핑(상한).
+        self.ult_cancel_clip = ANIM_CANCEL_CLIP
 
     def get_champion_onhit(self, target):
         """유나라 Q 스킬 온힛 대미지 (구인수 적용)"""
@@ -601,12 +643,21 @@ class Yunara(Champion):
                 p_onhit *= onhit_multiplier
                 m_onhit *= onhit_multiplier
 
+        # 첫 평타 직후 궁극기 시전 → 초월(Q) 활성 + 다음 평타 간격 캔슬(클리핑).
+        # [Hypothesis] 사용자 지정 로테이션(평타→궁→평타→W). super()가 hit_count를
+        # 막 +1 했으므로 hit_count==1 == 방금 첫 평타를 마친 시점.
+        if getattr(self, "_ult_pending", False) and self.hit_count >= 1:
+            self._ult_pending = False
+            self.activate_q(time)            # 궁극기 = 초월(Q) 활성
+            self._clip_next_interval = True  # 다음 평타 간격을 0.33s로 클리핑
+
         return p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit
 
     def activate_q(self, time):
         self.q_active = True
         self.q_start_time = time
         self.q_stacks = 0
+        self._clip_next_interval = True  # Q(평캔) 활성마다 다음 평타 간격 0.33 클리핑
         if not self.q_as_buff_applied:
             idx = self.q_level - 1
             as_bonus = self.q_as_amounts[idx]
@@ -622,6 +673,89 @@ class Yunara(Champion):
             as_bonus = self.q_as_amounts[idx]
             self.bonus_as_percent -= as_bonus
             self.q_as_buff_applied = False
+
+    # ---- 엔진 주도 로테이션: 평타 → 궁(초월) → 평타 → 평타+W(쿨마다) ----
+    def init_combat_state(self, skill_plan=None):
+        """전투 상태 초기화. 첫 평타 전 Q 비활성, W는 둘째 평타 이후부터."""
+        super().init_combat_state(skill_plan)
+        self.hit_count = 0
+        self._ult_pending = True       # 첫 평타 직후 궁(초월) 시전 대기
+        self._clip_next_interval = False  # 궁 캔슬로 다음 평타 간격 클리핑
+        self.cooldowns_remaining = {"w": 0.0}
+        self.pending_w_dot = []  # [(tick_time, magic_dmg)] 심판의 궤적 DoT 예약
+
+    def advance_combat_time(self, delta_time, current_time, target):
+        super().advance_combat_time(delta_time, current_time, target)
+        if delta_time > 0 and hasattr(self, "cooldowns_remaining"):
+            self.cooldowns_remaining["w"] = max(0.0, self.cooldowns_remaining["w"] - delta_time)
+
+    def get_attack_interval(self):
+        """평타 간격(1/AS). 궁 캔슬 직후 1회만 0.33초로 클리핑(상한)."""
+        base = super().get_attack_interval()
+        if self._clip_next_interval:
+            self._clip_next_interval = False
+            return min(base, self.ult_cancel_clip)
+        return base
+
+    def get_time_to_next_skill_event(self, current_time):
+        # W는 "평타→궁→평타" 이후(둘째 평타 완료, hit_count>=2)부터 쿨마다 시전
+        if not self.w_enabled or self.hit_count < 2:
+            return float("inf")
+        candidates = [max(0.0, self.cooldowns_remaining["w"])]
+        for tick_time, _ in self.pending_w_dot:
+            candidates.append(max(0.0, tick_time - current_time))
+        return min(candidates)
+
+    def pop_due_skill_events(self, current_time, target):
+        """쿨마다 W 1회 + 예약된 DoT 틱. 평타는 끊지 않음(독립 타이머).
+
+        Q활성(초월) → 파멸의 궤적(궁 레벨 색인, 단일 마법피해, 쿨 5s).
+        Q비활성 → 심판의 궤적(W 레벨 색인, 적중 + 6초 DoT, 쿨 10s).
+        반환 튜플: (skill_name, raw_phys, raw_magic, is_skill_hit).
+        """
+        eps = 1e-9
+        if not self.w_enabled or self.hit_count < 2:
+            return []
+        events = []
+
+        # 1) 예약된 심판의 궤적 DoT 틱
+        remaining = []
+        for tick_time, dmg in self.pending_w_dot:
+            if tick_time <= current_time + eps:
+                events.append(("w_dot", 0.0, dmg, True))
+            else:
+                remaining.append((tick_time, dmg))
+        self.pending_w_dot = remaining
+
+        # 2) W 본체 (쿨 도달 시)
+        if self.cooldowns_remaining["w"] <= eps:
+            bonus_ad = max(0.0, self.total_ad - self.base_attack_ad)  # 추가 공격력
+            ap = self.total_ap
+            if self.q_active:
+                # 파멸의 궤적(궁 강화) — 궁 레벨 색인
+                idx = max(0, min(2, self.r_level - 1))
+                w_magic = (self.ult_w_base[idx]
+                           + self.ult_w_bonus_ad_ratio * bonus_ad
+                           + self.ult_w_ap_ratio * ap)
+                self.cooldowns_remaining["w"] = self.apply_haste_to_cooldown(self.ult_w_cd)
+                events.append(("w", 0.0, w_magic, True))
+            else:
+                # 심판의 궤적(기본) — W 레벨 색인, 적중 + 6초 DoT
+                idx = max(0, min(4, self.w_level - 1))
+                impact = (self.base_w_impact[idx]
+                          + self.base_w_impact_ad_ratio * self.total_ad
+                          + self.base_w_impact_ap_ratio * ap)
+                dot_per_sec = (self.base_w_dot[idx]
+                               + self.base_w_dot_ad_ratio * bonus_ad
+                               + self.base_w_dot_ap_ratio * ap)
+                self.cooldowns_remaining["w"] = self.apply_haste_to_cooldown(self.base_w_cd)
+                events.append(("w", 0.0, impact, True))
+                for k in range(1, self.base_w_dot_ticks + 1):
+                    self.pending_w_dot.append((current_time + k * 1.0, dot_per_sec))
+            self.cast_spell(current_time)
+            self._clip_next_interval = True  # W 시전도 평타캔슬 → 다음 평타 0.33 클리핑
+
+        return events
 
 
 class KaiSa(Champion):

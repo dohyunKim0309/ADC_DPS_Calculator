@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 # import json # JSON 저장 제거
 # import os # JSON 저장 제거
 # from datetime import datetime # JSON 저장 제거
-from adc_sim.champion import Ashe, Jinx, Target, Yunara
+from adc_sim.champion import Ashe, Jinx, Target
 from adc_sim.items import (
     KrakenSlayer, InfinityEdge, BerserkerGreaves, BladeOfRuinedKing,
     TheCollector, YunTalWildarrows, PhantomDancer, HextechScopeC44, Stormrazor, RunaansHurricane, StatikkShiv,
@@ -41,16 +41,6 @@ CORE_JINX_LEVELS = {
     4: {"level": CORE_ASHE_LEVELS[4]["level"], "q_level": 5},
     5: {"level": CORE_ASHE_LEVELS[5]["level"], "q_level": 5},
 }
-
-# 코어 타이밍별 유나라 레벨/Q 레벨 (챔피언 레벨은 애쉬와 동일)
-CORE_YUNARA_LEVELS = {
-    1: {"level": CORE_ASHE_LEVELS[1]["level"], "q_level": 3},
-    2: {"level": CORE_ASHE_LEVELS[2]["level"], "q_level": 4},
-    3: {"level": CORE_ASHE_LEVELS[3]["level"], "q_level": 5},
-    4: {"level": CORE_ASHE_LEVELS[4]["level"], "q_level": 5},
-    5: {"level": CORE_ASHE_LEVELS[5]["level"], "q_level": 5},
-}
-
 
 def build_target_for_core(core_tier):
     stats = CORE_TARGET_STATS[core_tier]
@@ -130,75 +120,6 @@ def simulate_jinx_reference_path(core_tier, q_mode="minigun", q_stacks=3):
         jinx.add_item(item)
 
     _, dps, _ = run_simulation(jinx, target, verbose=False)
-    return dps, total_cost
-
-
-def simulate_yunara_reference_path(core_tier):
-    # 비교 기준: Krk -> PD -> IE -> LDR
-    yunara_core_order = ["kraken", "pd", "ie", "ldr"]
-    target = build_target_for_core(core_tier)
-    level_cfg = CORE_YUNARA_LEVELS[core_tier]
-    yunara = Yunara(level=level_cfg["level"], q_level=level_cfg["q_level"])
-    yunara.set_rune(LethalTempo())
-    yunara.set_sub_rune(CutDown())
-
-    core_items = [create_item_from_key(k) for k in yunara_core_order[:core_tier]]
-    items = [BerserkerGreaves()] + core_items
-
-    total_cost = 0
-    for item in items:
-        total_cost += item.cost
-        yunara.add_item(item)
-
-    # 요청 반영: 전투 시작과 동시에 궁극기로 Q 활성화 상태 진입
-    yunara.activate_q(0.0)
-
-    _, dps, _ = run_simulation(yunara, target, verbose=False)
-    return dps, total_cost
-
-
-def simulate_yunara_core_path(core_item_keys, core_tier, doran_key=None, boots_key="berserker", rune_as_bonus=0.0):
-    """Simulate Yunara DPS and total gold for the given core progression.
-
-    doran_key: 시작 도란 아이템(검/활). None이면 미포함.
-    boots_key: 신발(기본 광전사). rune_as_bonus: 공속 룬(민첩함 등)의 평타 공속 가산(골드 무료).
-    """
-    target = build_target_for_core(core_tier)
-    level_cfg = CORE_YUNARA_LEVELS[core_tier]
-    yunara = Yunara(level=level_cfg["level"], q_level=level_cfg["q_level"])
-    yunara.set_rune(LethalTempo())
-    yunara.set_sub_rune(CutDown())
-
-    active_core_keys = list(core_item_keys[:core_tier])
-    core_items = []
-    for idx, key in enumerate(active_core_keys, start=1):
-        if key == "yuntal25":
-            current_tier = len(active_core_keys)
-            purchase_tier = idx
-            if current_tier == purchase_tier:
-                if idx == 1:
-                    yuntal_crit = 0.0
-                elif idx == 2:
-                    yuntal_crit = 0.12
-                else:
-                    yuntal_crit = 0.05
-            else:
-                yuntal_crit = 0.25
-            core_items.append(create_item_from_key(key, yuntal_crit=yuntal_crit))
-        else:
-            core_items.append(create_item_from_key(key))
-
-    doran_items = [create_item_from_key(doran_key)] if doran_key else []
-    items = doran_items + [create_item_from_key(boots_key)] + core_items
-    total_cost = 0
-    for item in items:
-        total_cost += item.cost
-        yunara.add_item(item)
-    yunara.bonus_as_percent += rune_as_bonus  # 공속 룬(민첩함): 골드 무료, 평타 공속 가산
-
-    # 현재 비교/시뮬 기준: 전투 시작 시 Q 활성 상태
-    yunara.activate_q(0.0)
-    _, dps, _ = run_simulation(yunara, target, verbose=False)
     return dps, total_cost
 
 
@@ -983,6 +904,9 @@ if __name__ == "__main__":
             f"vs CTRL {ashe_ctrl_dps:.1f}@{ashe_ctrl_cost}g | ΔDPS {dps_diff_pct:+.1f}%"
         )
 
+    # 유나라 레퍼런스 비교 출력 — 정의는 유나라 전용 파일(yunara.py)에 있음.
+    # 함수-로컬 import로 모듈 로드 시점 순환 import 방지.
+    from adc_sim.simulations.yunara import simulate_yunara_reference_path
     yunara_ref_x = []
     yunara_ref_y = []
     for tier in [1, 2, 3, 4]:

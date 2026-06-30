@@ -4,13 +4,170 @@ from datetime import datetime
 
 import matplotlib.pyplot as plt
 
+from adc_sim.champion import Yunara, Target
+from adc_sim.runes import LethalTempo, CutDown
+from adc_sim.engine import run_simulation
 from adc_sim.settings import get_result_export_settings
-from adc_sim.simulations.ashe import (
-    simulate_yunara_core_path,
-    _build_ashe_4core_all_paths,
-    build_ashe_like_core_report_meta,
-)
+from adc_sim.data.items_registry import create_item_from_key
 from adc_sim.data.items_data import DORAN_OPTIONS, DORAN_SHORT, ADC_PACKAGES
+
+
+# pen 배타(챔피언 무관 필수 규칙): 한 빌드에 방관 1개·마관 1개까지만.
+#   방관 배타 = {ldr, mortal, terminus}, 마관 배타 = {void, terminus}.
+#   (terminus 는 방관·마관 겸비라 양쪽 모두에 속함 → 공허와도 공존 불가)
+ARMOR_PEN_EXCLUSIVE = {"ldr", "mortal", "terminus"}
+MAGIC_PEN_EXCLUSIVE = {"void", "terminus"}
+
+
+def _build_yunara_4core_all_paths():
+    """유나라 전용 4코어 후보 경로 풀 (AP 아이템 포함; 애쉬 풀과 분리).
+
+    유나라는 AP 스케일링(Q온힛/패시브/W)이라 애쉬의 AD 전용 풀과 달리
+    nashor/shadowflame/rabadon/void 등 AP 아이템을 후보에 포함한다.
+    슬롯 구조(코어1~4 후보)는 유지하고 pen 배타 규칙을 반드시 적용한다.
+    """
+    core1_candidates = ["kraken", "yuntal25", "storm", "c44", "bot", "guinsoo", "terminus",
+                        "nashor", "statikk"]
+    core2_candidates = ["kraken", "yuntal25", "storm", "c44", "bot", "pd", "runaan", "terminus",
+                        "guinsoo", "nashor", "statikk", "shadowflame"]
+    core3_candidates = ["ie", "ldr", "guinsoo", "terminus", "shadowflame", "nashor", "rabadon",
+                        "mortal", "void"]
+    core4_candidates = ["ie", "ldr", "storm", "c44", "pd", "runaan", "kraken", "statikk", "guinsoo",
+                        "terminus", "nashor", "shadowflame", "rabadon", "mortal", "void"]
+
+    all_paths = []
+    seen = set()
+    for c1 in core1_candidates:
+        for c2 in core2_candidates:
+            if c2 == c1:
+                continue
+            for c3 in core3_candidates:
+                if c3 in (c1, c2):
+                    continue
+                for c4 in core4_candidates:
+                    if c4 in (c1, c2, c3):
+                        continue
+                    keys = (c1, c2, c3, c4)
+                    if sum(1 for k in keys if k in ARMOR_PEN_EXCLUSIVE) > 1:
+                        continue
+                    if sum(1 for k in keys if k in MAGIC_PEN_EXCLUSIVE) > 1:
+                        continue
+                    if keys in seen:
+                        continue
+                    seen.add(keys)
+                    all_paths.append(keys)
+    return all_paths
+
+
+def build_ashe_like_core_report_meta(champion_name, full_path, core_tier):
+    """코어 경로 리포트용 직렬화 메타(유나라 자체 정의; 애쉬 의존 제거)."""
+    active_path = tuple(full_path[:core_tier])
+    return {
+        "champion": champion_name,
+        "core_tier": core_tier,
+        "full_path": list(full_path),
+        "active_path": list(active_path),
+        "build": "-".join(full_path),
+        "active_build": "-".join(active_path),
+    }
+
+
+# === 유나라 전용 시뮬 설정 (애쉬 파일에서 분리; Ashe 가정에 의존하지 않음) ===
+# 코어 단계별 고정 타깃 스탯 (유나라 자체 보유)
+CORE_TARGET_STATS = {
+    1: {"hp": 1700, "armor": 50, "mr": 25},
+    2: {"hp": 1900, "armor": 70, "mr": 30},
+    3: {"hp": 2400, "armor": 100, "mr": 50},
+    4: {"hp": 2600, "armor": 120, "mr": 70},
+    5: {"hp": 3000, "armor": 150, "mr": 90},
+}
+
+# 코어 타이밍별 유나라 레벨/스킬 레벨 (Ashe 레벨표 참조 제거 — 자체 정의)
+# [Hypothesis] 스킬오더: Q 선마 → W 차선마 → E, 궁(R) 6/11/16.
+#   순수 맥스 오더로 도출 → 레벨 9/11/13/15/17 시점 W 레벨 3/4/5/5/5, 궁 레벨 1/2/2/2/3.
+CORE_YUNARA_LEVELS = {
+    1: {"level": 9,  "q_level": 3, "w_level": 3, "r_level": 1},
+    2: {"level": 11, "q_level": 4, "w_level": 4, "r_level": 2},
+    3: {"level": 13, "q_level": 5, "w_level": 5, "r_level": 2},
+    4: {"level": 15, "q_level": 5, "w_level": 5, "r_level": 2},
+    5: {"level": 17, "q_level": 5, "w_level": 5, "r_level": 3},
+}
+
+
+def build_target_for_core(core_tier):
+    """코어 티어별 더미 타깃 생성 (유나라 시뮬 전용)."""
+    stats = CORE_TARGET_STATS[core_tier]
+    return Target(
+        hp=stats["hp"],
+        armor=stats["armor"],
+        magic_resist=stats["mr"],
+        bonus_hp=max(0, stats["hp"] - 1500),
+    )
+
+
+def simulate_yunara_reference_path(core_tier):
+    """비교 기준 빌드(Krk→PD→IE→LDR)의 DPS/누적골드."""
+    yunara_core_order = ["kraken", "pd", "ie", "ldr"]
+    target = build_target_for_core(core_tier)
+    level_cfg = CORE_YUNARA_LEVELS[core_tier]
+    yunara = Yunara(level=level_cfg["level"], q_level=level_cfg["q_level"],
+                    w_level=level_cfg["w_level"], r_level=level_cfg["r_level"])
+    yunara.set_rune(LethalTempo())
+    yunara.set_sub_rune(CutDown())
+
+    core_items = [create_item_from_key(k) for k in yunara_core_order[:core_tier]]
+    items = [create_item_from_key("berserker")] + core_items
+
+    total_cost = 0
+    for item in items:
+        total_cost += item.cost
+        yunara.add_item(item)
+
+    # 로테이션(평타→궁→평타→W쿨마다)은 Yunara 모델 내부에서 처리.
+    _, dps, _ = run_simulation(yunara, target, verbose=False)
+    return dps, total_cost
+
+
+def simulate_yunara_core_path(core_item_keys, core_tier, doran_key=None, boots_key="berserker", rune_as_bonus=0.0):
+    """Simulate Yunara DPS and total gold for the given core progression.
+
+    doran_key: 시작 도란 아이템(검/활). None이면 미포함.
+    boots_key: 신발(기본 광전사). rune_as_bonus: 공속 룬(민첩함 등)의 평타 공속 가산(골드 무료).
+    """
+    target = build_target_for_core(core_tier)
+    level_cfg = CORE_YUNARA_LEVELS[core_tier]
+    yunara = Yunara(level=level_cfg["level"], q_level=level_cfg["q_level"],
+                    w_level=level_cfg["w_level"], r_level=level_cfg["r_level"])
+    yunara.set_rune(LethalTempo())
+    yunara.set_sub_rune(CutDown())
+
+    active_core_keys = list(core_item_keys[:core_tier])
+    core_items = []
+    for idx, key in enumerate(active_core_keys, start=1):
+        if key == "yuntal25":
+            current_tier = len(active_core_keys)
+            purchase_tier = idx
+            # [Hypothesis] 윤탈 치명타 누적 가정: 구매한 그 코어 시점=10%(전 코어 통일),
+            # 다음 코어부터는 항상 25%. 실측이 아닌 스택 누적 속도에 대한 단순 가정.
+            if current_tier == purchase_tier:
+                yuntal_crit = 0.10
+            else:
+                yuntal_crit = 0.25
+            core_items.append(create_item_from_key(key, yuntal_crit=yuntal_crit))
+        else:
+            core_items.append(create_item_from_key(key))
+
+    doran_items = [create_item_from_key(doran_key)] if doran_key else []
+    items = doran_items + [create_item_from_key(boots_key)] + core_items
+    total_cost = 0
+    for item in items:
+        total_cost += item.cost
+        yunara.add_item(item)
+    yunara.bonus_as_percent += rune_as_bonus  # 공속 룬(민첩함): 골드 무료, 평타 공속 가산
+
+    # 로테이션(평타→궁→평타→W쿨마다)은 Yunara 모델 내부에서 처리.
+    _, dps, _ = run_simulation(yunara, target, verbose=False)
+    return dps, total_cost
 
 
 ITEM_SHORT = {
@@ -26,6 +183,11 @@ ITEM_SHORT = {
     "guinsoo": "Gui",
     "ie": "IE",
     "ldr": "LDR",
+    "mortal": "Mortal",
+    "nashor": "Nashor",
+    "shadowflame": "SF",
+    "rabadon": "Deathcap",
+    "void": "Void",
 }
 
 CONTROL_COMBO = tuple(sorted(("kraken", "pd", "ie", "ldr")))
@@ -73,7 +235,7 @@ def rank_yunara_4core_paths():
     각 경로를 정배 패키지 A/B 두 경우로 평가(2배)하고, 4아이템 집합당 최고 1개만 유지
     → 빌드별 최적 패키지가 자동 선택된다. 컨트롤도 패키지 최적(가중 DPG 최대).
     """
-    all_paths = _build_ashe_4core_all_paths()
+    all_paths = _build_yunara_4core_all_paths()
 
     results = []
     for c1, c2, c3, c4 in all_paths:

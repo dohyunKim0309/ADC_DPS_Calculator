@@ -793,6 +793,12 @@ class Shadowflame(Item):
         self.cost = 3200
         # 패시브: 체력 40% 이하 적에게 마법/고정 피해 20% 증가 (Champion 클래스에서 처리)
 
+class VoidStaff(Item):
+    def __init__(self):
+        # 공허의 지팡이: AP 95, %마법관통 40% (스탯은 items_data 에서 주입)
+        super().__init__("Void Staff", ap=95)
+        self.cost = 3000
+
 class HextechGunblade(Item):
     def __init__(self):
         super().__init__("Hextech Gunblade", ad=40, ap=80, omnivamp=0.10)
