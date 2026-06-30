@@ -766,6 +766,24 @@ class GuardianAngel(Item):
         super().__init__("Guardian Angel", ad=55)
         self.cost = 3200
 
+
+class MawOfMalmortius(Item):
+    """멜모셔스의 아귀. DPS 기여 = AD 60 + 스킬가속 15(cdr → 애쉬 Q 쿨 감소).
+
+    스탯/가격의 실제 출처는 items_data.ITEMS['maw'] (ad60/cdr15/mr40, 3100골드).
+    마저 40은 방어 스탯이라 현재 DPS 모델엔 무영향(데이터 stats['mr']로 보존만).
+    Lifeline 패시브(방어막 + 옴니뱀)는 딜에 기여하지 않음(확인됨). 아래 속성은
+    스탯이 아니라, 향후 1대1(피격) 모델이 읽어 쓸 자리만 마련해 둔 placeholder다
+    — 현재 시뮬에는 어떤 영향도 주지 않는다.
+    """
+    def __init__(self):
+        super().__init__("Maw of Malmortius", ad=60)
+        self.cost = 3100
+        # --- 현재 DPS 시뮬 미사용 / 미래 1대1 모델용 placeholder ---
+        self.lifeline_omnivamp = 0.10        # 방어막 발동 후 전투종료까지 모든 피해 흡혈
+        self.lifeline_shield_active = False  # 1대1 엔진이 HP<30% 마법피해 시점에 토글
+
+
 class SerpentsFang(Item):
     def __init__(self):
         super().__init__("Serpent's Fang", ad=55, lethality=15)

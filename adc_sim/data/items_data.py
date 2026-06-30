@@ -7,16 +7,23 @@ adc_sim/data/items_registry.create_item_from_key(key) 로 생성한다.
 stats 키 = 엔진이 실제 소비하는 스탯(STAT_KEYS). 명시 안 한 키는 0.
 - as: 공격속도(%) 소수 / crit: 치명타확률 소수 / add_crit_damage: 치명타피해 가산
 - armor_pen_percent: %방관 / magic_pen_flat: 고정 마관 / cdr: 스킬가속 / mana: 추가 마나
-주의: hp/ms/ar/mr/lifesteal 등은 현재 엔진이 DPS 계산에 쓰지 않으므로 데이터에 없음.
+- mr/armor: 방어 스탯. 현재 DPS 엔진은 소비하지 않아 무영향이지만, 데이터→인스턴스로
+  보존(STAT_KEYS 포함)해 향후 1대1(피격) 모델이 읽을 수 있게 둔다.
+주의: hp/ms/lifesteal/omnivamp 등은 아직 STAT_KEYS 에 없어 인스턴스에 보존되지 않는다
+(필요해지는 시점에 STAT_KEYS 확장). 방어막·옴니뱀 같은 조건부 패시브는 스탯이 아니라
+items.py 동작 클래스 속성으로 둔다(예: MawOfMalmortius.lifeline_*).
 
 yuntal/yuntal25 의 crit 은 구매 코어 타이밍별 런타임 파라미터라 base 에 미포함
 (레지스트리가 yuntal_crit 으로 주입; None이면 yuntal_default_crit 사용).
 """
 
 # 엔진이 소비하는 스탯 키 (champion.add_item 이 읽는 것과 동일)
+# mr/armor 는 add_item 이 읽지 않아 DPS 무영향이지만, 데이터→인스턴스로 보존되도록 포함한다
+# (미래 1대1 모델용; 없으면 _apply_data 가 인스턴스 stats 로 복사하지 않고 버린다).
 STAT_KEYS = (
     "ad", "ap", "as", "crit", "add_crit_damage",
     "armor_pen_percent", "lethality", "magic_pen_flat", "cdr", "mana",
+    "mr", "armor",
 )
 
 # 도란 시작 아이템 토글 — 최고 빌드 탐색 시 검/활 두 경우(2배)를 평가하고
@@ -54,6 +61,9 @@ ITEMS = {
     "bt":          {"name": "Bloodthirster",            "cost": 3400, "behavior": "Bloodthirster",       "stats": {"ad": 80}},
     "ga":          {"name": "Guardian Angel",           "cost": 3200, "behavior": "GuardianAngel",       "stats": {"ad": 55}},
     "mercurial":   {"name": "Mercurial Scimitar",       "cost": 3200, "behavior": "MercurialScimitar",   "stats": {"ad": 50}},
+    # 멜모셔스: AD60/AH15는 DPS 반영(cdr=AH), MR40은 방어 스탯이라 보존만(현 DPS 무영향).
+    # Lifeline(방어막+옴니뱀)은 딜 무기여 → 스탯 아님, MawOfMalmortius 클래스 속성으로 둠.
+    "maw":         {"name": "Maw of Malmortius",        "cost": 3100, "behavior": "MawOfMalmortius",     "stats": {"ad": 60, "cdr": 15, "mr": 40}},
     "nashor":      {"name": "Nashor's Tooth",           "cost": 2900, "behavior": "NashorsTooth",        "stats": {"ap": 80, "as": 0.50, "cdr": 15}},
     "rabadon":     {"name": "Rabadon's Deathcap",       "cost": 3500, "behavior": "RabadonsDeathcap",    "stats": {"ap": 130}},
     "shadowflame": {"name": "Shadowflame",              "cost": 3200, "behavior": "Shadowflame",         "stats": {"ap": 110, "magic_pen_flat": 15}},

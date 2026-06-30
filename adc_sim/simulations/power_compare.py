@@ -38,7 +38,9 @@ def _simulate_compare_stat(champ_name, cfg, core_tier):
         meta = build_ashe_like_core_report_meta("Ashe", cfg["path"], core_tier)
         choice = cfg.get("pkg_label", "Bld+Zerk")
     elif champ_name == "Yunara":
-        dps, gold = simulate_yunara_core_path(cfg["path"], core_tier, **pkg_kw)
+        # target_count: 비교에서 유나라를 몇 명 기준으로 볼지(1=단일, 2=2명 교전 유효 DPS). 기본 1.
+        yunara_tc = cfg.get("target_count", 1)
+        dps, gold = simulate_yunara_core_path(cfg["path"], core_tier, target_count=yunara_tc, **pkg_kw)
         meta = build_ashe_like_core_report_meta("Yunara", cfg["path"], core_tier)
         choice = cfg.get("pkg_label", "Bld+Zerk")
     elif champ_name == "KaiSa":
@@ -60,6 +62,8 @@ def _simulate_compare_stat(champ_name, cfg, core_tier):
         "gold": gold,
         "dpg": dps / (gold / 1000.0) if gold > 0 else 0.0,
         "choice": choice,
+        # 적 챔피언 수(유나라만 2명 등으로 다를 수 있음; 나머지는 단일 대상=1)
+        "target_count": cfg.get("target_count", 1),
     })
     return meta
 
@@ -81,7 +85,7 @@ def _print_compare_section(title, configs):
         winner = max(stats.items(), key=lambda kv: kv[1]["dpg"])
         print(f"[{core} Core] Winner: {winner[0]} ({winner[1]['dpg']:.2f} DPG)")
         for champ_name, value in sorted(stats.items(), key=lambda kv: kv[1]["dpg"], reverse=True):
-            print(f"  - {champ_name:<6} DPG {value['dpg']:.2f} | DPS {value['dps']:.1f} | Gold {value['gold']} | Opt {value['choice']}")
+            print(f"  - {champ_name:<6} DPG {value['dpg']:.2f} | DPS {value['dps']:.1f} | Gold {value['gold']} | 적 {value['target_count']}명 | Opt {value['choice']}")
         print()
     return rows
 
@@ -105,6 +109,7 @@ def _build_compare_export_rows(rows, variant):
                 "dps": stat["dps"],
                 "gold": stat["gold"],
                 "dpg": stat["dpg"],
+                "target_count": stat.get("target_count", 1),
                 "winner": winner,
                 "w_cast_count": stat.get("w_cast_count"),
                 "w_evolved": stat.get("w_evolved"),
@@ -135,6 +140,7 @@ def _plot_combined_compare(top1_rows, basic_rows):
             ys = [row["stats"][champ]["dps"] for row in rows]
             # 선택된 옵션(패키지 A/B 또는 코르키 도란) — variant 내 챔프당 고정이라 첫 행에서 취득
             choice = rows[0]["stats"][champ].get("choice", "") if rows else ""
+            enemies = rows[0]["stats"][champ].get("target_count", 1) if rows else 1
             color = champ_colors[champ]
             plt.plot(
                 xs, ys,
@@ -144,7 +150,7 @@ def _plot_combined_compare(top1_rows, basic_rows):
                 markersize=5,
                 linewidth=2.2 if variant == "Top1" else 1.9,
                 alpha=alpha,
-                label=f"{champ} {variant} ({choice})"
+                label=f"{champ} {variant} ({choice}, 적{enemies}명)"
             )
             for index in range(len(xs)):
                 xoff = 8 if variant == "Top1" else -30
@@ -243,8 +249,8 @@ def compare_builds():
     """Run cross-champion Top1/Basic comparisons and optionally export them."""
     print("[Info] Loading Ashe top1 from simulation_ashe 4-core ranking...")
     ashe_top1 = get_ashe_4core_top1_build()
-    print("[Info] Loading Yunara top1 from simulation_yunara 4-core ranking...")
-    yunara_top1 = get_yunara_4core_top1_build()
+    print("[Info] Loading Yunara top1 from simulation_yunara 4-core ranking (2명 교전/tc=2 기준)...")
+    yunara_top1 = get_yunara_4core_top1_build(target_count=2)
     ashe_path = ashe_top1["path"]
     yunara_path = yunara_top1["path"]
     print("[Info] Loading KaiSa top1 from simulation_kaisa 4-core ranking...")
@@ -260,13 +266,14 @@ def compare_builds():
 
     print("\n=== Cross-Champion Power Compare (1~4 Core) ===")
     print("Configured Top1 builds (Ashe/Yunara/KaiSa: 정배 패키지 A=Bld+Zerk+핏빛길 / B=Bow+Glut+민첩함 중 최적):")
+    print("  ※ 유나라만 2명 교전(tc=2) 유효 DPS 기준(빌드도 2명 최적) — 나머지 챔프는 단일 대상. 비대칭 비교 주의.")
     print(
         f"- Ashe   : [{ashe_top1.get('pkg_label','?')}] {'-'.join(ashe_path)} / LT+CutDown "
         f"(Top1 from simulation_ashe, score {ashe_top1['score']:.2f})"
     )
     print(
         f"- Yunara : [{yunara_top1.get('pkg_label','?')}] {'-'.join(yunara_path)} / LT+CutDown (start Q active) "
-        f"(Top1 from simulation_yunara, score {yunara_top1['score']:.2f})"
+        f"(Top1 from simulation_yunara @2명/tc=2, score {yunara_top1['score']:.2f}; 유효 DPS는 2명 교전 기준)"
     )
     print(
         f"- KaiSa  : [{kaisa_top1.get('pkg_label','?')}] {'-'.join(kaisa_path)} / LT+CutDown "
@@ -291,7 +298,8 @@ def compare_builds():
 
     top1_configs = {
         "Ashe": {"path": ashe_path, **_pkg_cfg(ashe_top1)},
-        "Yunara": {"path": yunara_path, **_pkg_cfg(yunara_top1)},
+        # 유나라만 2명 교전(tc=2) 유효 DPS 기준 — 멀티타깃 로직이 유나라에만 있어 다른 챔프는 단일 대상.
+        "Yunara": {"path": yunara_path, **_pkg_cfg(yunara_top1, {"target_count": 2})},
         "KaiSa": {"path": kaisa_path, **_pkg_cfg(kaisa_top1)},
         "Corki": {"path": corki_path, "shoe": corki_shoe, "rune": corki_rune, "doran": corki_top1.get("doran", "doranblade")},
     }

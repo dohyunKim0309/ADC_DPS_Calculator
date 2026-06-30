@@ -5,9 +5,15 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 
 from adc_sim.settings import get_result_export_settings
+from adc_sim.champion import Yunara
+from adc_sim.runes import LethalTempo, CutDown
+from adc_sim.engine import run_simulation
+from adc_sim.data.items_registry import create_item_from_key
+# 레벨표·타깃 헬퍼는 모든 시뮬이 공유하는 데이터/유틸이라 ashe 모듈에 둔 채 import한다.
+# (Yunara '시뮬레이션 로직' 자체는 이 파일에서 정의한다 — simulate_yunara_core_path)
 from adc_sim.simulations.ashe import (
-    simulate_yunara_core_path,
-    _build_ashe_4core_all_paths,
+    build_target_for_core,
+    CORE_YUNARA_LEVELS,
     build_ashe_like_core_report_meta,
 )
 from adc_sim.data.items_data import DORAN_OPTIONS, DORAN_SHORT, ADC_PACKAGES
@@ -32,7 +38,115 @@ CONTROL_COMBO = tuple(sorted(("kraken", "pd", "ie", "ldr")))
 CONTROL_LABEL = "Control Krk-PD-IE-LDR"
 CORE_WEIGHTS_RAW = [5.0, 4.0, 3.0, 3.0]
 CORE_WEIGHTS = [w / sum(CORE_WEIGHTS_RAW) for w in CORE_WEIGHTS_RAW]
-_YUNARA_4CORE_TOP1_CACHE = None
+_YUNARA_4CORE_TOP1_CACHE = {}  # target_count -> top1 build summary
+
+# --- 유나라 전용 빌드 후보 풀 (애쉬와 분리 — 후보는 여기서 설정) ---
+# 애쉬와 달리 statikk 을 core1/core2 후보에도 넣어 statikk 선행 오더를 평가한다.
+YUNARA_CORE1_CANDIDATES = ["kraken", "yuntal25", "storm", "c44", "bot", "guinsoo", "terminus", "statikk"]
+YUNARA_CORE2_CANDIDATES = ["kraken", "yuntal25", "storm", "c44", "bot", "pd", "runaan", "terminus", "guinsoo", "statikk"]
+YUNARA_CORE3_CANDIDATES = ["ie", "ldr", "guinsoo", "terminus"]
+YUNARA_CORE4_CANDIDATES = ["ie", "ldr", "storm", "c44", "pd", "runaan", "kraken", "statikk", "guinsoo", "terminus"]
+# 방관/관통 계열은 한 빌드에 1개까지만 (애쉬 풀과 동일 규칙)
+YUNARA_PEN_EXCLUSIVE_KEYS = {"terminus", "ldr", "mortal"}
+
+
+def _build_yunara_4core_all_paths():
+    """Build Yunara-specific 4-core candidate paths (separate from Ashe pool).
+
+    탐색 규칙은 애쉬와 동일(같은 아이템 중복 불가, 펜 계열 1개 제한, 정확경로 dedup,
+    윤탈-크라켄 오프닝 강제 포함)하되 후보 풀만 유나라 전용(`YUNARA_CORE*`)을 쓴다.
+    """
+    all_paths = []
+    seen_exact_paths = set()
+
+    for c1 in YUNARA_CORE1_CANDIDATES:
+        for c2 in YUNARA_CORE2_CANDIDATES:
+            if c1 == c2:
+                continue
+            for c3 in YUNARA_CORE3_CANDIDATES:
+                if c3 in {c1, c2}:
+                    continue
+                for c4 in YUNARA_CORE4_CANDIDATES:
+                    if c4 in {c1, c2, c3}:
+                        continue
+                    path_keys = [c1, c2, c3, c4]
+                    pen_count = sum(1 for key in path_keys if key in YUNARA_PEN_EXCLUSIVE_KEYS)
+                    if pen_count > 1:
+                        continue
+                    exact_path = (c1, c2, c3, c4)
+                    if exact_path in seen_exact_paths:
+                        continue
+                    seen_exact_paths.add(exact_path)
+                    all_paths.append(exact_path)
+
+    # 윤탈 구매 타이밍 차이를 보기 위해 윤탈-크라켄 오프닝은 중복 규칙과 무관하게 항상 포함
+    forced_paths = []
+    for c3 in YUNARA_CORE3_CANDIDATES:
+        for c4 in YUNARA_CORE4_CANDIDATES:
+            if c4 == c3:
+                continue
+            if c4 in {"yuntal25", "kraken"}:
+                continue
+            path_keys = ["yuntal25", "kraken", c3, c4]
+            pen_count = sum(1 for key in path_keys if key in YUNARA_PEN_EXCLUSIVE_KEYS)
+            if pen_count > 1:
+                continue
+            forced_paths.append(("yuntal25", "kraken", c3, c4))
+            forced_paths.append(("kraken", "yuntal25", c3, c4))
+    for fp in forced_paths:
+        if fp not in seen_exact_paths:
+            seen_exact_paths.add(fp)
+            all_paths.append(fp)
+
+    return all_paths
+
+
+def simulate_yunara_core_path(core_item_keys, core_tier, doran_key=None, boots_key="berserker", rune_as_bonus=0.0, target_count=1):
+    """Simulate Yunara DPS and total gold for the given core progression.
+
+    doran_key: 시작 도란 아이템(검/활). None이면 미포함.
+    boots_key: 신발(기본 광전사). rune_as_bonus: 공속 룬(민첩함 등)의 평타 공속 가산(골드 무료).
+    target_count: 교전 중 적 수. 1이면 순수 단일 대상. 2+면 (Q 활성 시) 크라켄 추가발동·루난 확산
+        업리프트가 1차 대상 기록값에 합산된다(=다대상 유효 DPS). 1차 대상 딜은 줄지 않는다.
+    """
+    target = build_target_for_core(core_tier)
+    level_cfg = CORE_YUNARA_LEVELS[core_tier]
+    yunara = Yunara(level=level_cfg["level"], q_level=level_cfg["q_level"])
+    yunara.set_rune(LethalTempo())
+    yunara.set_sub_rune(CutDown())
+    yunara.set_target_count(target_count)
+
+    active_core_keys = list(core_item_keys[:core_tier])
+    core_items = []
+    for idx, key in enumerate(active_core_keys, start=1):
+        if key == "yuntal25":
+            current_tier = len(active_core_keys)
+            purchase_tier = idx
+            if current_tier == purchase_tier:
+                if idx == 1:
+                    yuntal_crit = 0.0
+                elif idx == 2:
+                    yuntal_crit = 0.12
+                else:
+                    yuntal_crit = 0.05
+            else:
+                yuntal_crit = 0.25
+            core_items.append(create_item_from_key(key, yuntal_crit=yuntal_crit))
+        else:
+            core_items.append(create_item_from_key(key))
+
+    doran_items = [create_item_from_key(doran_key)] if doran_key else []
+    items = doran_items + [create_item_from_key(boots_key)] + core_items
+    total_cost = 0
+    for item in items:
+        total_cost += item.cost
+        yunara.add_item(item)
+    yunara.bonus_as_percent += rune_as_bonus  # 공속 룬(민첩함): 골드 무료, 평타 공속 가산
+
+    # 현재 비교/시뮬 기준: 전투 시작 시 Q 활성 상태
+    yunara.activate_q(0.0)
+    _, dps, _ = run_simulation(yunara, target, verbose=False)
+    return dps, total_cost
 
 
 def _path_label(path):
@@ -67,18 +181,22 @@ def _build_yunara_result_entry(path, dps_values, gold_values, pkg):
     }
 
 
-def rank_yunara_4core_paths():
+def rank_yunara_4core_paths(target_count=1):
     """Rank Yunara 4-core paths and keep the best order per 4-item set.
 
     각 경로를 정배 패키지 A/B 두 경우로 평가(2배)하고, 4아이템 집합당 최고 1개만 유지
     → 빌드별 최적 패키지가 자동 선택된다. 컨트롤도 패키지 최적(가중 DPG 최대).
+
+    target_count: 교전 적 수. 1=순수 단일 대상, 2+=다대상 유효 DPS(크라켄/루난 업리프트 포함).
+        랭킹 지표(rel_dpg_score)는 같은 target_count의 컨트롤 대비 상대값이라 표끼리 직접 비교 가능.
     """
-    all_paths = _build_ashe_4core_all_paths()
+    all_paths = _build_yunara_4core_all_paths()
 
     results = []
     for c1, c2, c3, c4 in all_paths:
         for pkg in ADC_PACKAGES:
-            kw = dict(doran_key=pkg["doran"], boots_key=pkg["boots"], rune_as_bonus=pkg["rune_as"])
+            kw = dict(doran_key=pkg["doran"], boots_key=pkg["boots"],
+                      rune_as_bonus=pkg["rune_as"], target_count=target_count)
             dps1, cost1 = simulate_yunara_core_path([c1], 1, **kw)
             dps2, cost2 = simulate_yunara_core_path([c1, c2], 2, **kw)
             dps3, cost3 = simulate_yunara_core_path([c1, c2, c3], 3, **kw)
@@ -95,12 +213,16 @@ def rank_yunara_4core_paths():
         return sum(CORE_WEIGHTS[i] * d[i] for i in range(4))
     best_control = max(control_candidates, key=_weighted_dpg)
     ctrl_dpg = _calculate_dpg_values(best_control["y"], best_control["x"])
+    ctrl_dps = best_control["y"]
 
     for row in results:
         row_dpg = _calculate_dpg_values(row["y"], row["x"])
         rel = [(row_dpg[i] / ctrl_dpg[i]) if ctrl_dpg[i] > 0 else 0.0 for i in range(4)]
         row["dpg"] = row_dpg
         row["rel_dpg_score"] = sum(CORE_WEIGHTS[i] * rel[i] for i in range(4)) * 100.0
+        # 절대 파워(DPS) 상대점수: 컨트롤 DPS 대비 가중합 (랭킹 지표는 아니고 표 표기용)
+        rel_dps = [(row["y"][i] / ctrl_dps[i]) if ctrl_dps[i] > 0 else 0.0 for i in range(4)]
+        row["rel_dps_score"] = sum(CORE_WEIGHTS[i] * rel_dps[i] for i in range(4)) * 100.0
 
     combo_best = {}
     for row in results:
@@ -120,13 +242,17 @@ def rank_yunara_4core_paths():
     }
 
 
-def get_yunara_4core_top1_build():
-    """Return the cached Yunara 4-core top1 build summary."""
-    global _YUNARA_4CORE_TOP1_CACHE
-    if _YUNARA_4CORE_TOP1_CACHE is None:
-        ranked_data = rank_yunara_4core_paths()
+def get_yunara_4core_top1_build(target_count=1):
+    """Return the cached Yunara 4-core top1 build summary for the given target_count.
+
+    target_count=1: 순수 단일 대상 Top1. 2+: 다대상 유효 DPS 기준 Top1(크라켄/루난 업리프트 반영).
+    target_count별로 별도 캐시한다.
+    """
+    cached = _YUNARA_4CORE_TOP1_CACHE.get(target_count)
+    if cached is None:
+        ranked_data = rank_yunara_4core_paths(target_count=target_count)
         top1 = ranked_data["ranked"][0]
-        _YUNARA_4CORE_TOP1_CACHE = {
+        cached = {
             "path": top1["path"],
             "doran": top1["doran"],
             "boots": top1["boots"],
@@ -137,8 +263,10 @@ def get_yunara_4core_top1_build():
             "control_pkg": ranked_data["best_control"]["pkg_label"],
             "total_paths_tested": ranked_data["total_paths_simulated"],
             "label": top1["label"],
+            "target_count": target_count,
         }
-    return _YUNARA_4CORE_TOP1_CACHE
+        _YUNARA_4CORE_TOP1_CACHE[target_count] = cached
+    return cached
 
 
 def _build_yunara_report_row(rank, row, best_control):
@@ -247,36 +375,45 @@ def export_yunara_ranking_report(ranked_data, top_n=20):
     return written_paths
 
 
-def print_table(ranked, best_control, top_n=20):
-    """Print the Yunara ranking table from shared flattened report rows."""
-    controls = [row for row in ranked if row["is_control"]]
-    total_rows = top_n + len(controls)
+def print_case_style_table(ranked, best_control, target_count, top_n=20):
+    """Print the Yunara ranking in case_ranking.py table format (4코어).
 
-    print(
-        f"\nTop {total_rows} Rows: Top {top_n} + All Controls "
-        f"(Rel by DPS/1000g ratio, weighted 5:4:3:3 over 1~4 Core)"
-    )
-    header = (
-        f"{'RK':>2} | {'BUILD':<22} | {'1C (DPS/DPG)':^20} | {'2C (DPS/DPG)':^20} | {'3C (DPS/DPG)':^20} | {'4C (DPS/DPG)':^20} | "
-        f"{'REL_DPG%':^9} | {'VS CTRL':^10} | {'C1 ΔDPS/ΔDPG%':^14} | {'C2 ΔDPS/ΔDPG%':^14} | {'C3 ΔDPS/ΔDPG%':^14} | {'C4 ΔDPS/ΔDPG%':^14}"
-    )
+    좌측 4열=DPS(코어1~4), 우측 4열=DPG(코어1~4), GOLD=4코어 총골드,
+    그리고 컨트롤 대비 가중 상대점수를 DPG(랭킹 지표)·DPS(절대 파워) 둘 다 표기.
+    """
+    scenario = "단일 대상(적 1명)" if target_count == 1 else f"적 {target_count}명 교전(다대상 유효 DPS)"
+    print(f"\n{'=' * 132}")
+    print(f"[YUNARA] target_count={target_count}  ({scenario})  가중 1~4코어 5:4:3:3")
+    print("  제약: pen-exclusive≤1(terminus/ldr/mortal) | "
+          "후보=YUNARA_CORE1~4_CANDIDATES(core1·2에 statikk 포함, 애쉬와 분리)")
+    print("좌 4열=DPS(코어1~4), 우 4열=DPG(코어1~4), GOLD=4코어 총골드 | "
+          "SCORE=컨트롤 대비 가중 상대(DPG=골드효율=랭킹지표, DPS=절대파워), vs=±%")
+    print(f"{'':>2} | {'':<36} | {'----- DPS (core 1->4) -----':^27} | "
+          f"{'----- DPG (core 1->4) -----':^27} | {'':>6} | {'DPG (rank metric)':^16} | {'DPS':^16}")
+    header = (f"{'RK':>2} | {'BUILD':<36} | "
+              f"{'1C':>6} {'2C':>6} {'3C':>6} {'4C':>6} | "
+              f"{'1C':>6} {'2C':>6} {'3C':>6} {'4C':>6} | "
+              f"{'GOLD':>6} | {'SCORE':>8} {'vs':>7} | {'SCORE':>8} {'vs':>7}")
     print(header)
     print("-" * len(header))
 
-    for row in _build_yunara_report_rows(ranked, best_control, top_n):
-        cells = []
-        for index in range(4):
-            cells.append(
-                f"{row[f'core{index + 1}_delta_dps_pct']:+5.1f}/{row[f'core{index + 1}_delta_dpg_pct']:+5.1f}"
-            )
-        label = row["label"] + (" [CTRL]" if row["is_control"] else "")
-        print(
-            f"{row['rank']:>2} | {label:<22} | "
-            f"{row['core1_dps']:>6.1f}/{row['core1_dpg']:<6.1f} | {row['core2_dps']:>6.1f}/{row['core2_dpg']:<6.1f} | "
-            f"{row['core3_dps']:>6.1f}/{row['core3_dpg']:<6.1f} | {row['core4_dps']:>6.1f}/{row['core4_dpg']:<6.1f} | "
-            f"{row['rel_dpg_score']:>9.2f} | {row['vs_control_pct']:+8.2f}% | "
-            f"{cells[0]:>14} | {cells[1]:>14} | {cells[2]:>14} | {cells[3]:>14}"
-        )
+    def _row(tag, label, dpss, dpgs, gold, score_dpg, score_dps):
+        dps_s = " ".join(f"{dpss[i]:>6.0f}" for i in range(4))
+        dpg_s = " ".join(f"{dpgs[i]:>6.1f}" for i in range(4))
+        print(f"{tag:>2} | {label:<36} | {dps_s} | {dpg_s} | {gold:>6.0f} | "
+              f"{score_dpg:>8.2f} {score_dpg - 100.0:>+7.2f} | {score_dps:>8.2f} {score_dps - 100.0:>+7.2f}")
+
+    _row("C", best_control["label"] + " [CTRL]", best_control["y"], best_control["dpg"],
+         best_control["x"][3], 100.0, 100.0)
+    rank = 0
+    for row in ranked:
+        if row["is_control"]:
+            continue
+        rank += 1
+        if rank > top_n:
+            break
+        _row(str(rank), row["label"], row["y"], row["dpg"], row["x"][3],
+             row["rel_dpg_score"], row["rel_dps_score"])
 
 
 def plot_graph(ranked, best_control):
@@ -327,23 +464,22 @@ def plot_graph(ranked, best_control):
 
 
 def main():
-    """Run the Yunara ranking workflow with optional report export."""
-    print("\n=== Yunara Build Path Power Spike (1->2->3->4 Core) ===")
-    ranked_data = rank_yunara_4core_paths()
-    ranked = ranked_data["ranked"]
-    best_control = ranked_data["best_control"]
+    """Run the Yunara ranking for 1-enemy and 2-enemy scenarios (case_ranking 표 포맷).
 
-    print(f"\nPower Spike Paths Simulated ({ranked_data['total_paths_simulated']} total, before same-combo dedup)")
-    print(
-        f"Best Control Baseline (Rel DPG 5:4:3:3): {best_control['rel_dpg_score']:.2f} "
-        f"({best_control['label']})"
-    )
+    상대 1명(순수 단일 대상)과 2명(다대상 유효 DPS) 각각으로 시뮬을 돌려 표 2개를 출력한다.
+    리포트 export·그래프는 단일 대상(1명) 기준으로 유지한다.
+    """
+    print("\n=== Yunara Build Path Ranking: 단일 대상(1명) vs 2명 교전 ===")
+    data_by_tc = {}
+    for tc in (1, 2):
+        data_by_tc[tc] = rank_yunara_4core_paths(target_count=tc)
+        print(f"\n[Info] target_count={tc}: {data_by_tc[tc]['total_paths_simulated']} paths simulated (before same-combo dedup)")
+        print_case_style_table(data_by_tc[tc]["ranked"], data_by_tc[tc]["best_control"], tc, top_n=20)
 
-    print_table(ranked, best_control, top_n=20)
-    report_paths = export_yunara_ranking_report(ranked_data, top_n=20)
+    report_paths = export_yunara_ranking_report(data_by_tc[1], top_n=20)
     for report_path in report_paths:
         print(f"[Info] Saved Yunara report: {report_path}")
-    plot_graph(ranked, best_control)
+    plot_graph(data_by_tc[1]["ranked"], data_by_tc[1]["best_control"])
 
 
 if __name__ == "__main__":
