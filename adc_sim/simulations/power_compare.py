@@ -21,6 +21,12 @@ from adc_sim.simulations.corki import (
     get_corki_4core_top1_build,
     build_corki_core_report_meta,
 )
+from adc_sim.simulations.cogmaw import (
+    simulate_cogmaw_core_path,
+    get_cogmaw_powercompare_builds,
+    build_cogmaw_core_report_meta,
+)
+from adc_sim.runes import LethalTempo
 from adc_sim.data.items_data import DORAN_SHORT
 
 
@@ -53,6 +59,12 @@ def _simulate_compare_stat(champ_name, cfg, core_tier):
         dps, gold = simulate_corki_core_path(cfg["path"], cfg["shoe"], cfg["rune"], core_tier, include_w=False, doran_key=doran)
         meta = build_corki_core_report_meta(cfg["path"], cfg["shoe"], cfg["rune"], core_tier)
         choice = DORAN_SHORT.get(doran, doran)
+    elif champ_name == "CogMaw":
+        # 코그모는 룬 의존(LT/PtA) → cfg.keystone_cls 로 키스톤 지정. 보조룬 CutDown 은 simulate 내부.
+        keystone_cls = cfg.get("keystone_cls", LethalTempo)
+        dps, gold = simulate_cogmaw_core_path(cfg["path"], core_tier, keystone_cls=keystone_cls, **pkg_kw)
+        meta = build_cogmaw_core_report_meta(cfg["path"], core_tier)
+        choice = f"{cfg.get('pkg_label', 'Bow+Glut')}/{cfg.get('rune_label', 'LT')}"
     else:
         raise ValueError(f"Unknown champion config: {champ_name}")
 
@@ -127,6 +139,7 @@ def _plot_combined_compare(top1_rows, basic_rows):
         "Yunara": "#7b61ff",
         "KaiSa": "#e4572e",
         "Corki": "#2ca02c",
+        "CogMaw": "#17becf",
     }
 
     plt.figure(figsize=(13, 8))
@@ -135,7 +148,7 @@ def _plot_combined_compare(top1_rows, basic_rows):
         (top1_rows, "Top1", "-", "o", 0.95),
         (basic_rows, "Basic", "--", "s", 0.9),
     ]:
-        for champ in ("Ashe", "Yunara", "KaiSa", "Corki"):
+        for champ in ("Ashe", "Yunara", "KaiSa", "Corki", "CogMaw"):
             xs = [row["stats"][champ]["gold"] for row in rows]
             ys = [row["stats"][champ]["dps"] for row in rows]
             # 선택된 옵션(패키지 A/B 또는 코르키 도란) — variant 내 챔프당 고정이라 첫 행에서 취득
@@ -264,6 +277,9 @@ def compare_builds():
 
     corki_doran = DORAN_SHORT.get(corki_top1.get("doran"), "Blade")
 
+    print("[Info] Loading Cog'Maw rune-agnostic best + meta build (LT·PtA 두 룬 전수 랭킹 — 시간 걸림)...")
+    cogmaw_best, cogmaw_meta = get_cogmaw_powercompare_builds()
+
     print("\n=== Cross-Champion Power Compare (1~4 Core) ===")
     print("Configured Top1 builds (Ashe/Yunara/KaiSa: 정배 패키지 A=Bld+Zerk+핏빛길 / B=Bow+Glut+민첩함 중 최적):")
     print("  ※ 유나라만 2명 교전(tc=2) 유효 DPS 기준(빌드도 2명 최적) — 나머지 챔프는 단일 대상. 비대칭 비교 주의.")
@@ -282,6 +298,10 @@ def compare_builds():
     print(
         f"- Corki  : Doran's {corki_doran} + {'-'.join(corki_path)} + {corki_shoe} / {corki_rune}+CutDown "
         f"(Top1 from simulation_corki, score {corki_top1['score']:.2f}; 패키지 제약 없음)"
+    )
+    print(
+        f"- CogMaw : [{cogmaw_best.get('pkg_label','?')}] {'-'.join(cogmaw_best['path'])} / {cogmaw_best['rune_label']}+CutDown "
+        f"(룬 무관 최강; LT·PtA 중 절대 weighted-DPG 우위)"
     )
     print()
 
@@ -302,6 +322,9 @@ def compare_builds():
         "Yunara": {"path": yunara_path, **_pkg_cfg(yunara_top1, {"target_count": 2})},
         "KaiSa": {"path": kaisa_path, **_pkg_cfg(kaisa_top1)},
         "Corki": {"path": corki_path, "shoe": corki_shoe, "rune": corki_rune, "doran": corki_top1.get("doran", "doranblade")},
+        # 코그모 = 룬 무관 최강 빌드(LT·PtA 중 우위)
+        "CogMaw": {"path": cogmaw_best["path"],
+                   **_pkg_cfg(cogmaw_best, {"keystone_cls": cogmaw_best["keystone_cls"], "rune_label": cogmaw_best["rune_label"]})},
     }
     top1_rows = _print_compare_section("Cross-Champion Top1 Compare (1~4 Core)", top1_configs)
 
@@ -315,6 +338,7 @@ def compare_builds():
     print("- Yunara : kraken-pd-ie-ldr + Berserker / LT+CutDown (start Q active)")
     print(f"- KaiSa  : {'-'.join(kaisa_basic_path)} + Berserker / LT+CutDown (Control from simulation_kaisa)")
     print(f"- Corki  : {'-'.join(corki_basic_path)} + {corki_basic_shoe} / {corki_basic_rune}+CutDown (requested base build)")
+    print(f"- CogMaw : {'-'.join(cogmaw_meta['path'])} + {cogmaw_meta.get('boots','glutton')} / {cogmaw_meta['rune_label']}+CutDown (실전 메타 빌드 / 치속)")
     print()
 
     basic_configs = {
@@ -322,6 +346,9 @@ def compare_builds():
         "Yunara": {"path": ("kraken", "pd", "ie", "ldr")},
         "KaiSa": {"path": kaisa_basic_path},
         "Corki": {"path": corki_basic_path, "shoe": corki_basic_shoe, "rune": corki_basic_rune},
+        # 코그모 = 실전 메타 빌드(guinsoo-navori-terminus-wit) under 치속(LethalTempo)
+        "CogMaw": {"path": cogmaw_meta["path"],
+                   **_pkg_cfg(cogmaw_meta, {"keystone_cls": cogmaw_meta["keystone_cls"], "rune_label": cogmaw_meta["rune_label"]})},
     }
     basic_rows = _print_compare_section("Cross-Champion Basic Build Compare (1~4 Core)", basic_configs)
 

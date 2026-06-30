@@ -66,20 +66,19 @@ def simulate_cogmaw_core_path(full_path, core_tier, doran_key="doranblade",
 
 # 컨트롤(베이스라인) = 실전 메타 빌드 — 모든 빌드 RelDPG 를 '메타 대비'로 측정. 풀에 존재해야 함.
 CONTROL_PATH = ("guinsoo", "navori", "terminus", "wit")
-_COGMAW_4CORE_TOP1_CACHE = None
+_COGMAW_TOP1_CACHE = {}  # keystone_cls → top1 dict (룬별 캐시)
 
 
-def get_cogmaw_4core_top1_build():
-    """Return the ranked 4-core Cog'Maw top1 build with control metadata.
+def get_cogmaw_4core_top1_build(keystone_cls=LethalTempo):
+    """Return the ranked 4-core Cog'Maw top1 build (주어진 keystone 룬) with control metadata.
 
-    Control = CONTROL_PATH (kraken-guinsoo-nashor-terminus). Raises RuntimeError if the
-    control build is absent from the search space.
+    Control = CONTROL_PATH (실전 메타 빌드 guinsoo-navori-terminus-wit). Raises RuntimeError
+    if the control build is absent from the search space. keystone_cls 별로 캐시한다.
     [H-KOG-6] yuntal dedup uses simple sorted-combo (no position sensitivity) because
     cogmaw v1 makes no yuntal-crit distinction per build position.
     """
-    global _COGMAW_4CORE_TOP1_CACHE
-    if _COGMAW_4CORE_TOP1_CACHE is not None:
-        return _COGMAW_4CORE_TOP1_CACHE
+    if keystone_cls in _COGMAW_TOP1_CACHE:
+        return _COGMAW_TOP1_CACHE[keystone_cls]
 
     core1_candidates = ["guinsoo", "kraken", "nashor", "terminus", "bot", "rfc", "statikk", "storm", "pd", "ie", "yuntal", "shadowflame", "dawn", "navori", "wit"]
     core2_candidates = ["guinsoo", "kraken", "nashor", "terminus", "bot", "rfc", "statikk", "storm", "pd", "ie", "yuntal", "shadowflame", "void", "dawn", "navori", "wit"]
@@ -114,7 +113,7 @@ def get_cogmaw_4core_top1_build():
     rows = []
     for path in all_paths:
         for pkg in ADC_PACKAGES:
-            kw = dict(doran_key=pkg["doran"], boots_key=pkg["boots"], rune_as_bonus=pkg["rune_as"])
+            kw = dict(doran_key=pkg["doran"], boots_key=pkg["boots"], rune_as_bonus=pkg["rune_as"], keystone_cls=keystone_cls)
             dps_list, cost_list = [], []
             for tier in range(1, 5):
                 d, c = simulate_cogmaw_core_path(path, tier, **kw)
@@ -169,18 +168,25 @@ def get_cogmaw_4core_top1_build():
 
     ranked = sorted(rows_dedup, key=lambda r: r["rel_dpg_score"], reverse=True)
     top1 = ranked[0]
-    _COGMAW_4CORE_TOP1_CACHE = {
+    result = {
         "path": top1["path"],
         "doran": top1["doran"],
         "boots": top1["boots"],
         "rune_as": top1["rune_as"],
         "pkg_label": top1["pkg_label"],
         "score": top1["rel_dpg_score"],
+        "weighted_dpg": top1["weighted_dpg"],          # 절대 파워(룬 간 비교용)
+        "keystone_cls": keystone_cls,
         "control_path": best_control["path"],
+        "control_doran": best_control["doran"],
+        "control_boots": best_control["boots"],
+        "control_rune_as": best_control["rune_as"],
         "control_pkg": best_control["pkg_label"],
+        "control_weighted_dpg": best_control["weighted_dpg"],
         "total_paths_tested": len(all_paths),
     }
-    return _COGMAW_4CORE_TOP1_CACHE
+    _COGMAW_TOP1_CACHE[keystone_cls] = result
+    return result
 
 
 def build_cogmaw_core_report_meta(full_path, core_tier):
@@ -194,6 +200,35 @@ def build_cogmaw_core_report_meta(full_path, core_tier):
         "build": "-".join(full_path),
         "active_build": "-".join(active_path),
     }
+
+
+def get_cogmaw_powercompare_builds():
+    """power_compare 연동용 두 빌드 (best, meta) 반환.
+
+    - best: 룬 무관 가장 강한 빌드 — LethalTempo·PressTheAttack top1 중 절대 weighted-DPG 가
+      높은 (빌드, 룬). (룬별 rel-DPG 는 베이스라인이 달라 직접 비교 불가 → 절대 파워로 선택.)
+    - meta: 실전 메타 빌드(CONTROL_PATH=guinsoo-navori-terminus-wit) under 치속(LethalTempo),
+      최적 패키지(= LT 랭킹의 control 행).
+    각 dict: path / keystone_cls / doran / boots / rune_as / pkg_label / rune_label / weighted_dpg.
+    주의: LT·PtA 두 룬 전수 랭킹을 돌리므로 느리다(룬별 캐시됨).
+    """
+    lt = get_cogmaw_4core_top1_build(LethalTempo)
+    pta = get_cogmaw_4core_top1_build(PressTheAttack)
+    src = lt if lt["weighted_dpg"] >= pta["weighted_dpg"] else pta
+    best = {
+        "path": src["path"], "keystone_cls": src["keystone_cls"],
+        "doran": src["doran"], "boots": src["boots"], "rune_as": src["rune_as"],
+        "pkg_label": src["pkg_label"],
+        "rune_label": "LT" if src["keystone_cls"] is LethalTempo else "PtA",
+        "weighted_dpg": src["weighted_dpg"],
+    }
+    meta = {  # LT 결과의 control = 메타 빌드(최적 패키지)
+        "path": lt["control_path"], "keystone_cls": LethalTempo,
+        "doran": lt["control_doran"], "boots": lt["control_boots"], "rune_as": lt["control_rune_as"],
+        "pkg_label": lt["control_pkg"], "rune_label": "LT",
+        "weighted_dpg": lt["control_weighted_dpg"],
+    }
+    return best, meta
 
 
 def _run_cogmaw_ranking(keystone_cls, keystone_label, all_paths, item_short, ctrl_combo):
