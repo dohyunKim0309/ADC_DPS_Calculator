@@ -64,7 +64,8 @@ def simulate_cogmaw_core_path(full_path, core_tier, doran_key="doranblade",
     return dps, total_cost
 
 
-CONTROL_PATH = ("kraken", "guinsoo", "nashor", "terminus")
+# 컨트롤(베이스라인) = 실전 메타 빌드 — 모든 빌드 RelDPG 를 '메타 대비'로 측정. 풀에 존재해야 함.
+CONTROL_PATH = ("guinsoo", "navori", "terminus", "wit")
 _COGMAW_4CORE_TOP1_CACHE = None
 
 

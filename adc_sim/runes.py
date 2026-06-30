@@ -1,3 +1,13 @@
+def _adaptive_split(damage, champion):
+    """적응형 피해 분배: bonus AP > bonus AD 면 마법, 아니면 물리(동률은 물리). LoL 적응형 규칙.
+    LethalTempo/PressTheAttack 의 온힛 보너스가 AP 빌드(코그모 등)에선 마법으로 들어가
+    마저 경감·%마관(공허)·고정마관(그불)·Shadowflame 증폭 경로를 타도록. (총 AP는 라바돈 증폭 포함)
+    물리 ADC(애쉬 등 bonus AD>AP)는 그대로 물리."""
+    if champion.total_ap > champion.bonus_ad:
+        return 0, damage
+    return damage, 0
+
+
 class Rune:
     def __init__(self, name):
         self.name = name
@@ -73,8 +83,8 @@ class LethalTempo(Rune):
         # (기본 + 계수) * 2/3
         damage = base_dmg * scaling * self.ranged_damage_penalty
 
-        # 적응형 피해: ADC는 보통 물리 피해로 적용
-        return damage, 0
+        # 적응형: bonus AP > bonus AD 면 마법(AP 빌드 — 마관·그불 시너지), 아니면 물리
+        return _adaptive_split(damage, champion)
 
 
 class PressTheAttack(Rune):
@@ -122,7 +132,7 @@ class PressTheAttack(Rune):
             # 추가 적응형 피해: 40 ~ 160
             lvl = champion.level
             damage = 40 + (120 * (lvl - 1) / 17)
-            return damage, 0 # 물리 피해
+            return _adaptive_split(damage, champion)  # 적응형(AP 빌드면 마법)
             
         return 0, 0
 
