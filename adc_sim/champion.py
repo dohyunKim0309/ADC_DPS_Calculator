@@ -1613,3 +1613,45 @@ class Ezreal(Champion):
         # 평타 시점에 패시브 만료 동기화 후 부모 평타 로직(치명/주문검발동/온힛/증폭).
         self._expire_stacks_if_due(time)
         return super().get_one_hit_damage(target, time)
+
+
+class CogMaw(Champion):
+    """Kog'Maw — 온힛 %최대체력(W)·공속(Q패시브) 평타 캐리 + Q/E/R 마법. [Hypothesis 다수 — 스펙 §4]
+
+    풀킷: 평타 + W(쿨관리 버프: 활성 중 평타가 %최대체력 마법 온힛) + Q(패시브 공속 + 액티브 넛지·방/마저 %감소)
+    + E(마법 넛지) + R(잃은체력 연속배율 + 마나 램프). 마나는 Phase 0 엔진으로 하드 바운드.
+    수치 출처: spec §4.1 (LoL Wiki+DDragon+Meraki+나무위키 4소스).
+    """
+
+    def __init__(self, level=1, q_level=5, w_level=5, e_level=5, r_level=3):
+        super().__init__(
+            name="Kog'Maw", base_ad=61, base_as=0.665, as_ratio=0.665,
+            as_growth=2.65, base_range=500, level=level, ad_growth=3.11,
+        )
+        # 보관(비-DPS): 미래 1대1 모델용
+        self.base_range = 500
+        self.base_hp = 635; self.hp_growth = 99
+        self.base_armor = 24; self.armor_growth = 4.45
+        self.base_mr = 30; self.mr_growth = 1.3
+        # 마나 (spec §3.5/§4.1). base_mp5/mp5_growth = Champion.mana_regen_per_sec가 읽는 이름.
+        self.base_mana = 325; self.mana_growth = 40
+        self.base_mp5 = 8.75; self.mp5_growth = 0.7
+
+        self.q_level = q_level; self.w_level = w_level
+        self.e_level = e_level; self.r_level = r_level
+
+        # Q 패시브 공속 [H-KOG-3]: 상수(시전 시 순간해제 무시). 생성 시 1회 반영.
+        self.q_passive_as = [0.05, 0.10, 0.15, 0.20, 0.25]
+        self.bonus_as_percent += self.q_passive_as[self.q_level - 1]
+
+        # 스킬 마나비용 (spec §3.5). R은 동적(스택)이라 _r_mana_cost()로 계산.
+        self.mana_cost = {"q": 40.0, "w": 40.0, "e": 0.0, "r": 0.0}
+        self.e_mana = [40.0, 55.0, 70.0, 85.0, 100.0]
+        self.mana_cost["e"] = self.e_mana[self.e_level - 1]
+
+        # 이벤트/버프 상태 (Task 2~4에서 채움)
+        self.cooldowns_remaining = {"q": 0.0, "w": 0.0, "e": 0.0, "r": 0.0}
+        self.manual_skill_casts = []
+        self.manual_skill_index = 0
+        self.auto_skill_enabled = {"q": True, "w": True, "e": True, "r": True}
+        self.auto_skill_order = ["w", "q", "e", "r"]
