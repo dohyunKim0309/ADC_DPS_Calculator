@@ -1656,6 +1656,13 @@ class CogMaw(Champion):
         self.auto_skill_enabled = {"q": True, "w": True, "e": True, "r": True}
         self.auto_skill_order = ["w", "q", "e", "r"]
 
+        # Q 액티브 데이터 [H-KOG-4]
+        self.q_base = [80.0, 125.0, 170.0, 215.0, 260.0]   # +0.9 AP
+        self.q_shred_pct = [0.16, 0.20, 0.24, 0.28, 0.32]  # 방어력+마저 % 감소, 4초
+        self.q_shred_dur = 4.0
+        # E 데이터 [H-KOG-4]
+        self.e_base = [70.0, 110.0, 150.0, 190.0, 230.0]   # +0.65 AP
+
     # W 데이터 [H-KOG-2]
     W_PCT = [0.03, 0.0375, 0.045, 0.0525, 0.06]   # 랭크별 최대체력 비율
     W_DURATION = 8.0
@@ -1677,11 +1684,16 @@ class CogMaw(Champion):
         self.cooldowns_remaining = {"q": 0.0, "w": 0.0, "e": 0.0, "r": 0.0}
         self.w_active = False
         self.w_end_time = 0.0
-        # (Q 셔레드·R 스택 상태는 Task 3/4에서 init에 추가)
+        # Q 셔레드 상태 (Task 3)
+        self.shred_target = None
+        self.shred_end_time = 0.0
+        self.shred_armor = 0.0
+        self.shred_mr = 0.0
+        # (R 스택 상태는 Task 4에서 init에 추가)
         plan = skill_plan or {}
         auto_cfg = plan.get("auto_cast", {})
-        # W만 기본 활성; Q/E/R는 Task 3/4 구현 후 True로 전환
-        _defaults = {"q": False, "w": True, "e": False, "r": False}
+        # Q/W/E 기본 활성; R는 Task 4 구현 후 True로 전환
+        _defaults = {"q": True, "w": True, "e": True, "r": False}  # r는 Task 4까지 False
         self.auto_skill_enabled = {k: auto_cfg.get(k, _defaults[k]) for k in ("q", "w", "e", "r")}
         self.auto_skill_order = list(plan.get("auto_order", ["w", "q", "e", "r"]))
         self.manual_skill_casts = sorted(list(plan.get("manual_casts", [])), key=lambda x: x[0])
@@ -1694,12 +1706,16 @@ class CogMaw(Champion):
                 self.cooldowns_remaining[k] = max(0.0, self.cooldowns_remaining[k] - delta_time)
         if self.w_active and current_time >= self.w_end_time:
             self.w_active = False
-        # (Q 셔레드 만료·R 스택 감쇠는 Task 3/4에서 추가)
+        if self.shred_target is not None and current_time >= self.shred_end_time:
+            self._clear_shred()
+        # (R 스택 감쇠는 Task 4에서 추가)
 
     def get_time_to_next_state_event(self, current_time):
         cands = []
         if getattr(self, "w_active", False):
             cands.append(max(0.0, self.w_end_time - current_time))
+        if getattr(self, "shred_target", None) is not None:
+            cands.append(max(0.0, self.shred_end_time - current_time))
         return min(cands) if cands else float("inf")
 
     def _can_cast_skill(self, name):
@@ -1753,7 +1769,13 @@ class CogMaw(Champion):
         if name == "w":
             self._cast_w(time)
             return ("w", 0.0, 0.0, False)   # 버프 — 직접피해 없음
-        # q/e/r는 Task 3/4에서 분기 추가
+        if name == "q":
+            p, m = self._cast_q(target, time)
+            return ("q", p, m, True)
+        if name == "e":
+            p, m = self._cast_e(time)
+            return ("e", p, m, True)
+        # r는 Task 4에서 분기 추가
         return (name, 0.0, 0.0, False)
 
     def _cast_w(self, time):
@@ -1762,3 +1784,36 @@ class CogMaw(Champion):
         self.w_end_time = time + self.W_DURATION
         self.cooldowns_remaining["w"] = self.apply_haste_to_cooldown(self.W_CD)
         self.cast_spell(time)
+
+    def _clear_shred(self):
+        if self.shred_target is not None:
+            self.shred_target.armor += self.shred_armor
+            self.shred_target.magic_resist += self.shred_mr
+        self.shred_target = None; self.shred_end_time = 0.0
+        self.shred_armor = 0.0; self.shred_mr = 0.0
+
+    def _cast_q(self, target, time):
+        """Q 액티브: 마법 넛지 + 방어력·마저 %감소 디버프(감소→관통 순서). [H-KOG-4]"""
+        idx = self.q_level - 1
+        q_magic = self.q_base[idx] + 0.9 * self.total_ap
+        # 셔레드: 기존 디버프 복원 후 재적용(중첩 금지)
+        if self.shred_target is not None:
+            self._clear_shred()
+        pct = self.q_shred_pct[idx]
+        d_arm = target.armor * pct
+        d_mr = target.magic_resist * pct
+        target.armor -= d_arm
+        target.magic_resist -= d_mr
+        self.shred_target = target; self.shred_end_time = time + self.q_shred_dur
+        self.shred_armor = d_arm; self.shred_mr = d_mr
+        self.cooldowns_remaining["q"] = self.apply_haste_to_cooldown(7.0)
+        self.cast_spell(time)
+        return 0.0, q_magic
+
+    def _cast_e(self, time):
+        """E 공허진흙: 마법 넛지. [H-KOG-4]"""
+        idx = self.e_level - 1
+        e_magic = self.e_base[idx] + 0.65 * self.total_ap
+        self.cooldowns_remaining["e"] = self.apply_haste_to_cooldown(12.0)
+        self.cast_spell(time)
+        return 0.0, e_magic
