@@ -27,7 +27,7 @@ from adc_sim.simulations.cogmaw import (
     build_cogmaw_core_report_meta,
 )
 from adc_sim.runes import LethalTempo
-from adc_sim.data.items_data import DORAN_SHORT
+from adc_sim.data.items_data import DORAN_SHORT, ADC_PACKAGES
 
 
 def _simulate_compare_stat(champ_name, cfg, core_tier):
@@ -78,6 +78,23 @@ def _simulate_compare_stat(champ_name, cfg, core_tier):
         "target_count": cfg.get("target_count", 1),
     })
     return meta
+
+
+def _best_pkg_cfg(champ_name, path):
+    """주어진 (챔프, path)를 정배 패키지 A/B 중 4코어 weighted-DPG(5:4:3:3) 최적으로 평가해
+    패키지 설정(doran/boots/rune_as/pkg_label) 반환. basic 비교를 개별 sim(컨트롤이 최적 패키지를
+    고름)과 일치시키기 위함. Corki/CogMaw 는 자체 패키지 메커니즘이라 이 헬퍼를 쓰지 않는다."""
+    weights = [5.0, 4.0, 3.0, 3.0]
+    best_cfg, best_w = None, -1.0
+    for pkg in ADC_PACKAGES:
+        probe = {"path": path, "doran": pkg["doran"], "boots": pkg["boots"],
+                 "rune_as": pkg["rune_as"], "pkg_label": pkg["label"]}
+        wsum = sum(weights[t - 1] * _simulate_compare_stat(champ_name, probe, t)["dpg"] for t in range(1, 5))
+        if wsum > best_w:
+            best_w = wsum
+            best_cfg = {"doran": pkg["doran"], "boots": pkg["boots"],
+                        "rune_as": pkg["rune_as"], "pkg_label": pkg["label"]}
+    return best_cfg
 
 
 def _print_compare_section(title, configs):
@@ -132,8 +149,27 @@ def _build_compare_export_rows(rows, variant):
     return flat_rows, summary_rows
 
 
+def _setup_korean_font():
+    """Hangul 폰트를 지정해 한글 라벨이 □(두부)로 깨지지 않게 한다.
+
+    matplotlib 기본 폰트(DejaVu Sans)는 한글 글리프가 없어 □ 로 렌더된다.
+    OS별 후보 중 설치된 첫 폰트를 font.family 로 지정(없으면 무변경).
+    음수 기호(−)가 □ 로 깨지는 것도 axes.unicode_minus=False 로 함께 보정.
+    """
+    from matplotlib import font_manager
+    candidates = ["AppleGothic", "Apple SD Gothic Neo", "Malgun Gothic",
+                  "NanumGothic", "Noto Sans CJK KR", "Noto Sans KR"]
+    available = {f.name for f in font_manager.fontManager.ttflist}
+    for name in candidates:
+        if name in available:
+            plt.rcParams["font.family"] = name
+            break
+    plt.rcParams["axes.unicode_minus"] = False
+
+
 def _plot_combined_compare(top1_rows, basic_rows):
     """Plot champion DPS curves for Top1 and Basic compare variants."""
+    _setup_korean_font()
     champ_colors = {
         "Ashe": "#1f77b4",
         "Yunara": "#7b61ff",
@@ -262,8 +298,8 @@ def compare_builds():
     """Run cross-champion Top1/Basic comparisons and optionally export them."""
     print("[Info] Loading Ashe top1 from simulation_ashe 4-core ranking...")
     ashe_top1 = get_ashe_4core_top1_build()
-    print("[Info] Loading Yunara top1 from simulation_yunara 4-core ranking (2명 교전/tc=2 기준)...")
-    yunara_top1 = get_yunara_4core_top1_build(target_count=2)
+    print("[Info] Loading Yunara top1 from simulation_yunara 4-core ranking (단일 대상/tc=1 기준)...")
+    yunara_top1 = get_yunara_4core_top1_build(target_count=1)
     ashe_path = ashe_top1["path"]
     yunara_path = yunara_top1["path"]
     print("[Info] Loading KaiSa top1 from simulation_kaisa 4-core ranking...")
@@ -282,14 +318,14 @@ def compare_builds():
 
     print("\n=== Cross-Champion Power Compare (1~4 Core) ===")
     print("Configured Top1 builds (Ashe/Yunara/KaiSa: 정배 패키지 A=Bld+Zerk+핏빛길 / B=Bow+Glut+민첩함 중 최적):")
-    print("  ※ 유나라만 2명 교전(tc=2) 유효 DPS 기준(빌드도 2명 최적) — 나머지 챔프는 단일 대상. 비대칭 비교 주의.")
+    print("  ※ 전 챔프 단일 대상(tc=1) 대칭 비교. (유나라 멀티타깃 가치는 모델 외 — 별도 고려)")
     print(
         f"- Ashe   : [{ashe_top1.get('pkg_label','?')}] {'-'.join(ashe_path)} / LT+CutDown "
         f"(Top1 from simulation_ashe, score {ashe_top1['score']:.2f})"
     )
     print(
         f"- Yunara : [{yunara_top1.get('pkg_label','?')}] {'-'.join(yunara_path)} / LT+CutDown (start Q active) "
-        f"(Top1 from simulation_yunara @2명/tc=2, score {yunara_top1['score']:.2f}; 유효 DPS는 2명 교전 기준)"
+        f"(Top1 from simulation_yunara @단일 대상/tc=1, score {yunara_top1['score']:.2f})"
     )
     print(
         f"- KaiSa  : [{kaisa_top1.get('pkg_label','?')}] {'-'.join(kaisa_path)} / LT+CutDown "
@@ -318,8 +354,8 @@ def compare_builds():
 
     top1_configs = {
         "Ashe": {"path": ashe_path, **_pkg_cfg(ashe_top1)},
-        # 유나라만 2명 교전(tc=2) 유효 DPS 기준 — 멀티타깃 로직이 유나라에만 있어 다른 챔프는 단일 대상.
-        "Yunara": {"path": yunara_path, **_pkg_cfg(yunara_top1, {"target_count": 2})},
+        # 유나라도 단일 대상(tc=1) 기준 — 전 챔프 대칭 비교(멀티타깃 가치는 모델 외).
+        "Yunara": {"path": yunara_path, **_pkg_cfg(yunara_top1)},
         "KaiSa": {"path": kaisa_path, **_pkg_cfg(kaisa_top1)},
         "Corki": {"path": corki_path, "shoe": corki_shoe, "rune": corki_rune, "doran": corki_top1.get("doran", "doranblade")},
         # 코그모 = 룬 무관 최강 빌드(LT·PtA 중 우위)
@@ -333,23 +369,27 @@ def compare_builds():
     corki_basic_shoe = "plated"
     corki_basic_rune = "conq"
 
-    print("Configured Basic builds:")
-    print("- Ashe   : kraken-pd-ie-ldr + Berserker / LT+CutDown")
-    print("- Yunara : kraken-pd-ie-ldr + Berserker / LT+CutDown (start Q active)")
-    print(f"- KaiSa  : {'-'.join(kaisa_basic_path)} + Berserker / LT+CutDown (Control from simulation_kaisa)")
-    print(f"- Corki  : {'-'.join(corki_basic_path)} + {corki_basic_shoe} / {corki_basic_rune}+CutDown (requested base build)")
-    print(f"- CogMaw : {'-'.join(cogmaw_meta['path'])} + {cogmaw_meta.get('boots','glutton')} / {cogmaw_meta['rune_label']}+CutDown (실전 메타 빌드 / 치속)")
-    print()
-
+    ashe_basic_path = ("kraken", "pd", "ie", "ldr")
+    yunara_basic_path = ("kraken", "pd", "ie", "ldr")
+    # basic 빌드도 개별 파일처럼 정배 A/B 중 최적 패키지로 평가(개별 sim 컨트롤과 일치). Corki/CogMaw 는 자체 패키지.
     basic_configs = {
-        "Ashe": {"path": ("kraken", "pd", "ie", "ldr")},
-        "Yunara": {"path": ("kraken", "pd", "ie", "ldr")},
-        "KaiSa": {"path": kaisa_basic_path},
+        "Ashe": {"path": ashe_basic_path, **_best_pkg_cfg("Ashe", ashe_basic_path)},
+        "Yunara": {"path": yunara_basic_path, **_best_pkg_cfg("Yunara", yunara_basic_path)},
+        "KaiSa": {"path": kaisa_basic_path, **_best_pkg_cfg("KaiSa", kaisa_basic_path)},
         "Corki": {"path": corki_basic_path, "shoe": corki_basic_shoe, "rune": corki_basic_rune},
         # 코그모 = 실전 메타 빌드(guinsoo-navori-terminus-wit) under 치속(LethalTempo)
         "CogMaw": {"path": cogmaw_meta["path"],
                    **_pkg_cfg(cogmaw_meta, {"keystone_cls": cogmaw_meta["keystone_cls"], "rune_label": cogmaw_meta["rune_label"]})},
     }
+
+    print("Configured Basic builds (Ashe/Yunara/KaiSa: 정배 A/B 중 최적 — 개별 파일 기준과 일치):")
+    for _c in ("Ashe", "Yunara", "KaiSa"):
+        _cfg = basic_configs[_c]
+        _note = " (start Q active)" if _c == "Yunara" else ""
+        print(f"- {_c:<6} : [{_cfg.get('pkg_label','?')}] {'-'.join(_cfg['path'])} + {_cfg.get('boots','berserker')} / LT+CutDown{_note}")
+    print(f"- Corki  : {'-'.join(corki_basic_path)} + {corki_basic_shoe} / {corki_basic_rune}+CutDown (requested base build)")
+    print(f"- CogMaw : {'-'.join(cogmaw_meta['path'])} + {cogmaw_meta.get('boots','glutton')} / {cogmaw_meta['rune_label']}+CutDown (실전 메타 빌드 / 치속)")
+    print()
     basic_rows = _print_compare_section("Cross-Champion Basic Build Compare (1~4 Core)", basic_configs)
 
     for report_path in export_compare_reports(top1_rows, basic_rows):
