@@ -93,7 +93,7 @@ def simulate_ashe_core_path(core_item_keys, core_tier, doran_key=None, boots_key
         ashe.add_item(item)
     ashe.bonus_as_percent += rune_as_bonus  # 공속 룬(민첩함): 골드 무료, 평타 공속 가산
 
-    _, dps, _ = run_simulation(ashe, target, verbose=False)
+    _, dps, _ = run_simulation(ashe, target, verbose=False, respawn_to_full_kills=2)
     return dps, total_cost
 
 
@@ -114,7 +114,7 @@ def simulate_jinx_reference_path(core_tier, q_mode="minigun", q_stacks=3):
         total_cost += item.cost
         jinx.add_item(item)
 
-    _, dps, _ = run_simulation(jinx, target, verbose=False)
+    _, dps, _ = run_simulation(jinx, target, verbose=False, respawn_to_full_kills=2)
     return dps, total_cost
 
 

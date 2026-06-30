@@ -84,7 +84,7 @@ def core_dps(resolved_keys, package):
     ashe.bonus_ad += rune["ad"]
     ashe.bonus_as_percent += rune["as"]
     ashe.ability_haste += rune["cdr"]
-    _, dps, _ = run_simulation(ashe, build_target_for_core(tier), verbose=False)
+    _, dps, _ = run_simulation(ashe, build_target_for_core(tier), verbose=False, respawn_to_full_kills=2)
     result = (dps, total_cost)
     _DPS_MEMO[memo_key] = result
     return result

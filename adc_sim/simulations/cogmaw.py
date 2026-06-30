@@ -60,7 +60,7 @@ def simulate_cogmaw_core_path(full_path, core_tier, doran_key="doranblade",
         "auto_cast": {"q": True, "w": True, "e": True, "r": True},
         "auto_order": ["w", "q", "e", "r"],
     }
-    _, dps, _ = run_simulation(cog, target, verbose=False, skill_plan=skill_plan)
+    _, dps, _ = run_simulation(cog, target, verbose=False, skill_plan=skill_plan, respawn_to_full_kills=2)
     return dps, total_cost
 
 

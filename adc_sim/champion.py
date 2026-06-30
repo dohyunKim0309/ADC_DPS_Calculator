@@ -1053,6 +1053,11 @@ class KaiSa(Champion):
             self.r_shield_value = 0.0
             self.r_shield_end_time = 0.0
 
+    def on_basic_attack(self, time):
+        """충전(Supercharge) 패시브: 평타마다 E 남은 쿨다운 0.5초 감소. [실제 KaiSa 메커니즘]
+        엔진이 평타당 1회 호출(on_hit 아님 — 구인수 proc_count 에 안 곱해지도록)."""
+        self.cooldowns_remaining["e"] = max(0.0, self.cooldowns_remaining["e"] - 0.5)
+
     def _can_cast_skill(self, skill_name):
         eps = 1e-9
         if skill_name not in self.cooldowns_remaining:

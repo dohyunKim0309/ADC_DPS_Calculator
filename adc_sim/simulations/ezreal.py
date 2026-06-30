@@ -93,7 +93,7 @@ def simulate_ezreal_core_path(full_path, shoe_key, rune_key, core_tier, include_
             "auto_order": ["q"],
         }
 
-    _, dps, _ = run_simulation(ez, target, verbose=False, skill_plan=skill_plan)
+    _, dps, _ = run_simulation(ez, target, verbose=False, skill_plan=skill_plan, respawn_to_full_kills=2)
     return dps, total_cost
 
 

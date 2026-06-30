@@ -140,7 +140,7 @@ def simulate_yunara_reference_path(core_tier):
         yunara.add_item(item)
 
     # 로테이션(평타→궁→평타→W쿨마다)은 Yunara 모델 내부에서 처리.
-    _, dps, _ = run_simulation(yunara, target, verbose=False)
+    _, dps, _ = run_simulation(yunara, target, verbose=False, respawn_to_full_kills=2)
     return dps, total_cost
 
 
@@ -185,7 +185,7 @@ def simulate_yunara_core_path(core_item_keys, core_tier, doran_key=None, boots_k
     yunara.bonus_as_percent += rune_as_bonus  # 공속 룬(민첩함): 골드 무료, 평타 공속 가산
 
     # 로테이션(평타→궁→평타→W쿨마다)은 Yunara 모델 내부에서 처리.
-    _, dps, _ = run_simulation(yunara, target, verbose=False)
+    _, dps, _ = run_simulation(yunara, target, verbose=False, respawn_to_full_kills=2)
     return dps, total_cost
 
 

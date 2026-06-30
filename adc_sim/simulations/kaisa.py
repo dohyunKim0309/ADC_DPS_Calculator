@@ -62,10 +62,10 @@ from adc_sim.data.items_data import DORAN_OPTIONS, DORAN_SHORT, ADC_PACKAGES
 
 def get_yuntal_crit_for_tier(purchase_tier, current_tier):
     # 요청 규칙:
-    # - 1코어 구매 시: 1코어 타이밍 0%, 이후 25%
+    # - 1코어 구매 시: 1코어 타이밍 10%, 이후 25%
     # - 2코어 구매 시: 2코어 타이밍 10%, 이후 25%
     if purchase_tier == 1:
-        return 0.0 if current_tier == 1 else 0.25
+        return 0.10 if current_tier == 1 else 0.25
     if purchase_tier == 2:
         return 0.10 if current_tier == 2 else 0.25
     return 0.25
@@ -115,11 +115,11 @@ def simulate_kaisa_core_path(full_path, core_tier, doran_key=None, boots_key="be
     # 스킬 시나리오를 simulation에서 정의하고 engine가 처리
     skill_plan = {
         "manual_casts": [(0.0, "e"), (0.0, "q"), (0.0, "w")],
-        "auto_cast": {"q": True, "w": True, "e": False, "r": False},
+        "auto_cast": {"q": True, "w": True, "e": True, "r": False},
         "auto_order": ["q", "w", "e", "r"],
     }
 
-    _, dps, _ = run_simulation(kaisa, target, verbose=False, skill_plan=skill_plan)
+    _, dps, _ = run_simulation(kaisa, target, verbose=False, skill_plan=skill_plan, respawn_to_full_kills=2)
     return dps, total_cost, kaisa.w_cast_count
 
 
