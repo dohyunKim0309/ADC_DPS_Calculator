@@ -71,19 +71,14 @@ def simulate_ashe_core_path(core_item_keys, core_tier, doran_key=None, boots_key
 
     core_items = []
     for idx, key in enumerate(core_item_keys, start=1):
-        # 윤탈 치명타 가정:
-        # - 구매한 코어 타이밍: 5% (단, 1코어 구매는 0%)
-        # - 그 다음 코어 타이밍부터: 25%
         if key == "yuntal25":
             current_tier = len(core_item_keys)
             purchase_tier = idx
+            # [Hypothesis] 윤탈 치명타 누적 가정: 구매한 그 코어 시점=10%(전 코어 통일),
+            # 다음 코어부터는 항상 25%. 실측이 아닌 스택 누적 속도에 대한 단순 가정.
+            # (cdc6326 의 Yunara 측 fix 와 동일 가정으로 통일 — 구매 차수별 0/12/5% 하향 제거.)
             if current_tier == purchase_tier:
-                if idx == 1:
-                    yuntal_crit = 0.0
-                elif idx == 2:
-                    yuntal_crit = 0.12
-                else:
-                    yuntal_crit = 0.05
+                yuntal_crit = 0.10
             else:
                 yuntal_crit = 0.25
             core_items.append(create_item_from_key(key, yuntal_crit=yuntal_crit))

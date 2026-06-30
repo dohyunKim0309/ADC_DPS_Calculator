@@ -56,6 +56,22 @@ def _build_yunara_4core_all_paths():
                         continue
                     seen.add(keys)
                     all_paths.append(keys)
+
+    # 윤탈 구매 타이밍 차이를 보기 위해 윤탈-크라켄 오프닝은 중복 규칙과 무관하게 항상 포함
+    for c3 in core3_candidates:
+        for c4 in core4_candidates:
+            if c4 == c3 or c4 in {"yuntal25", "kraken"}:
+                continue
+            for opening in (("yuntal25", "kraken", c3, c4), ("kraken", "yuntal25", c3, c4)):
+                if sum(1 for k in opening if k in ARMOR_PEN_EXCLUSIVE) > 1:
+                    continue
+                if sum(1 for k in opening if k in MAGIC_PEN_EXCLUSIVE) > 1:
+                    continue
+                if opening in seen:
+                    continue
+                seen.add(opening)
+                all_paths.append(opening)
+
     return all_paths
 
 
@@ -128,11 +144,13 @@ def simulate_yunara_reference_path(core_tier):
     return dps, total_cost
 
 
-def simulate_yunara_core_path(core_item_keys, core_tier, doran_key=None, boots_key="berserker", rune_as_bonus=0.0):
+def simulate_yunara_core_path(core_item_keys, core_tier, doran_key=None, boots_key="berserker", rune_as_bonus=0.0, target_count=1):
     """Simulate Yunara DPS and total gold for the given core progression.
 
     doran_key: 시작 도란 아이템(검/활). None이면 미포함.
     boots_key: 신발(기본 광전사). rune_as_bonus: 공속 룬(민첩함 등)의 평타 공속 가산(골드 무료).
+    target_count: 교전 중 적 수. 1이면 순수 단일 대상. 2+면 (Q 활성 시) 크라켄 추가발동·루난 확산
+        업리프트가 1차 대상 기록값에 합산된다(=다대상 유효 DPS). 1차 대상 딜은 줄지 않는다.
     """
     target = build_target_for_core(core_tier)
     level_cfg = CORE_YUNARA_LEVELS[core_tier]
@@ -140,6 +158,7 @@ def simulate_yunara_core_path(core_item_keys, core_tier, doran_key=None, boots_k
                     w_level=level_cfg["w_level"], r_level=level_cfg["r_level"])
     yunara.set_rune(LethalTempo())
     yunara.set_sub_rune(CutDown())
+    yunara.set_target_count(target_count)
 
     active_core_keys = list(core_item_keys[:core_tier])
     core_items = []
@@ -195,114 +214,6 @@ CONTROL_LABEL = "Control Krk-PD-IE-LDR"
 CORE_WEIGHTS_RAW = [5.0, 4.0, 3.0, 3.0]
 CORE_WEIGHTS = [w / sum(CORE_WEIGHTS_RAW) for w in CORE_WEIGHTS_RAW]
 _YUNARA_4CORE_TOP1_CACHE = {}  # target_count -> top1 build summary
-
-# --- 유나라 전용 빌드 후보 풀 (애쉬와 분리 — 후보는 여기서 설정) ---
-# 애쉬와 달리 statikk 을 core1/core2 후보에도 넣어 statikk 선행 오더를 평가한다.
-YUNARA_CORE1_CANDIDATES = ["kraken", "yuntal25", "storm", "c44", "bot", "guinsoo", "terminus", "statikk"]
-YUNARA_CORE2_CANDIDATES = ["kraken", "yuntal25", "storm", "c44", "bot", "pd", "runaan", "terminus", "guinsoo", "statikk"]
-YUNARA_CORE3_CANDIDATES = ["ie", "ldr", "guinsoo", "terminus"]
-YUNARA_CORE4_CANDIDATES = ["ie", "ldr", "storm", "c44", "pd", "runaan", "kraken", "statikk", "guinsoo", "terminus"]
-# 방관/관통 계열은 한 빌드에 1개까지만 (애쉬 풀과 동일 규칙)
-YUNARA_PEN_EXCLUSIVE_KEYS = {"terminus", "ldr", "mortal"}
-
-
-def _build_yunara_4core_all_paths():
-    """Build Yunara-specific 4-core candidate paths (separate from Ashe pool).
-
-    탐색 규칙은 애쉬와 동일(같은 아이템 중복 불가, 펜 계열 1개 제한, 정확경로 dedup,
-    윤탈-크라켄 오프닝 강제 포함)하되 후보 풀만 유나라 전용(`YUNARA_CORE*`)을 쓴다.
-    """
-    all_paths = []
-    seen_exact_paths = set()
-
-    for c1 in YUNARA_CORE1_CANDIDATES:
-        for c2 in YUNARA_CORE2_CANDIDATES:
-            if c1 == c2:
-                continue
-            for c3 in YUNARA_CORE3_CANDIDATES:
-                if c3 in {c1, c2}:
-                    continue
-                for c4 in YUNARA_CORE4_CANDIDATES:
-                    if c4 in {c1, c2, c3}:
-                        continue
-                    path_keys = [c1, c2, c3, c4]
-                    pen_count = sum(1 for key in path_keys if key in YUNARA_PEN_EXCLUSIVE_KEYS)
-                    if pen_count > 1:
-                        continue
-                    exact_path = (c1, c2, c3, c4)
-                    if exact_path in seen_exact_paths:
-                        continue
-                    seen_exact_paths.add(exact_path)
-                    all_paths.append(exact_path)
-
-    # 윤탈 구매 타이밍 차이를 보기 위해 윤탈-크라켄 오프닝은 중복 규칙과 무관하게 항상 포함
-    forced_paths = []
-    for c3 in YUNARA_CORE3_CANDIDATES:
-        for c4 in YUNARA_CORE4_CANDIDATES:
-            if c4 == c3:
-                continue
-            if c4 in {"yuntal25", "kraken"}:
-                continue
-            path_keys = ["yuntal25", "kraken", c3, c4]
-            pen_count = sum(1 for key in path_keys if key in YUNARA_PEN_EXCLUSIVE_KEYS)
-            if pen_count > 1:
-                continue
-            forced_paths.append(("yuntal25", "kraken", c3, c4))
-            forced_paths.append(("kraken", "yuntal25", c3, c4))
-    for fp in forced_paths:
-        if fp not in seen_exact_paths:
-            seen_exact_paths.add(fp)
-            all_paths.append(fp)
-
-    return all_paths
-
-
-def simulate_yunara_core_path(core_item_keys, core_tier, doran_key=None, boots_key="berserker", rune_as_bonus=0.0, target_count=1):
-    """Simulate Yunara DPS and total gold for the given core progression.
-
-    doran_key: 시작 도란 아이템(검/활). None이면 미포함.
-    boots_key: 신발(기본 광전사). rune_as_bonus: 공속 룬(민첩함 등)의 평타 공속 가산(골드 무료).
-    target_count: 교전 중 적 수. 1이면 순수 단일 대상. 2+면 (Q 활성 시) 크라켄 추가발동·루난 확산
-        업리프트가 1차 대상 기록값에 합산된다(=다대상 유효 DPS). 1차 대상 딜은 줄지 않는다.
-    """
-    target = build_target_for_core(core_tier)
-    level_cfg = CORE_YUNARA_LEVELS[core_tier]
-    yunara = Yunara(level=level_cfg["level"], q_level=level_cfg["q_level"])
-    yunara.set_rune(LethalTempo())
-    yunara.set_sub_rune(CutDown())
-    yunara.set_target_count(target_count)
-
-    active_core_keys = list(core_item_keys[:core_tier])
-    core_items = []
-    for idx, key in enumerate(active_core_keys, start=1):
-        if key == "yuntal25":
-            current_tier = len(active_core_keys)
-            purchase_tier = idx
-            if current_tier == purchase_tier:
-                if idx == 1:
-                    yuntal_crit = 0.0
-                elif idx == 2:
-                    yuntal_crit = 0.12
-                else:
-                    yuntal_crit = 0.05
-            else:
-                yuntal_crit = 0.25
-            core_items.append(create_item_from_key(key, yuntal_crit=yuntal_crit))
-        else:
-            core_items.append(create_item_from_key(key))
-
-    doran_items = [create_item_from_key(doran_key)] if doran_key else []
-    items = doran_items + [create_item_from_key(boots_key)] + core_items
-    total_cost = 0
-    for item in items:
-        total_cost += item.cost
-        yunara.add_item(item)
-    yunara.bonus_as_percent += rune_as_bonus  # 공속 룬(민첩함): 골드 무료, 평타 공속 가산
-
-    # 현재 비교/시뮬 기준: 전투 시작 시 Q 활성 상태
-    yunara.activate_q(0.0)
-    _, dps, _ = run_simulation(yunara, target, verbose=False)
-    return dps, total_cost
 
 
 def _path_label(path):
