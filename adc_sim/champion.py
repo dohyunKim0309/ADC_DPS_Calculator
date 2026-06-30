@@ -1655,3 +1655,110 @@ class CogMaw(Champion):
         self.manual_skill_index = 0
         self.auto_skill_enabled = {"q": True, "w": True, "e": True, "r": True}
         self.auto_skill_order = ["w", "q", "e", "r"]
+
+    # W 데이터 [H-KOG-2]
+    W_PCT = [0.03, 0.0375, 0.045, 0.0525, 0.06]   # 랭크별 최대체력 비율
+    W_DURATION = 8.0
+    W_CD = 17.0
+
+    def get_champion_onhit(self, target):
+        """W 활성 중 평타 온힛: 대상 최대체력 비례 마법(+AP). [H-KOG-2]
+
+        구인수 proc_count·mod_factor·Shadowflame 증폭은 부모 get_one_hit_damage가 처리.
+        """
+        if not getattr(self, "w_active", False):
+            return 0, 0
+        idx = self.w_level - 1
+        pct = self.W_PCT[idx] + 0.00015 * self.total_ap   # 100AP당 +1.5%
+        return 0, pct * target.max_hp
+
+    def init_combat_state(self, skill_plan=None):
+        super().init_combat_state(skill_plan)   # _combat_time=0, current_mana=total_mana
+        self.cooldowns_remaining = {"q": 0.0, "w": 0.0, "e": 0.0, "r": 0.0}
+        self.w_active = False
+        self.w_end_time = 0.0
+        # (Q 셔레드·R 스택 상태는 Task 3/4에서 init에 추가)
+        plan = skill_plan or {}
+        auto_cfg = plan.get("auto_cast", {})
+        # W만 기본 활성; Q/E/R는 Task 3/4 구현 후 True로 전환
+        _defaults = {"q": False, "w": True, "e": False, "r": False}
+        self.auto_skill_enabled = {k: auto_cfg.get(k, _defaults[k]) for k in ("q", "w", "e", "r")}
+        self.auto_skill_order = list(plan.get("auto_order", ["w", "q", "e", "r"]))
+        self.manual_skill_casts = sorted(list(plan.get("manual_casts", [])), key=lambda x: x[0])
+        self.manual_skill_index = 0
+
+    def advance_combat_time(self, delta_time, current_time, target):
+        super().advance_combat_time(delta_time, current_time, target)   # regen
+        if delta_time > 0:
+            for k in self.cooldowns_remaining:
+                self.cooldowns_remaining[k] = max(0.0, self.cooldowns_remaining[k] - delta_time)
+        if self.w_active and current_time >= self.w_end_time:
+            self.w_active = False
+        # (Q 셔레드 만료·R 스택 감쇠는 Task 3/4에서 추가)
+
+    def get_time_to_next_state_event(self, current_time):
+        cands = []
+        if getattr(self, "w_active", False):
+            cands.append(max(0.0, self.w_end_time - current_time))
+        return min(cands) if cands else float("inf")
+
+    def _can_cast_skill(self, name):
+        eps = 1e-9
+        if self.cooldowns_remaining.get(name, float("inf")) > eps:
+            return False
+        if name == "w" and getattr(self, "w_active", False):
+            return False
+        if not self.can_afford(self._cost(name)):
+            return False
+        return True
+
+    def _cost(self, name):
+        """현재 마나비용. R은 스택 기반 동적(Task 4); 그 외 정적."""
+        return self.mana_cost.get(name, 0.0)
+
+    def get_time_to_next_skill_event(self, current_time):
+        eps = 1e-9
+        cands = []
+        if self.manual_skill_index < len(self.manual_skill_casts):
+            t, _ = self.manual_skill_casts[self.manual_skill_index]
+            cands.append(max(0.0, t - current_time))
+        for name, enabled in self.auto_skill_enabled.items():
+            if not enabled:
+                continue
+            if name == "w" and getattr(self, "w_active", False):
+                continue
+            cd = self.cooldowns_remaining.get(name, float("inf"))
+            cands.append(max(0.0, cd, self._afford_in(self._cost(name))))
+        valid = [d for d in cands if d >= -eps]
+        return max(0.0, min(valid)) if valid else float("inf")
+
+    def pop_due_skill_events(self, current_time, target):
+        eps = 1e-9
+        events = []
+        while self.manual_skill_index < len(self.manual_skill_casts):
+            t, name = self.manual_skill_casts[self.manual_skill_index]
+            if t > current_time + eps:
+                break
+            self.manual_skill_index += 1
+            if self._can_cast_skill(name):
+                events.append(self._cast_skill(name, target, current_time))
+        for name in self.auto_skill_order:
+            if self.auto_skill_enabled.get(name, False) and self._can_cast_skill(name):
+                events.append(self._cast_skill(name, target, current_time))
+        return events
+
+    def _cast_skill(self, name, target, time):
+        self._combat_time = time
+        self.spend_mana(self._cost(name))
+        if name == "w":
+            self._cast_w(time)
+            return ("w", 0.0, 0.0, False)   # 버프 — 직접피해 없음
+        # q/e/r는 Task 3/4에서 분기 추가
+        return (name, 0.0, 0.0, False)
+
+    def _cast_w(self, time):
+        """W 활성: 8초 버프 + 쿨 17s(스킬가속). 마나는 _cast_skill이 차감. [H-KOG-2]"""
+        self.w_active = True
+        self.w_end_time = time + self.W_DURATION
+        self.cooldowns_remaining["w"] = self.apply_haste_to_cooldown(self.W_CD)
+        self.cast_spell(time)
