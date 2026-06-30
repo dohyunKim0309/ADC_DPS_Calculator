@@ -1663,6 +1663,16 @@ class CogMaw(Champion):
         # E 데이터 [H-KOG-4]
         self.e_base = [70.0, 110.0, 150.0, 190.0, 230.0]   # +0.65 AP
 
+        # R 데이터 [H-KOG-5]
+        self.r_base = [100.0, 140.0, 180.0]
+        self.r_ap = [0.35, 0.40, 0.45]
+        self.r_bonus_ad = 0.75
+        self.r_cd = [2.0, 1.5, 1.0]
+        self.r_mana_base = 40.0
+        self.r_mana_step = 40.0
+        self.r_mana_max_stacks = 9
+        self.r_stack_window = 8.0
+
     # W 데이터 [H-KOG-2]
     W_PCT = [0.03, 0.0375, 0.045, 0.0525, 0.06]   # 랭크별 최대체력 비율
     W_DURATION = 8.0
@@ -1689,11 +1699,13 @@ class CogMaw(Champion):
         self.shred_end_time = 0.0
         self.shred_armor = 0.0
         self.shred_mr = 0.0
-        # (R 스택 상태는 Task 4에서 init에 추가)
+        # R 스택 상태 [H-KOG-5]
+        self.r_stacks = 0
+        self.r_last_cast_time = -999.0
         plan = skill_plan or {}
         auto_cfg = plan.get("auto_cast", {})
-        # Q/W/E 기본 활성; R는 Task 4 구현 후 True로 전환
-        _defaults = {"q": True, "w": True, "e": True, "r": False}  # r는 Task 4까지 False
+        # Q/W/E/R 기본 활성 (R 구현 완료)
+        _defaults = {"q": True, "w": True, "e": True, "r": True}
         self.auto_skill_enabled = {k: auto_cfg.get(k, _defaults[k]) for k in ("q", "w", "e", "r")}
         self.auto_skill_order = list(plan.get("auto_order", ["w", "q", "e", "r"]))
         self.manual_skill_casts = sorted(list(plan.get("manual_casts", [])), key=lambda x: x[0])
@@ -1708,7 +1720,9 @@ class CogMaw(Champion):
             self.w_active = False
         if self.shred_target is not None and current_time >= self.shred_end_time:
             self._clear_shred()
-        # (R 스택 감쇠는 Task 4에서 추가)
+        # R 스택 감쇠: 마지막 R 시전 후 8초 경과 시 리셋 [H-KOG-5]
+        if self.r_stacks > 0 and current_time - self.r_last_cast_time >= self.r_stack_window:
+            self.r_stacks = 0
 
     def get_time_to_next_state_event(self, current_time):
         cands = []
@@ -1729,7 +1743,10 @@ class CogMaw(Champion):
         return True
 
     def _cost(self, name):
-        """현재 마나비용. R은 스택 기반 동적(Task 4); 그 외 정적."""
+        """현재 마나비용. R은 스택 램프(40 + 40*stacks, ≤400). [H-KOG-5]"""
+        if name == "r":
+            stacks = min(self.r_mana_max_stacks, max(0, self.r_stacks))
+            return self.r_mana_base + self.r_mana_step * stacks
         return self.mana_cost.get(name, 0.0)
 
     def get_time_to_next_skill_event(self, current_time):
@@ -1775,7 +1792,11 @@ class CogMaw(Champion):
         if name == "e":
             p, m = self._cast_e(time)
             return ("e", p, m, True)
-        # r는 Task 4에서 분기 추가
+        if name == "r":
+            p, m = self._cast_r(target, time)
+            self.r_stacks = min(self.r_mana_max_stacks, self.r_stacks + 1)
+            self.r_last_cast_time = time
+            return ("r", p, m, True)
         return (name, 0.0, 0.0, False)
 
     def _cast_w(self, time):
@@ -1817,3 +1838,20 @@ class CogMaw(Champion):
         self.cooldowns_remaining["e"] = self.apply_haste_to_cooldown(12.0)
         self.cast_spell(time)
         return 0.0, e_magic
+
+    def _cast_r(self, target, time):
+        """R: (base + 0.75·추가AD + apMin·AP) × 잃은체력 배율. [H-KOG-5]
+
+        배율: 대상 HP≤40% → 2.0, 그 외 1 + (5/6)·잃은체력비율(40%HP서 1.5 도달).
+        """
+        idx = self.r_level - 1
+        bonus_ad = max(0.0, self.total_ad - self.base_attack_ad)
+        base = self.r_base[idx] + self.r_bonus_ad * bonus_ad + self.r_ap[idx] * self.total_ap
+        hp_ratio = target.current_hp / target.max_hp if target.max_hp > 0 else 1.0
+        if hp_ratio <= 0.40:
+            mult = 2.0
+        else:
+            mult = 1.0 + (5.0 / 6.0) * (1.0 - hp_ratio)
+        self.cooldowns_remaining["r"] = self.apply_haste_to_cooldown(self.r_cd[idx])
+        self.cast_spell(time); self.cast_ultimate(time)
+        return 0.0, base * mult
