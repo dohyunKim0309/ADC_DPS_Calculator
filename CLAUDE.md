@@ -69,7 +69,7 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 
 ### Cog'Maw (`champion.py` CogMaw + `simulations/cogmaw.py`) [수치 4소스 교차검증·가설은 spec 참조]
 - **W 바이오아케인**(쿨관리 버프 8s/17s/마나40): 활성 중 평타가 **대상 최대체력 `[3,3.75,4.5,5.25,6]%` + 0.00015·AP 마법 온힛**(`get_champion_onhit`→구인수 2배·증폭·Shadowflame 적용). **Q 패시브**=공속 상수, **Q 액티브**=마법넛지+방/마저 %셔레드(Corki E식), **E**=마법넛지, **R**=`(base+0.75추가AD+apMin·AP)×잃은체력배율`(≤40%HP ×2) + 마나램프(40→400)로 자연 스로틀. ad_growth=3.11.
-- **전용 sim**: kaisa.py 미러(4코어 전수→`rel_dpg` 5:4:3:3). 컨트롤 `kraken-guinsoo-nashor-terminus`. 풀=온힛+AP(guinsoo/kraken/nashor/terminus/bot/rfc/pd/ie/yuntal/statikk/storm + 4코어 rabadon/shadowflame; **shadowflame은 1~4코어 전부**, **void 2~4코어**, **황혼과 새벽(`dawn`)·나보리(`navori`)·마법사의최후(`wit`) 1~4코어 전부**). **룬 2종 평가**: `__main__`이 `_run_cogmaw_ranking`을 **치명적속도(LethalTempo)·집중공격(PressTheAttack)** 두 keystone으로 각각 호출(룬별 표 2개; `simulate_cogmaw_core_path(keystone_cls=...)`, 보조룬 CutDown 고정). power_compare 연동·skill-level 튜닝은 미완(todo).
+- **전용 sim**: kaisa.py 미러(4코어 전수→`rel_dpg` 5:4:3:3). 컨트롤 `guinsoo-navori-terminus-wit`(실전 메타 빌드 — RelDPG를 '메타 대비'로 측정; 풀에 존재해야 함). 풀=온힛+AP(guinsoo/kraken/nashor/terminus/bot/rfc/pd/ie/yuntal/statikk/storm + 4코어 rabadon/shadowflame; **shadowflame은 1~4코어 전부**, **void 2~4코어**, **황혼과 새벽(`dawn`)·나보리(`navori`)·마법사의최후(`wit`) 1~4코어 전부**). **룬 2종 평가**: `__main__`이 `_run_cogmaw_ranking`을 **치명적속도(LethalTempo)·집중공격(PressTheAttack)** 두 keystone으로 각각 호출(룬별 표 2개; `simulate_cogmaw_core_path(keystone_cls=...)`, 보조룬 CutDown 고정). power_compare 연동·skill-level 튜닝은 미완(todo).
 - **황혼과 새벽(`dawn`, 주문검)** [H-DAWN-1, 나무위키/LoL Wiki V26.09/CDragon id2510 교차검증]: 3100G·AP60/AS20%/AH20(체력300은 STAT_KEYS 미포함→DPS 미반영, 가격엔 포함). 스킬 시전 후 다음 평타에 **(기본AD75%+AP10%) 마법 버스트**(`DuskAndDawn.on_hit`, 1회 소비) + **온힛 효과 1회 추가**(`get_extra_onhit_applications`=가산 → 코그모 W 최대체력%·나셔 온힛 시너지). 쿨2s는 시전시각 기준(EssenceReaver와 동일), 회복은 DPS 모델 무시. Q/E/R/W 시전 모두 `cast_spell`→`on_spell_cast`로 arm. 테스트 `tests/test_dusk_dawn.py`.
 - **나보리(`navori`) / 마법사의최후(`wit`)** [H-NAVORI-1, LoL Wiki/CDragon 교차검증]: **navori** 2650G·AS40%/치확25%(이속4% 미모델) — 패시브 **평타마다 기본스킬 Q/W/E 남은 쿨 ×0.85**(궁 R 제외, 치명타 무관). `on_hit` 이 아니라 **엔진 평타훅 `champion.on_basic_attack(time)`**(base=no-op, `CogMaw`만 적용)에서 **평타당 1회** — 구인수 proc_count 에 안 곱해지도록. **wit** 2800G·AS50%/MR45(보존,DPS무영향)/인내20%(미모델) — 온힛 **45 마법**(`WitsEnd.on_hit`, 구인수×2·dawn 가산 적용). 테스트 `tests/test_navori_witend.py`.
 
@@ -95,7 +95,7 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 - **방어구 관통**은 `add_item`에서 곱연산으로 합치지만 주석상 "단순화" 영역 — 정밀화하려면 모델 가정부터 합의.
 - **가설은 가설로 표시**: 모델 안에 이미 가설 코드가 있다(예: `adc_sim/champion.py`의 유나라 패시브 재귀 증폭, Shadowflame 상호작용). 새 메커니즘은 `AGENTS.md` 4장대로 `Hypothesis/Experimental/Unsupported`로 명시하고 단정하지 말 것.
 - **Jinx는 전용 시뮬 파일이 없다** — `adc_sim/simulations/ashe.py` 안의 레퍼런스 빌드로만 등장.
-- 정의돼 있는 챔피언: Ashe / Jinx / Yunara / KaiSa / Corki / Ezreal / **Cog'Maw**. 룬: LethalTempo / PressTheAttack / CoupDeGrace / CutDown / Conqueror.
+- 정의돼 있는 챔피언: Ashe / Jinx / Yunara / KaiSa / Corki / Ezreal / **Cog'Maw**. 룬: LethalTempo / PressTheAttack / CoupDeGrace / CutDown / Conqueror. **LT·PtA 온힛 보너스는 적응형**(`runes._adaptive_split`: bonus AP>bonus AD 면 마법, 아니면 물리) — AP 빌드(코그모 등)는 마법으로 들어가 마저 경감·마관(공허/그불)·Shadowflame 증폭 경로를 탄다. 물리 ADC는 그대로 물리.
 
 ## 거버넌스
 - 변경 절차·승인은 **`AGENTS.md`** 가 정본(특히: 최소 변경·무단 리팩터 금지, 가정/구조 변경 시 사전 승인).
