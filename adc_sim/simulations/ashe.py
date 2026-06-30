@@ -691,10 +691,7 @@ if __name__ == "__main__":
             seen_exact_paths.add(fp)
             all_paths.append(fp)
 
-    print(f"\nPower Spike Paths Used ({len(all_paths)} total)")
-    for idx, (c1, c2, c3, c4) in enumerate(all_paths, start=1):
-        print(f"{idx:03d}. {item_short[c1]}-{item_short[c2]}-{item_short[c3]}-{item_short[c4]}")
-
+    # 전체 빌드 경로 목록 출력은 제거됨(요청) — 아래 순위 표만 출력한다.
     spike_results = []
     for path in all_paths:
         c1, c2, c3, c4 = path
@@ -741,6 +738,11 @@ if __name__ == "__main__":
     weight_sum = sum(core_weight_raw)
     core_weights = [w / weight_sum for w in core_weight_raw]
 
+    # [추가] 새 순위 기준: 1~3코어 5:4:3 가중 (기존 1~4코어 5:4:3:3 랭킹과 병행)
+    core_weight_raw_3c = [5.0, 4.0, 3.0]
+    weight_sum_3c = sum(core_weight_raw_3c)
+    core_weights_3c = [w / weight_sum_3c for w in core_weight_raw_3c]
+
     control_results = [r for r in base_results if r["is_control"]]
     # 컨트롤도 도란검/도란활 중 가중 DPG 최대를 baseline 으로
     best_control = max(
@@ -756,6 +758,19 @@ if __name__ == "__main__":
     ctrl_dpg2 = control_y2 / (ctrl_cost2 / 1000.0) if ctrl_cost2 > 0 else 0.0
     ctrl_dpg3 = control_y3 / (ctrl_cost3 / 1000.0) if ctrl_cost3 > 0 else 0.0
     ctrl_dpg4 = control_y4 / (ctrl_cost4 / 1000.0) if ctrl_cost4 > 0 else 0.0
+
+    # [추가] 1~3코어 가중 DPG 최대 컨트롤(도란검/활) → 새 1~3 랭킹의 baseline
+    best_control_3c = max(
+        control_results,
+        key=lambda r: sum(
+            core_weights_3c[i] * (r["y"][i] / (r["x"][i] / 1000.0) if r["x"][i] > 0 else 0.0)
+            for i in range(3)
+        ),
+    )
+    ctrl3_dpg = [
+        best_control_3c["y"][i] / (best_control_3c["x"][i] / 1000.0) if best_control_3c["x"][i] > 0 else 0.0
+        for i in range(3)
+    ]
 
     for res in base_results:
         y1, y2, y3, y4 = res["y"]
@@ -776,6 +791,16 @@ if __name__ == "__main__":
         ) * 100.0
         res["spike_score"] = res["rel_dpg_score"]
 
+        # [추가] 1~3코어(5:4:3) 상대 DPG 점수 (기존 1~4 점수와 병행 저장)
+        rel3_1 = (dpg1 / ctrl3_dpg[0]) if ctrl3_dpg[0] > 0 else 0.0
+        rel3_2 = (dpg2 / ctrl3_dpg[1]) if ctrl3_dpg[1] > 0 else 0.0
+        rel3_3 = (dpg3 / ctrl3_dpg[2]) if ctrl3_dpg[2] > 0 else 0.0
+        res["rel_dpg_score_3c"] = (
+            (core_weights_3c[0] * rel3_1) +
+            (core_weights_3c[1] * rel3_2) +
+            (core_weights_3c[2] * rel3_3)
+        ) * 100.0
+
     # 4코어 아이템 조합이 같고 순서만 다른 경우: 가장 점수가 높은 1개만 유지
     combo_best_results = {}
     for res in base_results:
@@ -783,6 +808,19 @@ if __name__ == "__main__":
         prev = combo_best_results.get(combo_key)
         if prev is None or res["rel_dpg_score"] > prev["rel_dpg_score"]:
             combo_best_results[combo_key] = res
+
+    # [추가] 1~3코어 랭킹 dedup: 4코어는 점수에 무관하므로 "1~3 오프닝"(앞 3아이템 집합)
+    #        단위로 묶어, 같은 오프닝은 최고 점수(=최적 순서/도란) 1행만 남긴다.
+    #        base_results 재할당(바로 아래) 전, 전체(순서×도란) 목록에서 골라야 한다.
+    combo_best_3c = {}
+    for res in base_results:
+        opening_key = tuple(sorted(res["base_key"][:3]))  # 앞 3아이템 집합(4코어 무시)
+        prev = combo_best_3c.get(opening_key)
+        if prev is None or res["rel_dpg_score_3c"] > prev["rel_dpg_score_3c"]:
+            combo_best_3c[opening_key] = res
+    ranked_by_3c = sorted(combo_best_3c.values(), key=lambda r: r["rel_dpg_score_3c"], reverse=True)
+    # 1~3 기준선(컨트롤)은 컨트롤 빌드의 최적 1~3 오프닝 = best_control_3c 하나로 표기
+    control_results_3c = [best_control_3c]
 
     base_results = list(combo_best_results.values())
 
@@ -866,6 +904,70 @@ if __name__ == "__main__":
         "rel_dpg_score",
         " REL_DPG%",
         show_dpg_columns=True
+    )
+
+    # === [추가] 새 순위: 1~3코어 5:4:3 가중 상대 DPG (기존 1~4 표와 별개로 출력) ===
+    best_control_3c_score = best_control_3c["rel_dpg_score_3c"]  # 자기 자신 기준 ≈ 100
+    ctrl3_y = best_control_3c["y"]
+    ctrl3_x = best_control_3c["x"]
+    top_n_3c = 20
+    top_3c_rows = ranked_by_3c[:top_n_3c]
+
+    print(
+        f"\n[NEW] Best Control Baseline (Weighted Relative 5:4:3 over 1~3 Core, DPG-only): "
+        f"DPG={best_control_3c_score:.2f} "
+        f"({best_control_3c['control_label']} / {best_control_3c['label']})"
+    )
+
+    def print_relative_table_3c(title, rows):
+        """[추가] 1~3코어(5:4:3) 가중 상대 DPG 기준 순위 표.
+
+        기존 print_relative_table(1~4코어 5:4:3:3)는 그대로 두고, 초중반(1~3코어)
+        골드효율 위주의 새 정렬 결과를 추가로 출력한다. 모델 기반 지표(실측 아님).
+        rows: rel_dpg_score_3c 내림차순 상위 행. control_results_3c 를 뒤에 덧붙여 출력.
+        """
+        print(f"\n{title}")
+        header = (
+            f"{'RK':>2} | {'BUILD':<22} | "
+            f"{'1C (DPG)':^12} | {'2C (DPG)':^12} | {'3C (DPG)':^12} | "
+            f"{'REL_DPG3%':^9} | {'VS CTRL':^10} | "
+            f"{'C1 ΔDPS/ΔDPG%':^14} | {'C2 ΔDPS/ΔDPG%':^14} | {'C3 ΔDPS/ΔDPG%':^14}"
+        )
+        print(header)
+        print("-" * len(header))
+        output_rows = rows + control_results_3c
+        baseline = best_control_3c_score
+        for rank, res in enumerate(output_rows, start=1):
+            # 1~3 오프닝 단위 표 → 라벨도 앞 3아이템만 표시(4코어는 점수와 무관)
+            b1, b2, b3 = res["base_key"][0], res["base_key"][1], res["base_key"][2]
+            label = f"{item_short[b1]}-{item_short[b2]}-{item_short[b3]} [{res['pkg_label']}]"
+            label = label + (" [CTRL]" if res["is_control"] else "")
+            diff_pct = ((res["rel_dpg_score_3c"] / baseline) - 1.0) * 100.0 if baseline > 0 else 0.0
+            row_dps = res["y"]
+            row_costs = res["x"]
+            row_dpgs = [
+                row_dps[i] / (row_costs[i] / 1000.0) if row_costs[i] > 0 else 0.0
+                for i in range(3)
+            ]
+            core_delta_cells = []
+            for i in range(3):
+                dps_pct = ((row_dps[i] / ctrl3_y[i]) - 1.0) * 100.0 if ctrl3_y[i] > 0 else 0.0
+                ctrl_dpg_i = ctrl3_y[i] / (ctrl3_x[i] / 1000.0) if ctrl3_x[i] > 0 else 0.0
+                dpg_pct = ((row_dpgs[i] / ctrl_dpg_i) - 1.0) * 100.0 if ctrl_dpg_i > 0 else 0.0
+                core_delta_cells.append(f"{dps_pct:+5.1f}/{dpg_pct:+5.1f}")
+            line = (
+                f"{rank:>2} | {label:<22} | "
+                f"{row_dpgs[0]:>12.1f} | {row_dpgs[1]:>12.1f} | {row_dpgs[2]:>12.1f} | "
+                f"{res['rel_dpg_score_3c']:>9.2f} | {diff_pct:+8.2f}% | "
+                f"{core_delta_cells[0]:>14} | {core_delta_cells[1]:>14} | {core_delta_cells[2]:>14}"
+            )
+            print(line)
+
+    total_rows_3c = top_n_3c + len(control_results_3c)
+    print_relative_table_3c(
+        f"[NEW] Top {total_rows_3c} Rows: Top {top_n_3c} + All Controls "
+        f"(Rel by DPS/1000g ratio, weighted 5:4:3 over 1~3 Core)",
+        top_3c_rows,
     )
 
     # 징크스 기준 빌드 비교선 (C44-PD-IE-LDR)
@@ -976,23 +1078,23 @@ if __name__ == "__main__":
     plt.ylabel("DPS")
     plt.grid(True, alpha=0.3)
 
-    # 5코어 옵션 비교: 4코어 Top1 베이스에 5코어 후보를 붙여 모두 비교
+    # 5코어 옵션 비교: 현재 4코어 Top1 의 '실제' 곡선(평가에 쓰인 패키지 포함)을 그대로
+    # 재사용하고, 거기에 5코어만 같은 패키지로 이어붙인다.
+    # (이전엔 1~4를 기본 패키지로 재계산해 Top1 선과 어긋나는 stale 곡선이었음 — 버그픽스.)
     top1_base = ranked_by_dpg[0]
     b1, b2, b3, b4 = top1_base["base_key"]
     base_set = {b1, b2, b3, b4}
+    top1_pkg = next(p for p in ADC_PACKAGES if p["label"] == top1_base["pkg_label"])
+    kw5 = dict(doran_key=top1_pkg["doran"], boots_key=top1_pkg["boots"], rune_as_bonus=top1_pkg["rune_as"])
     top1_5core_results = []
     for c5 in core5_candidates:
         if c5 in base_set:
             continue
-        dps1, cost1 = simulate_ashe_core_path([b1], 1)
-        dps2, cost2 = simulate_ashe_core_path([b1, b2], 2)
-        dps3, cost3 = simulate_ashe_core_path([b1, b2, b3], 3)
-        dps4, cost4 = simulate_ashe_core_path([b1, b2, b3, b4], 4)
-        dps5, cost5 = simulate_ashe_core_path([b1, b2, b3, b4, c5], 5)
+        dps5, cost5 = simulate_ashe_core_path([b1, b2, b3, b4, c5], 5, **kw5)
         top1_5core_results.append({
             "label": f"{item_short[b1]}-{item_short[b2]}-{item_short[b3]}-{item_short[b4]}-{item_short[c5]}",
-            "x": [cost1, cost2, cost3, cost4, cost5],
-            "y": [dps1, dps2, dps3, dps4, dps5],
+            "x": list(top1_base["x"]) + [cost5],   # Top1 의 1~4 실제 곡선 재사용 + 5C
+            "y": list(top1_base["y"]) + [dps5],
         })
 
     print(f"\n5-Core Variants on Top1 4-Core Base: {top1_base['label']}")

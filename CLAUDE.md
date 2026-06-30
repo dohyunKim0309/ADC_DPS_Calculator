@@ -12,16 +12,17 @@
   - 셋업: `python3.10 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt`
   - ⚠️ 시스템 `python3`(3.9)나 다른 인터프리터로 돌리지 말 것. 항상 **`.venv/bin/python`** 사용.
 - 시뮬은 패키지 모듈이라 **repo 루트에서 `-m`으로 실행**한다:
-  - `.venv/bin/python -m adc_sim.simulations.ashe` — 애쉬 4코어 랭킹
+  - `.venv/bin/python -m adc_sim.simulations.ashe` — 애쉬 4코어 랭킹(+1~3코어 5:4:3 별도 랭킹)
   - `… adc_sim.simulations.yunara` / `.kaisa` / `.corki`
   - `… adc_sim.simulations.power_compare` — 챔피언 간 Top1/Basic 비교
-- 각 시뮬 모듈은 `if __name__ == "__main__"` 진입점을 가진다. 실행 끝에 `plt.show()`가 **블로킹**으로 창을 띄운다(헤드리스/자동화 시 유의). import만으로는 안 뜸 — 실행 코드가 main 가드 안에 있어 import 스모크 테스트는 안전.
+  - `… adc_sim.simulations.case_ranking ["케이스필터"]` — **애쉬 케이스 기반 빌드 랭킹**(비-방어 전 아이템 전수조사, 14케이스). 표만 출력(그래프/`plt.show()` 없음)이라 **헤드리스 안전**. 인자로 케이스명 부분일치 필터(예: `"alldps/nohc"`). 전체 ~45초.
+- 각 시뮬 모듈은 `if __name__ == "__main__"` 진입점을 가진다. (`case_ranking` 제외) 실행 끝에 `plt.show()`가 **블로킹**으로 창을 띄운다(헤드리스/자동화 시 유의). import만으로는 안 뜸 — 실행 코드가 main 가드 안에 있어 import 스모크 테스트는 안전.
 - 리포트 저장은 기본 **꺼져 있음**. `adc_sim/settings.py`의 `SIMULATION_SETTINGS['result_export_enabled'] = True`로 켜면 **루트 `reports/`** 에 UTC 타임스탬프로 `.csv`/`.json` 저장(`result_export_format`: `csv`/`json`/`both`). `graph_style`은 `step`/`linear`. (`PROJECT_ROOT`는 `parent.parent`로 repo 루트를 가리키므로 출력은 항상 루트 기준.)
 
 ## 아키텍처 (데이터 흐름)
 ```
 adc_sim/                  ← 소스 패키지 (코어 모듈끼리는 서로 import 안 함)
-  settings.py ─ 전역 설정(그래프 스타일, export 토글/경로; PROJECT_ROOT=repo 루트)
+  settings.py ─ 전역 설정(그래프 스타일, export 토글/경로; PROJECT_ROOT=repo 루트) + 케이스랭킹 출력설정 `CASE_RANKING_OUTPUT`(top_n/대상케이스/prune)
   items.py    ─ Item 베이스 + 동작 서브클래스(on_hit 등 효과 훅). 스탯/가격은 data/items_data.py 가 출처
   runes.py    ─ Rune 베이스 + 룬 서브클래스(효과 훅)
   champion.py ─ Target(더미), Champion 베이스(데미지 모델·스탯·이벤트 인터페이스) + 챔피언 서브클래스
@@ -29,6 +30,8 @@ adc_sim/                  ← 소스 패키지 (코어 모듈끼리는 서로 im
   simulations/
     ashe.py · yunara.py · kaisa.py · corki.py ─ 빌드 탐색·랭킹·리포트·그래프 (챔피언별)
     power_compare.py ─ 각 챔피언 Top1을 모아 교차 비교 (simulations만 `adc_sim.*` import)
+    sim_settings.py ─ 케이스랭킹 '모델' 설정 데이터(가중 프로파일/축/제약/풀 제외세트/컨트롤 오프닝). 순수 설정·헬퍼(코어 import 안 함)
+    case_ranking.py ─ 케이스 기반 빌드 랭킹 엔진(집합 메모이즈 시뮬 + 14케이스 전수). 현재 Ashe 전용(레벨표/타깃은 ashe.py 재사용)
   data/
     items_data.py ─ 아이템 스탯/가격 데이터(숫자의 단일 출처)   ← 패치마다 가장 자주 바뀜
     items_registry.py ─ 키→인스턴스 통합 create_item_from_key(데이터 주입; 시뮬별 복제 제거)
@@ -49,8 +52,16 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 - **DPG** = `DPS / (gold/1000)` — 1000골드당 DPS, 즉 골드 효율.
 - **rel_dpg_score**(주 랭킹 지표) = 각 코어 구간의 `row_DPG / control_DPG` 비율을 **코어 1~4 가중치 5:4:3:3**으로 가중합 ×100. 즉 **컨트롤 빌드 대비 상대 골드효율**.
 - **Control(기준) 빌드** = `kraken-pd-ie-ldr` 로 하드코딩. 탐색 경로 안에 반드시 존재해야 하며 없으면 `RuntimeError`. 후보 풀이나 키 이름을 바꿀 때 이 빌드가 빠지지 않게 할 것.
-- **코어 티어 1~4** = 아이템 1/2/3/4개 시점의 파워 스파이크. 티어마다 타깃 스탯(`CORE_TARGET_STATS`)과 챔피언 레벨/스킬 레벨(`CORE_<CHAMP>_LEVELS`)이 고정.
+- **코어 티어 1~4** = 아이템 1/2/3/4개 시점의 파워 스파이크. 티어마다 타깃 스탯(`CORE_TARGET_STATS`)과 챔피언 레벨/스킬 레벨(`CORE_<CHAMP>_LEVELS`)이 고정. (케이스 랭킹은 티어 1~5 사용 — `CORE_ASHE_LEVELS[5]`/`CORE_TARGET_STATS[5]`.)
 - 같은 4개 아이템 "집합"은 순서 후보 중 **최고 점수 하나로 dedup**(`combo_best`).
+- **`ashe.py` 보조 랭킹**: 메인 1~4(5:4:3:3) 표와 **별도로** 1~3코어 5:4:3 가중 랭킹을 같이 출력(`rel_dpg_score_3c`). 1~3 오프닝(앞 3아이템 집합)별 1행으로 dedup. 근거: 4코어는 실전상 보통 방어템이라 DPS-골드 랭킹에서 1~3코어가 더 현실적.
+
+### 케이스 기반 랭킹 (`case_ranking.py` / `sim_settings.py`)
+- **케이스 = 축들의 (조건부) 곱**: 방어 타이밍 {def@4, def@5, alldps} × (방어 타이밍이면) 방어템 {maw, ga, mercurial} × 치유감소 {nohc, hc} × zeal {zealfree, zealreq} = **28케이스**. 각 케이스 별도 랭킹. 축 추가 시 자동 확장(`build_ranking_cases`). 출력은 `settings.CASE_RANKING_OUTPUT['exclude']`(name 부분일치, 현재 alldps·mercurial)로 일부 끔 — 엔진/케이스 정의는 유지.
+- **전수조사 풀**: `ITEMS`에서 `NON_DPS_KEYS`(방어/신발/도란/중복키)만 뺀 비-방어 전 아이템(현재 23종). 슬롯 제약 `SLOT_RESTRICTED_ITEMS`(윤탈/마나무네=1~2코어만, statikk=1~3코어만). `hc`는 펜 슬롯을 `mortal`로 강제. `zealreq`는 오프닝(1~3코어)에 zeal 아이템(`ZEAL_ITEMS`={pd,runaan,rfc}; 윤탈·스태틱 제외) 1개+ 강제. 방어템은 케이스 슬롯(4/5)에 고정 삽입.
+- **점수 = 1~5코어 가중 상대-DPG**: `WEIGHT_PROFILES`(callable(n)→가중치 또는 명시벡터, 기본 `early_heavy`)로 코어별 rel-DPG 가중합·정규화 ×100. 표에는 **DPG(랭킹 지표)와 DPS(절대 파워) 점수·vsCTRL 둘 다** 표시. 컨트롤 = `CONTROL_OPENING`(kraken-pd-ie) + 같은 케이스 구조(최적 연계). 오프닝마다 최적 연계 1빌드 평가, 같은 DPS 집합은 dedup.
+- **스택 아이템**: 구매코어=약/다음코어=풀을 resolved-key 로 인코딩(윤탈 crit 10%→25%, 마나무네 100스택→무라마나). **DPS는 장착 '집합'에만 의존**하므로 (집합, 패키지) 단위 메모이즈 — 각 고유 셋 1회만 시뮬. 채점은 오프닝 prefix(1~3) 재사용으로 중복 제거.
+- 모델 설정은 전부 `sim_settings.py` 데이터(하드코딩 가중치 없음), 출력 정책은 `settings.CASE_RANKING_OUTPUT`.
 
 ## 패치마다 갱신 (이 프로젝트의 일상)
 새 패치가 나오면 보통 아래를 손본 뒤 시뮬을 다시 돌려 랭킹을 갱신한다. **변경 전 `AGENTS.md`의 승인 절차를 따른다.**

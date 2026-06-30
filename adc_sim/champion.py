@@ -54,7 +54,12 @@ class Champion:
         self.magic_pen_flat = 0 # 마법 관통력 (고정)
         self.ability_haste = 0.0 # 스킬 가속
         self._combat_time = 0.0
-        
+
+        # 마나 자원 (Phase 0). total_mana = 풀; current_mana = 전투 중 현재값.
+        self.current_mana = 0.0
+        self.base_mp5 = 0.0      # 5초당 기본 마나재생 (챔프별 데이터, Task 6)
+        self.mp5_growth = 0.0    # 레벨당 MP5 성장
+
         # 시뮬레이션 설정
         self.target_count = 1 # 적 수 (루난 효율 계산용)
 
@@ -137,6 +142,37 @@ class Champion:
                 dynamic_bonus_mana += item.get_bonus_mana(self)
         return base_mana + growth_mana + self.bonus_mana + dynamic_bonus_mana
 
+    @property
+    def mana_regen_per_sec(self):
+        """초당 마나 재생 = (기본 MP5 + 성장 + 아이템 MP5)/5. [H-MANA-1] 복합 패시브 무시."""
+        base = self.base_mp5 + self.mp5_growth * (self.level - 1)
+        item_mp5 = 0.0
+        for item in self.inventory:
+            item_mp5 += getattr(item, "stats", {}).get("mana_regen", 0.0)
+        return (base + item_mp5) / 5.0
+
+    def can_afford(self, cost):
+        """[H-MANA-2] 하드 바운드: 현재 마나로 cost를 감당 가능한가."""
+        return self.current_mana + 1e-9 >= cost
+
+    def spend_mana(self, cost):
+        """마나 차감(0 미만 클램프)."""
+        self.current_mana = max(0.0, self.current_mana - cost)
+
+    def regen_mana(self, dt):
+        """dt초 동안 마나 재생(total_mana 상한 클램프)."""
+        if dt > 0:
+            self.current_mana = min(self.total_mana, self.current_mana + self.mana_regen_per_sec * dt)
+
+    def _afford_in(self, cost):
+        """cost를 감당할 때까지 남은 시간(초). 0=즉시, inf=재생 0이라 영영 불가. [0-dt 스핀 방지용]"""
+        if self.can_afford(cost):
+            return 0.0
+        rps = self.mana_regen_per_sec
+        if rps <= 0:
+            return float("inf")
+        return (cost - self.current_mana) / rps
+
     def get_total_bonus_as_percent(self):
         """총 추가 공격 속도(%) 반환 (아이템 + 성장 + 룬)"""
         level_bonus = (self.as_growth * (self.level - 1)) / 100
@@ -186,9 +222,11 @@ class Champion:
     # 엔진 주도 이벤트 인터페이스 (기본: 스킬 이벤트 없음)
     def init_combat_state(self, skill_plan=None):
         self._combat_time = 0.0
+        self.current_mana = self.total_mana   # 전투 시작 시 풀충전
 
     def advance_combat_time(self, delta_time, current_time, target):
         self._combat_time = current_time
+        self.regen_mana(delta_time)           # [H-MANA-1] 중앙집중 재생; 서브클래스는 super() 호출로 상속
 
     def get_time_to_next_skill_event(self, current_time):
         return float("inf")
@@ -363,6 +401,13 @@ class Ashe(Champion):
         self.q_as_buff_applied = False # 공속 버프 중복 적용 방지
         self.q_attack_reset_pending = False  # Q 활성화 직후 다음 평타 간격 0.2초 적용
         
+        # 마나 (Task 5 확정). [데이터 출처: spec §3.5]
+        self.base_mana = 280.0
+        self.mana_growth = 35.0
+        self.base_mp5 = 7.0
+        self.mp5_growth = 0.65
+        self.q_mana_cost = 30.0  # Ranger's Focus, 확정 §3.5. [H-MANA-3]
+
         # Q 데이터 (레벨별)
         # 공격 속도: 20 / 30 / 40 / 50 / 60%
         self.q_as_amounts = [0.20, 0.30, 0.40, 0.50, 0.60]
@@ -409,6 +454,11 @@ class Ashe(Champion):
         return super().get_attack_interval()
 
     def activate_q(self, time):
+        # [H-MANA-3] 마나 부족 시 활성 지연(버프 효과는 보존, 활성만 게이트)
+        if not self.can_afford(self.q_mana_cost):
+            return
+        self.spend_mana(self.q_mana_cost)
+
         self.q_active = True
         self.q_start_time = time
         self.q_attack_reset_pending = True
@@ -476,6 +526,12 @@ class Jinx(Champion):
         self.fishbones_ad_multiplier = 1.10
         self.fishbones_bonus_as_multiplier = 0.90
 
+        # 마나 (Task 5 확정). [데이터 출처: spec §3.5]
+        self.base_mana = 260.0
+        self.mana_growth = 50.0
+        self.base_mp5 = 6.7
+        self.mp5_growth = 1.0
+
     def get_total_bonus_as_percent(self):
         # 파워스파이크 비교에서는 유지딜 기준으로 Q 모드를 고정 반영.
         base_bonus = super().get_total_bonus_as_percent()
@@ -518,6 +574,13 @@ class Yunara(Champion):
         self.q_start_time = 0.0
         self.q_as_buff_applied = False
         self.q_stacks = 0 # 방출 스택 (최대 8)
+        
+        # 마나 (Task 5 확정). [데이터 출처: spec §3.5]
+        self.base_mana = 275.0
+        self.mana_growth = 45.0
+        self.base_mp5 = 7.5
+        self.mp5_growth = 0.75
+        self.q_mana_cost = 30.0  # Cultivation of Spirit, 확정 §3.5. [H-MANA-3]
 
         # Q 데이터 (레벨별)
         # 추가 공속: 20 / 30 / 40 / 50 / 60%
@@ -654,6 +717,11 @@ class Yunara(Champion):
         return p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit
 
     def activate_q(self, time):
+        # [H-MANA-3] 마나 부족 시 활성 지연(버프 효과는 보존, 활성만 게이트)
+        if not self.can_afford(self.q_mana_cost):
+            return
+        self.spend_mana(self.q_mana_cost)
+
         self.q_active = True
         self.q_start_time = time
         self.q_stacks = 0
@@ -780,6 +848,9 @@ class KaiSa(Champion):
         self.mana_growth = 40
         self.base_mana_regen = 8.2
         self.mana_regen_growth = 0.7
+        # base_mp5/mp5_growth: Champion.mana_regen_per_sec가 읽는 이름 (Task 5 확정). [spec §3.5]
+        self.base_mp5 = 8.2
+        self.mp5_growth = 0.7
         self.base_armor = 25
         self.armor_growth = 4.2
         self.base_mr = 30
@@ -805,6 +876,8 @@ class KaiSa(Champion):
 
         # 쿨타임/버프 상태
         self.cooldowns_remaining = {"q": 0.0, "w": 0.0, "e": 0.0, "r": 0.0}
+        # 스킬 마나 비용 (Task 5 확정). [spec §3.5]
+        self.mana_cost = {"q": 55.0, "w": 75.0, "e": 30.0, "r": 100.0}
         self.e_active = False
         self.e_end_time = 0.0
         self.e_buff_applied = False
@@ -974,9 +1047,12 @@ class KaiSa(Champion):
             return False
         if skill_name == "e" and self.e_active:
             return False
+        if not self.can_afford(self.mana_cost.get(skill_name, 0.0)):
+            return False
         return True
 
     def _cast_skill(self, skill_name, target, time):
+        self.spend_mana(self.mana_cost.get(skill_name, 0.0))
         if skill_name == "q":
             p, m = self._cast_q(time)
             return skill_name, p, m, True
@@ -1063,7 +1139,8 @@ class KaiSa(Champion):
             if skill_name == "e" and self.e_active:
                 continue
             remaining = self.cooldowns_remaining.get(skill_name, float("inf"))
-            candidates.append(max(0.0, remaining))
+            afford = self._afford_in(self.mana_cost.get(skill_name, 0.0))
+            candidates.append(max(0.0, remaining, afford))   # [0-dt 스핀 방지]
 
         valid = [dt for dt in candidates if dt >= -eps]
         if not valid:
@@ -1131,6 +1208,9 @@ class Corki(Champion):
         self.hp_regen_growth = 0.55
         self.base_mana = 350
         self.mana_growth = 40
+        # base_mp5/mp5_growth: Champion.mana_regen_per_sec가 읽는 이름 (Task 5 확정). [spec §3.5]
+        self.base_mp5 = 7.4
+        self.mp5_growth = 0.7
         self.base_armor = 27
         self.armor_growth = 4.5
         self.base_mr = 30
@@ -1178,6 +1258,8 @@ class Corki(Champion):
         self.r_max_charges = 4
         self.r_charge_remaining = None
         self.cooldowns_remaining = {"q": 0.0, "w": 0.0, "e": 0.0, "r_cast": self.r_initial_delay}
+        # 스킬 마나 비용 (Task 5 확정). [spec §3.5]
+        self.mana_cost = {"q": 80.0, "w": 100.0, "e": 70.0, "r": 35.0}
 
         # 스킬 스케줄 상태
         self.manual_skill_casts = []
@@ -1304,6 +1386,8 @@ class Corki(Champion):
 
     def _can_cast_skill(self, skill_name):
         eps = 1e-9
+        if not self.can_afford(self.mana_cost.get(skill_name, 0.0)):
+            return False
         if skill_name == "r":
             return self.r_charges > 0 and self.cooldowns_remaining["r_cast"] <= eps
         if skill_name == "q":
@@ -1315,6 +1399,7 @@ class Corki(Champion):
         return False
 
     def _cast_skill(self, skill_name, target, time):
+        self.spend_mana(self.mana_cost.get(skill_name, 0.0))
         if skill_name == "q":
             p, m = self._cast_q(time)
             return skill_name, p, m, True
@@ -1338,13 +1423,13 @@ class Corki(Champion):
             candidates.append(max(0.0, next_manual_time - current_time))
 
         if self.auto_skill_enabled.get("e", False):
-            candidates.append(max(0.0, self.cooldowns_remaining["e"]))
+            candidates.append(max(0.0, self.cooldowns_remaining["e"], self._afford_in(self.mana_cost.get("e", 0.0))))
         if self.auto_skill_enabled.get("q", False):
-            candidates.append(max(0.0, self.cooldowns_remaining["q"]))
+            candidates.append(max(0.0, self.cooldowns_remaining["q"], self._afford_in(self.mana_cost.get("q", 0.0))))
         if self.auto_skill_enabled.get("w", False):
-            candidates.append(max(0.0, self.cooldowns_remaining["w"]))
+            candidates.append(max(0.0, self.cooldowns_remaining["w"], self._afford_in(self.mana_cost.get("w", 0.0))))
         if self.auto_skill_enabled.get("r", False) and self.r_charges > 0:
-            candidates.append(max(0.0, self.cooldowns_remaining["r_cast"]))
+            candidates.append(max(0.0, self.cooldowns_remaining["r_cast"], self._afford_in(self.mana_cost.get("r", 0.0))))
 
         valid = [dt for dt in candidates if dt >= -eps]
         if not valid:
@@ -1398,3 +1483,500 @@ class Corki(Champion):
             self._update_r_charges(0.0)
 
         return p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit
+
+
+class Ezreal(Champion):
+    """이즈리얼 — 스킬샷 포크형 원딜. [Hypothesis 다수 — 스펙 §9 참조]
+
+    모델: 평타 연속 + Q/W/E 쿨마다 시전(R 제외). 마나 자원 미모델(무한마나)이나
+    마나무네 스택은 on_hit/on_skill_hit로 정확 충전됨.
+    - 패시브 Rising Spell Force[H]: 스킬 적중당 공속 +10%/스택, 최대 5, 6초(적중 시 갱신).
+    - Q Mystic Shot[H]: 물리(비치명) base + 1.30*총AD + 0.15*AP. 적중 시 전 스킬 −1.5초.
+      온힛 적용(Manamune/Muramana·룬=엔진 스킬경로; Kraken/BotRK/Guinsoo/Terminus/Nashor's/
+      Wit's End=allow-list 로컬). 주문검은 장전만(다음 평타서 발동).
+    - W Essence Flux[H]: 마법 base + 1.0*추가AD + 0.9*AP(단일 더미 즉시 기폭 단순화).
+    - E Arcane Shift[H]: 마법 base + 0.6*추가AD + 0.75*AP.
+    수치/가설 출처: docs/superpowers/specs/2026-06-24-ezreal-design.md
+    """
+
+    # Q 온힛 allow-list(이름 기준). Manamune(스킬경로)/주문검(평타)/에너자이즈드(평타) 제외.
+    # 주의: Wit's End 는 현재 items_data 미등록(빌드 불가)이라 사실상 비활성 — 추후 등록 시 자동 적용.
+    Q_ONHIT_ALLOW = {
+        "Kraken Slayer", "Blade of the Ruined King", "Guinsoo's Rageblade",
+        "Terminus", "Nashor's Tooth", "Wit's End",
+    }
+
+    def __init__(self, level=1, q_level=5, w_level=5, e_level=5, r_level=3):
+        super().__init__(
+            name="Ezreal", base_ad=60, base_as=0.625, as_ratio=0.625,
+            as_growth=2.5, base_range=550, level=level, ad_growth=3.75,
+        )
+        # 보관(비-DPS): 미래 1대1 모델용
+        self.base_hp = 600; self.hp_growth = 102
+        self.base_mana = 375; self.mana_growth = 70
+        # base_mp5/mp5_growth: Champion.mana_regen_per_sec가 읽는 이름 (Task 5 확정). [spec §3.5]
+        self.base_mp5 = 8.5; self.mp5_growth = 1.0
+        self.base_armor = 24; self.armor_growth = 4.2
+        self.base_mr = 30; self.mr_growth = 1.3
+
+        self.q_level = q_level; self.w_level = w_level
+        self.e_level = e_level; self.r_level = r_level
+
+        # 패시브 Rising Spell Force [H]
+        self.spell_stacks = 0
+        self.max_spell_stacks = 5
+        self.spell_stack_as = 0.10        # 스택당 공속
+        self.spell_stack_duration = 6.0
+        self.stack_expire_time = 0.0
+        self._stack_as_applied = 0.0      # 현재 bonus_as_percent에 반영된 패시브 공속(환원용)
+
+        # Q/W/E 데이터 [H]
+        self.q_cd = [5.5, 5.25, 5.0, 4.75, 4.5]
+        self.q_base = [20.0, 45.0, 70.0, 95.0, 120.0]
+        self.q_total_ad_ratio = 1.30
+        self.q_ap_ratio = 0.15
+        self.q_cd_refund = 1.5
+
+        self.w_cd = [8.0, 8.0, 8.0, 8.0, 8.0]
+        self.w_base = [80.0, 135.0, 190.0, 245.0, 300.0]
+        self.w_bonus_ad_ratio = 1.0
+        self.w_ap_ratio = 0.9
+
+        self.e_cd = [26.0, 23.0, 20.0, 17.0, 14.0]
+        self.e_base = [80.0, 130.0, 180.0, 230.0, 280.0]
+        self.e_bonus_ad_ratio = 0.6
+        self.e_ap_ratio = 0.75
+
+        # 자동 시전(R 제외)
+        self.auto_cast_q = True; self.auto_cast_w = True; self.auto_cast_e = True
+        self.cooldowns_remaining = {"q": 0.0, "w": 0.0, "e": 0.0}
+        self.manual_skill_casts = []
+        self.manual_skill_index = 0
+        self.auto_skill_enabled = {"q": True, "w": True, "e": True}
+        self.auto_skill_order = ["q", "w", "e"]
+        # 스킬 마나 비용 (Task 5 확정, R 미모델). [spec §3.5]
+        self.mana_cost = {"q": 40.0, "w": 50.0, "e": 70.0}
+
+    # ---- 추가AD(W/E 계수용) ----
+    def _bonus_ad(self):
+        """아이템+동적(마나무네 경탄 등) 추가 AD = total_ad - 현재레벨 기본 AD."""
+        return max(0.0, self.total_ad - self.base_attack_ad)
+
+    # ---- 패시브 스택 ----
+    def _sync_stack_as(self):
+        """현재 스택 수에 맞춰 bonus_as_percent 보정(이전 적용분 환원 후 재적용). [H 패시브 모델]"""
+        target_as = self.spell_stacks * self.spell_stack_as
+        delta = target_as - self._stack_as_applied
+        if delta != 0.0:
+            self.bonus_as_percent += delta
+            self._stack_as_applied = target_as
+
+    def _add_spell_stack(self, time):
+        """스킬 적중 1회 → 스택 +1(캡), 만료시간 갱신, 공속 반영. [H]"""
+        self.spell_stacks = min(self.max_spell_stacks, self.spell_stacks + 1)
+        self.stack_expire_time = time + self.spell_stack_duration
+        self._sync_stack_as()
+
+    def _expire_stacks_if_due(self, time):
+        """만료시간 경과 시 스택 0 + 공속 환원(패시브 6초 만료 가정). [H]"""
+        if self.spell_stacks > 0 and time >= self.stack_expire_time:
+            self.spell_stacks = 0
+            self._sync_stack_as()
+
+    # ---- 이벤트 인터페이스 ----
+    def init_combat_state(self, skill_plan=None):
+        super().init_combat_state(skill_plan)
+        self.cooldowns_remaining = {"q": 0.0, "w": 0.0, "e": 0.0}
+        # 패시브 초기화(이전 전투 잔여 공속 환원)
+        self.spell_stacks = 0
+        self.stack_expire_time = 0.0
+        self._sync_stack_as()  # _stack_as_applied 만큼 환원
+        self._stack_as_applied = 0.0
+
+        plan = skill_plan or {}
+        auto_cfg = plan.get("auto_cast", {})
+        self.auto_skill_enabled = {
+            "q": auto_cfg.get("q", self.auto_cast_q),
+            "w": auto_cfg.get("w", self.auto_cast_w),
+            "e": auto_cfg.get("e", self.auto_cast_e),
+        }
+        self.auto_skill_order = list(plan.get("auto_order", ["q", "w", "e"]))
+        self.manual_skill_casts = sorted(list(plan.get("manual_casts", [])), key=lambda x: x[0])
+        self.manual_skill_index = 0
+
+    def advance_combat_time(self, delta_time, current_time, target):
+        super().advance_combat_time(delta_time, current_time, target)
+        if delta_time > 0:
+            for k in self.cooldowns_remaining:
+                self.cooldowns_remaining[k] = max(0.0, self.cooldowns_remaining[k] - delta_time)
+        self._expire_stacks_if_due(current_time)
+
+    def get_time_to_next_state_event(self, current_time):
+        if self.spell_stacks > 0:
+            return max(0.0, self.stack_expire_time - current_time)
+        return float("inf")
+
+    def _can_cast(self, name):
+        if not self.can_afford(self.mana_cost.get(name, 0.0)):
+            return False
+        return self.cooldowns_remaining.get(name, float("inf")) <= 1e-9
+
+    def get_time_to_next_skill_event(self, current_time):
+        eps = 1e-9
+        candidates = []
+        if self.manual_skill_index < len(self.manual_skill_casts):
+            t, _ = self.manual_skill_casts[self.manual_skill_index]
+            candidates.append(max(0.0, t - current_time))
+        for name, enabled in self.auto_skill_enabled.items():
+            if enabled:
+                candidates.append(max(0.0, self.cooldowns_remaining.get(name, float("inf")),
+                                      self._afford_in(self.mana_cost.get(name, 0.0))))
+        valid = [dt for dt in candidates if dt >= -eps]
+        return max(0.0, min(valid)) if valid else float("inf")
+
+    def pop_due_skill_events(self, current_time, target):
+        eps = 1e-9
+        events = []
+        while self.manual_skill_index < len(self.manual_skill_casts):
+            t, name = self.manual_skill_casts[self.manual_skill_index]
+            if t > current_time + eps:
+                break
+            self.manual_skill_index += 1
+            if self._can_cast(name):
+                events.append(self._cast_skill(name, target, current_time))
+        for name in self.auto_skill_order:
+            if self.auto_skill_enabled.get(name, False) and self._can_cast(name):
+                events.append(self._cast_skill(name, target, current_time))
+        return events
+
+    def _cast_skill(self, name, target, time):
+        self.spend_mana(self.mana_cost.get(name, 0.0))
+        if name == "q":
+            p, m = self._cast_q(target, time)
+            return ("q", p, m, True)
+        if name == "w":
+            p, m = self._cast_w(time)
+            return ("w", p, m, True)
+        if name == "e":
+            p, m = self._cast_e(time)
+            return ("e", p, m, True)
+        return (name, 0.0, 0.0, False)
+
+    def _assemble_q_onhit(self, target):
+        """Q에 적용할 평타 온힛 중 allow-list 아이템만 합산. [Hypothesis H-EZ-6]
+
+        - Manamune/Muramana: 엔진 스킬경로(on_skill_hit)가 처리 → 여기서 제외(이중계산 방지).
+        - 주문검/에너자이즈드: Q서 미적용(주문검은 _cast_q의 cast_spell로 장전만).
+        - proc_count(구인수 팬텀히트)는 평타 경로와 동일하게 allow-list 번들 전체에 적용.
+        - 현 allow-list 아이템은 고정(true) 온힛이 없어 (phys,magic)만 합산(검증됨).
+        반환: (phys, magic)
+        """
+        def bundle_once():
+            p = 0.0; m = 0.0
+            for item in self.inventory:
+                if item.name in self.Q_ONHIT_ALLOW:
+                    ip, im, _t_base, _t_onhit = item.on_hit(target, self)
+                    p += ip; m += im
+            return p, m
+
+        proc = 1
+        for item in self.inventory:
+            if item.name in self.Q_ONHIT_ALLOW and hasattr(item, "get_onhit_proc_count"):
+                proc = max(proc, item.get_onhit_proc_count(self))
+
+        phys = 0.0; magic = 0.0
+        for _ in range(proc):
+            bp, bm = bundle_once()
+            phys += bp; magic += bm
+        return phys, magic
+
+    def _cast_q(self, target, time):
+        """Q Mystic Shot. 물리(비치명) + allow-list 온힛. 적중 시 전 스킬 −1.5초. [H]
+
+        반환: (phys, magic). Manamune/Muramana·룬 스킬훅은 엔진 스킬경로가 자동 처리.
+        """
+        self._combat_time = time
+        idx = self.q_level - 1
+        q_phys = self.q_base[idx] + (self.q_total_ad_ratio * self.total_ad) + (self.q_ap_ratio * self.total_ap)
+
+        # allow-list 온힛(주문검/Manamune 제외)
+        onhit_p, onhit_m = self._assemble_q_onhit(target)
+
+        # 자기 쿨 설정 후, 적중 쿨 환급(−1.5초)을 전 스킬에 적용(자기 포함)
+        self.cooldowns_remaining["q"] = self.apply_haste_to_cooldown(self.q_cd[idx])
+        for k in self.cooldowns_remaining:
+            self.cooldowns_remaining[k] = max(0.0, self.cooldowns_remaining[k] - self.q_cd_refund)
+
+        # 주문검 장전(다음 평타서 발동)
+        self.cast_spell(time)
+        # 패시브 스택
+        self._add_spell_stack(time)
+
+        return q_phys + onhit_p, onhit_m
+
+    def _cast_w(self, time):
+        """W Essence Flux — 단일 더미 즉시 기폭 단순화. 마법. [H]"""
+        self._combat_time = time
+        idx = self.w_level - 1
+        magic = self.w_base[idx] + (self.w_bonus_ad_ratio * self._bonus_ad()) + (self.w_ap_ratio * self.total_ap)
+        self.cooldowns_remaining["w"] = self.apply_haste_to_cooldown(self.w_cd[idx])
+        self.cast_spell(time)      # 주문검 장전
+        self._add_spell_stack(time)
+        return 0.0, magic
+
+    def _cast_e(self, time):
+        """E Arcane Shift — 순간이동 후 마법 볼트. [H]"""
+        self._combat_time = time
+        idx = self.e_level - 1
+        magic = self.e_base[idx] + (self.e_bonus_ad_ratio * self._bonus_ad()) + (self.e_ap_ratio * self.total_ap)
+        self.cooldowns_remaining["e"] = self.apply_haste_to_cooldown(self.e_cd[idx])
+        self.cast_spell(time)      # 주문검 장전
+        self._add_spell_stack(time)
+        return 0.0, magic
+
+    def get_one_hit_damage(self, target, time=0):
+        # 평타 시점에 패시브 만료 동기화 후 부모 평타 로직(치명/주문검발동/온힛/증폭).
+        self._expire_stacks_if_due(time)
+        return super().get_one_hit_damage(target, time)
+
+
+class CogMaw(Champion):
+    """Kog'Maw — 온힛 %최대체력(W)·공속(Q패시브) 평타 캐리 + Q/E/R 마법. [Hypothesis 다수 — 스펙 §4]
+
+    풀킷: 평타 + W(쿨관리 버프: 활성 중 평타가 %최대체력 마법 온힛) + Q(패시브 공속 + 액티브 넛지·방/마저 %감소)
+    + E(마법 넛지) + R(잃은체력 연속배율 + 마나 램프). 마나는 Phase 0 엔진으로 하드 바운드.
+    수치 출처: spec §4.1 (LoL Wiki+DDragon+Meraki+나무위키 4소스).
+    """
+
+    def __init__(self, level=1, q_level=5, w_level=5, e_level=5, r_level=3):
+        super().__init__(
+            name="Kog'Maw", base_ad=61, base_as=0.665, as_ratio=0.665,
+            as_growth=2.65, base_range=500, level=level, ad_growth=3.11,
+        )
+        # 보관(비-DPS): 미래 1대1 모델용
+        self.base_range = 500
+        self.base_hp = 635; self.hp_growth = 99
+        self.base_armor = 24; self.armor_growth = 4.45
+        self.base_mr = 30; self.mr_growth = 1.3
+        # 마나 (spec §3.5/§4.1). base_mp5/mp5_growth = Champion.mana_regen_per_sec가 읽는 이름.
+        self.base_mana = 325; self.mana_growth = 40
+        self.base_mp5 = 8.75; self.mp5_growth = 0.7
+
+        self.q_level = q_level; self.w_level = w_level
+        self.e_level = e_level; self.r_level = r_level
+
+        # Q 패시브 공속 [H-KOG-3]: 상수(시전 시 순간해제 무시). 생성 시 1회 반영.
+        self.q_passive_as = [0.05, 0.10, 0.15, 0.20, 0.25]
+        self.bonus_as_percent += self.q_passive_as[self.q_level - 1]
+
+        # 스킬 마나비용 (spec §3.5). R은 동적(스택)이라 _r_mana_cost()로 계산.
+        self.mana_cost = {"q": 40.0, "w": 40.0, "e": 0.0, "r": 0.0}
+        self.e_mana = [40.0, 55.0, 70.0, 85.0, 100.0]
+        self.mana_cost["e"] = self.e_mana[self.e_level - 1]
+
+        # 이벤트/버프 상태 (Task 2~4에서 채움)
+        self.cooldowns_remaining = {"q": 0.0, "w": 0.0, "e": 0.0, "r": 0.0}
+        self.manual_skill_casts = []
+        self.manual_skill_index = 0
+        self.auto_skill_enabled = {"q": True, "w": True, "e": True, "r": True}
+        self.auto_skill_order = ["w", "q", "e", "r"]
+
+        # Q 액티브 데이터 [H-KOG-4]
+        self.q_base = [80.0, 125.0, 170.0, 215.0, 260.0]   # +0.9 AP
+        self.q_shred_pct = [0.16, 0.20, 0.24, 0.28, 0.32]  # 방어력+마저 % 감소, 4초
+        self.q_shred_dur = 4.0
+        # E 데이터 [H-KOG-4]
+        self.e_base = [70.0, 110.0, 150.0, 190.0, 230.0]   # +0.65 AP
+
+        # R 데이터 [H-KOG-5]
+        self.r_base = [100.0, 140.0, 180.0]
+        self.r_ap = [0.35, 0.40, 0.45]
+        self.r_bonus_ad = 0.75
+        self.r_cd = [2.0, 1.5, 1.0]
+        self.r_mana_base = 40.0
+        self.r_mana_step = 40.0
+        self.r_mana_max_stacks = 9
+        self.r_stack_window = 8.0
+
+    # W 데이터 [H-KOG-2]
+    W_PCT = [0.03, 0.0375, 0.045, 0.0525, 0.06]   # 랭크별 최대체력 비율
+    W_DURATION = 8.0
+    W_CD = 17.0
+
+    def get_champion_onhit(self, target):
+        """W 활성 중 평타 온힛: 대상 최대체력 비례 마법(+AP). [H-KOG-2]
+
+        구인수 proc_count·mod_factor·Shadowflame 증폭은 부모 get_one_hit_damage가 처리.
+        """
+        if not getattr(self, "w_active", False):
+            return 0, 0
+        idx = self.w_level - 1
+        pct = self.W_PCT[idx] + 0.00015 * self.total_ap   # 100AP당 +1.5%
+        return 0, pct * target.max_hp
+
+    def init_combat_state(self, skill_plan=None):
+        super().init_combat_state(skill_plan)   # _combat_time=0, current_mana=total_mana
+        self.cooldowns_remaining = {"q": 0.0, "w": 0.0, "e": 0.0, "r": 0.0}
+        self.w_active = False
+        self.w_end_time = 0.0
+        # Q 셔레드 상태 (Task 3)
+        self.shred_target = None
+        self.shred_end_time = 0.0
+        self.shred_armor = 0.0
+        self.shred_mr = 0.0
+        # R 스택 상태 [H-KOG-5]
+        self.r_stacks = 0
+        self.r_last_cast_time = -999.0
+        plan = skill_plan or {}
+        auto_cfg = plan.get("auto_cast", {})
+        # Q/W/E/R 기본 활성 (R 구현 완료)
+        _defaults = {"q": True, "w": True, "e": True, "r": True}
+        self.auto_skill_enabled = {k: auto_cfg.get(k, _defaults[k]) for k in ("q", "w", "e", "r")}
+        self.auto_skill_order = list(plan.get("auto_order", ["w", "q", "e", "r"]))
+        self.manual_skill_casts = sorted(list(plan.get("manual_casts", [])), key=lambda x: x[0])
+        self.manual_skill_index = 0
+
+    def advance_combat_time(self, delta_time, current_time, target):
+        super().advance_combat_time(delta_time, current_time, target)   # regen
+        if delta_time > 0:
+            for k in self.cooldowns_remaining:
+                self.cooldowns_remaining[k] = max(0.0, self.cooldowns_remaining[k] - delta_time)
+        if self.w_active and current_time >= self.w_end_time:
+            self.w_active = False
+        if self.shred_target is not None and current_time >= self.shred_end_time:
+            self._clear_shred()
+        # R 스택 감쇠: 마지막 R 시전 후 8초 경과 시 리셋 [H-KOG-5]
+        if self.r_stacks > 0 and current_time - self.r_last_cast_time >= self.r_stack_window:
+            self.r_stacks = 0
+
+    def get_time_to_next_state_event(self, current_time):
+        cands = []
+        if getattr(self, "w_active", False):
+            cands.append(max(0.0, self.w_end_time - current_time))
+        if getattr(self, "shred_target", None) is not None:
+            cands.append(max(0.0, self.shred_end_time - current_time))
+        return min(cands) if cands else float("inf")
+
+    def _can_cast_skill(self, name):
+        eps = 1e-9
+        if self.cooldowns_remaining.get(name, float("inf")) > eps:
+            return False
+        if name == "w" and getattr(self, "w_active", False):
+            return False
+        if not self.can_afford(self._cost(name)):
+            return False
+        return True
+
+    def _cost(self, name):
+        """현재 마나비용. R은 스택 램프(40 + 40*stacks, ≤400). [H-KOG-5]"""
+        if name == "r":
+            stacks = min(self.r_mana_max_stacks, max(0, self.r_stacks))
+            return self.r_mana_base + self.r_mana_step * stacks
+        return self.mana_cost.get(name, 0.0)
+
+    def get_time_to_next_skill_event(self, current_time):
+        eps = 1e-9
+        cands = []
+        if self.manual_skill_index < len(self.manual_skill_casts):
+            t, _ = self.manual_skill_casts[self.manual_skill_index]
+            cands.append(max(0.0, t - current_time))
+        for name, enabled in self.auto_skill_enabled.items():
+            if not enabled:
+                continue
+            if name == "w" and getattr(self, "w_active", False):
+                continue
+            cd = self.cooldowns_remaining.get(name, float("inf"))
+            cands.append(max(0.0, cd, self._afford_in(self._cost(name))))
+        valid = [d for d in cands if d >= -eps]
+        return max(0.0, min(valid)) if valid else float("inf")
+
+    def pop_due_skill_events(self, current_time, target):
+        eps = 1e-9
+        events = []
+        while self.manual_skill_index < len(self.manual_skill_casts):
+            t, name = self.manual_skill_casts[self.manual_skill_index]
+            if t > current_time + eps:
+                break
+            self.manual_skill_index += 1
+            if self._can_cast_skill(name):
+                events.append(self._cast_skill(name, target, current_time))
+        for name in self.auto_skill_order:
+            if self.auto_skill_enabled.get(name, False) and self._can_cast_skill(name):
+                events.append(self._cast_skill(name, target, current_time))
+        return events
+
+    def _cast_skill(self, name, target, time):
+        self._combat_time = time
+        self.spend_mana(self._cost(name))
+        if name == "w":
+            self._cast_w(time)
+            return ("w", 0.0, 0.0, False)   # 버프 — 직접피해 없음
+        if name == "q":
+            p, m = self._cast_q(target, time)
+            return ("q", p, m, True)
+        if name == "e":
+            p, m = self._cast_e(time)
+            return ("e", p, m, True)
+        if name == "r":
+            p, m = self._cast_r(target, time)
+            self.r_stacks = min(self.r_mana_max_stacks, self.r_stacks + 1)
+            self.r_last_cast_time = time
+            return ("r", p, m, True)
+        return (name, 0.0, 0.0, False)
+
+    def _cast_w(self, time):
+        """W 활성: 8초 버프 + 쿨 17s(스킬가속). 마나는 _cast_skill이 차감. [H-KOG-2]"""
+        self.w_active = True
+        self.w_end_time = time + self.W_DURATION
+        self.cooldowns_remaining["w"] = self.apply_haste_to_cooldown(self.W_CD)
+        self.cast_spell(time)
+
+    def _clear_shred(self):
+        if self.shred_target is not None:
+            self.shred_target.armor += self.shred_armor
+            self.shred_target.magic_resist += self.shred_mr
+        self.shred_target = None; self.shred_end_time = 0.0
+        self.shred_armor = 0.0; self.shred_mr = 0.0
+
+    def _cast_q(self, target, time):
+        """Q 액티브: 마법 넛지 + 방어력·마저 %감소 디버프(감소→관통 순서). [H-KOG-4]"""
+        idx = self.q_level - 1
+        q_magic = self.q_base[idx] + 0.9 * self.total_ap
+        # 셔레드: 기존 디버프 복원 후 재적용(중첩 금지)
+        if self.shred_target is not None:
+            self._clear_shred()
+        pct = self.q_shred_pct[idx]
+        d_arm = target.armor * pct
+        d_mr = target.magic_resist * pct
+        target.armor -= d_arm
+        target.magic_resist -= d_mr
+        self.shred_target = target; self.shred_end_time = time + self.q_shred_dur
+        self.shred_armor = d_arm; self.shred_mr = d_mr
+        self.cooldowns_remaining["q"] = self.apply_haste_to_cooldown(7.0)
+        self.cast_spell(time)
+        return 0.0, q_magic
+
+    def _cast_e(self, time):
+        """E 공허진흙: 마법 넛지. [H-KOG-4]"""
+        idx = self.e_level - 1
+        e_magic = self.e_base[idx] + 0.65 * self.total_ap
+        self.cooldowns_remaining["e"] = self.apply_haste_to_cooldown(12.0)
+        self.cast_spell(time)
+        return 0.0, e_magic
+
+    def _cast_r(self, target, time):
+        """R: (base + 0.75·추가AD + apMin·AP) × 잃은체력 배율. [H-KOG-5]
+
+        배율: 대상 HP≤40% → 2.0, 그 외 1 + (5/6)·잃은체력비율(40%HP서 1.5 도달).
+        """
+        idx = self.r_level - 1
+        bonus_ad = max(0.0, self.total_ad - self.base_attack_ad)
+        base = self.r_base[idx] + self.r_bonus_ad * bonus_ad + self.r_ap[idx] * self.total_ap
+        hp_ratio = target.current_hp / target.max_hp if target.max_hp > 0 else 1.0
+        if hp_ratio <= 0.40:
+            mult = 2.0
+        else:
+            mult = 1.0 + (5.0 / 6.0) * (1.0 - hp_ratio)
+        self.cooldowns_remaining["r"] = self.apply_haste_to_cooldown(self.r_cd[idx])
+        self.cast_spell(time); self.cast_ultimate(time)
+        return 0.0, base * mult

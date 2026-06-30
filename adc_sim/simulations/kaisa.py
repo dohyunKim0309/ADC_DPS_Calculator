@@ -172,13 +172,14 @@ def get_kaisa_4core_top1_build():
         return _KAISA_4CORE_TOP1_CACHE
 
     # simulation_kaisa 메인 연구 조건 기준(4코어 비교용)
-    core1_candidates = ["kraken", "storm", "yuntal", "statikk"]
-    core2_candidates = ["guinsoo", "terminus", "pd", "bot", "yuntal", "storm"]
+    # core1/core2 풀 통일: (기존 core1 ∪ core2) + nashor/ie/c44 추가 → 1·2코어 동일 풀
+    core1_candidates = ["kraken", "storm", "yuntal", "statikk", "guinsoo", "terminus", "pd", "bot", "nashor", "ie", "c44"]
+    core2_candidates = ["kraken", "storm", "yuntal", "statikk", "guinsoo", "terminus", "pd", "bot", "nashor", "ie", "c44"]
     core3_candidates = ["nashor", "guinsoo", "terminus", "pd", "bot", "storm", "ie", "ldr", "kraken"]
     core4_candidates = ["ie", "ldr", "mortal", "terminus", "bot", "guinsoo", "storm", "nashor", "rabadon", "shadowflame", "kraken", "pd"]
 
     ctrl1_core4_combo = tuple(sorted(["kraken", "guinsoo", "nashor", "terminus"]))
-    ctrl2_core4_combo = tuple(sorted(["kraken", "guinsoo", "terminus", "pd"]))
+    ctrl2_core4_combo = tuple(sorted(["kraken", "guinsoo", "pd", "ie"]))
     pen_exclusive = {"terminus", "ldr", "mortal"}
 
     ad_by_key = {}
@@ -260,6 +261,18 @@ def get_kaisa_4core_top1_build():
             dedupe_best_by_key[dedupe_key] = r
     rows_dedup = list(dedupe_best_by_key.values())
 
+    # 컨트롤은 dedup 재정렬(초반 DPG 최대 순서)이 아니라 사용자 정의 순서(크라켄 1코어)로 고정 (main script와 동일).
+    # DPS는 장착 '집합'에만 의존하므로 재정렬은 1코어 아이템만 바꾼다 → baseline 1코어를 크라켄으로 되돌림.
+    canonical_control_order = {
+        "CTRL 1": ("kraken", "guinsoo", "nashor", "terminus"),
+        "CTRL 2": ("kraken", "guinsoo", "pd", "ie"),
+    }
+    rows_dedup = [r for r in rows_dedup if not r["is_control"]]
+    for _cpath in canonical_control_order.values():
+        _cands = [r for r in rows if tuple(r["path"]) == _cpath]
+        if _cands:
+            rows_dedup.append(max(_cands, key=lambda r: sum(dedupe_weight_raw[i] * r["dpg"][i] for i in range(4))))
+
     # baseline control (weighted DPG 5:4:3:3 최대)
     core_weight_raw = [5.0, 4.0, 3.0, 3.0]
     weight_sum = sum(core_weight_raw)
@@ -307,8 +320,9 @@ def get_kaisa_4core_top1_build():
 if __name__ == "__main__":
     print("\n=== Kai'Sa Build Path Power Spike (Q/W instant cast + Auto Attack, 1->2->3->4 Core + 5C extension) ===")
 
-    core1_candidates = ["kraken", "storm", "yuntal", "statikk"]
-    core2_candidates = ["guinsoo", "terminus", "pd", "bot", "yuntal", "storm"]
+    # core1/core2 풀 통일: (기존 core1 ∪ core2) + nashor/ie/c44 추가 → 1·2코어 동일 풀
+    core1_candidates = ["kraken", "storm", "yuntal", "statikk", "guinsoo", "terminus", "pd", "bot", "nashor", "ie", "c44"]
+    core2_candidates = ["kraken", "storm", "yuntal", "statikk", "guinsoo", "terminus", "pd", "bot", "nashor", "ie", "c44"]
     core3_candidates = ["nashor", "guinsoo", "terminus", "pd", "bot", "storm", "ie", "ldr", "kraken"]
     core4_candidates = ["ie", "ldr", "mortal", "terminus", "bot", "guinsoo", "storm", "nashor", "rabadon", "shadowflame", "kraken", "pd"]
     core5_candidates = ["kraken", "nashor", "guinsoo", "terminus", "shadowflame", "pd", "rabadon", "storm", "shieldbow", "ie", "ldr"]
@@ -324,6 +338,7 @@ if __name__ == "__main__":
         "bot": "Bot",
         "nashor": "Nashor",
         "ie": "IE",
+        "c44": "C44",
         "ldr": "LDR",
         "mortal": "Mortal",
         "rabadon": "Rabadon",
@@ -332,10 +347,11 @@ if __name__ == "__main__":
     }
 
     # 대조군(4코어 기준)
-    # CTRL 1: Krk-Gui-Nashor-Terminus + (ShadowFlame/Rabadon 중 강한 5코어)
-    # CTRL 2: Krk-Gui-Terminus-PD + IE(5코어)
+    # CTRL 1: Krk-Gui-Nashor-Terminus (+ ShadowFlame 5코어)
+    # CTRL 2: Krk-Gui-PD-IE (+ Terminus 5코어)
+    # 랭킹 baseline은 4코어 집합 기준; 5코어는 표/그래프에 top2 옵션으로 표시(핀 고정 아님)
     ctrl1_core4_combo = tuple(sorted(["kraken", "guinsoo", "nashor", "terminus"]))
-    ctrl2_core4_combo = tuple(sorted(["kraken", "guinsoo", "terminus", "pd"]))
+    ctrl2_core4_combo = tuple(sorted(["kraken", "guinsoo", "pd", "ie"]))
 
     all_paths = []
     seen_paths = set()
@@ -447,13 +463,24 @@ if __name__ == "__main__":
     all_results = list(results)
     results = dedupe_rows(all_results)
 
+    # 컨트롤은 dedup 재정렬(초반 가중 DPG 최대 순서)이 아니라 사용자 정의 순서(크라켄 1코어)로 고정한다.
+    # 근거: DPS는 장착 '집합'에만 의존 → 재정렬은 1코어 아이템만 바꾼다. baseline 1코어가 크라켄이어야
+    #       "크라켄 선행 빌드의 1코어 상대 DPG = 0%"가 성립한다(2~4코어 집합은 순서 무관 동일).
+    CANONICAL_CONTROL_ORDER = {
+        "CTRL 1": ("kraken", "guinsoo", "nashor", "terminus"),
+        "CTRL 2": ("kraken", "guinsoo", "pd", "ie"),
+    }
+    results = [r for r in results if not r["is_control"]]
+    for _cpath in CANONICAL_CONTROL_ORDER.values():
+        _cands = [r for r in all_results if tuple(r["path"][:4]) == _cpath]
+        if _cands:
+            # 같은 4코어+패키지면 1~4코어 DPG 동일(5코어 무관) → 4코어 가중 최대(=최적 패키지) 1개 선택
+            results.append(max(_cands, key=lambda r: sum(dedupe_weight_raw[i] * r["dpg"][i] for i in range(4))))
+
     print(
-        "\nPower Spike Paths Used "
-        f"({len(results)} total, yuntal-position-sensitive + no-yuntal best-order-by-5:4:3:3)"
+        f"\nPower Spike Paths Used: {len(results)} builds "
+        "(yuntal-position-sensitive + no-yuntal best-order-by-5:4:3:3, controls fixed to canonical order)"
     )
-    for idx, r in enumerate(results, start=1):
-        c1, c2, c3, c4, c5 = r["path"]
-        print(f"{idx:03d}. {item_short[c1]}-{item_short[c2]}-{item_short[c3]}-{item_short[c4]}-{item_short[c5]}")
 
     # 랭킹 기준:
     # 대조군 중 최강 빌드의 코어별 DPS/1000g를 baseline으로 두고,
@@ -464,7 +491,7 @@ if __name__ == "__main__":
 
     control_results = [r for r in results if r["is_control"]]
 
-    # CTRL 1은 ShadowFlame 버전과 Rabadon 버전 중 더 강한 것 1개만 대조군으로 유지
+    # 컨트롤 행은 위에서 사용자 정의 순서로 고정됨 → 라벨별 1개(최적 패키지)만 baseline 후보로 남는다
     ctrl1_rows = [r for r in control_results if r["control_label"] == "CTRL 1"]
     ctrl2_rows = [r for r in control_results if r["control_label"] == "CTRL 2"]
     filtered_controls = []
@@ -537,7 +564,7 @@ if __name__ == "__main__":
     ranked_main = ranked
     control_build_text = {
         "CTRL 1": "Krk-Gui-Nashor-Terminus",
-        "CTRL 2": "Krk-Gui-Terminus-PD",
+        "CTRL 2": "Krk-Gui-PD-IE",
     }
 
     def trim_text(text, width):
