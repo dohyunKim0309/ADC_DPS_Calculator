@@ -99,5 +99,10 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 - 변경 절차·승인은 **`AGENTS.md`** 가 정본(특히: 최소 변경·무단 리팩터 금지, 가정/구조 변경 시 사전 승인).
 - `docs/assumptions.md`, `docs/architecture.md`는 `AGENTS.md`가 참조하지만 **아직 미생성**된 예약 문서다. **만들기 전에 사용자에게 확인**할 것.
 
+### Git·IDE 위생 — `.idea/` 등 로컬 설정은 절대 트랙 금지
+- **`.idea/`(PyCharm)·`.venv/`·생성물(`results/`·`reports/`)은 `.gitignore` 대상 — 절대 커밋/트랙하지 말 것**(로컬·재생성 가능). `.idea/`는 재구조화 커밋 `5e4189f`에서 추적 해제됨.
+- **⚠️ 근본 함정**: 재구조화 *이전* 옛 커밋(예: `afa4a7b`)은 아직 `.idea/`를 트랙한다 → 그 커밋으로 `git checkout`하면 옛 `.idea/`가 워킹트리에 풀렸다가 이후(추적해제) 커밋으로 넘어갈 때 git이 삭제 → **사용자의 PyCharm 인터프리터/모듈/run-config 소실**(증상: "PyCharm에서 바로 실행 안 됨"). 실제 사고: 머지 중 stale local main 체크아웃→ff.
+- **규칙**: ① `.idea/`를 트랙하던 옛 커밋/브랜치로 `git checkout` 금지 — 히스토리는 `git fetch` + `git log/show/diff <ref>`로만 검사. ② 머지 전 로컬 타깃 브랜치를 먼저 origin과 동기화(`git fetch && git branch -f main origin/main`)해 stale 스냅샷 체크아웃 방지(round-trip 체크아웃 최소화). ③ 망가지면 `.idea/` 재생성(`misc.xml` SDK=프로젝트 `.venv`, `.iml` content root=repo root, `modules.xml`; `workspace.xml`은 보존).
+
 ## 이 문서 유지
 구조·핵심 개념·갱신 흐름이 바뀌면 이 `CLAUDE.md`도 같이 갱신한다(특히 챔피언/시뮬 파일 추가, 랭킹 지표·컨트롤 빌드 변경, 새 아이템 키 규약). 오래된 안내는 함정이 된다.
