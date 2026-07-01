@@ -133,7 +133,7 @@ def _build_compare_export_rows(rows, variant):
     flat_rows = []
     summary_rows = []
     for row in rows:
-        winner = max(row["stats"].items(), key=lambda kv: kv[1]["dpg"])[0]
+        winner = max(row["stats"].items(), key=lambda kv: kv[1]["dps"])[0]
         summary_rows.append({"variant": variant, "core": row["core"], "winner": winner})
         for champ_name, stat in row["stats"].items():
             flat_rows.append({
@@ -307,16 +307,16 @@ def export_compare_reports(top1_rows, basic_rows):
 def compare_builds():
     """Run cross-champion Top1/Basic comparisons and optionally export them."""
     print("[Info] Loading Ashe top1 from simulation_ashe 4-core ranking...")
-    ashe_top1 = get_ashe_4core_top1_build()
+    ashe_top1 = get_ashe_4core_top1_build(rank_by="dps")
     print("[Info] Loading Yunara top1 from simulation_yunara 4-core ranking (단일 대상/tc=1 기준)...")
-    yunara_top1 = get_yunara_4core_top1_build(target_count=1)
+    yunara_top1 = get_yunara_4core_top1_build(target_count=1, rank_by="dps")
     ashe_path = ashe_top1["path"]
     yunara_path = yunara_top1["path"]
     print("[Info] Loading KaiSa top1 from simulation_kaisa 4-core ranking...")
-    kaisa_top1 = get_kaisa_4core_top1_build()
+    kaisa_top1 = get_kaisa_4core_top1_build(rank_by="dps")
     kaisa_path = kaisa_top1["path"]
     print("[Info] Loading Corki top1 from simulation_corki 4-core ranking (can take some time)...")
-    corki_top1 = get_corki_4core_top1_build()
+    corki_top1 = get_corki_4core_top1_build(rank_by="dps")
     corki_path = corki_top1["path"]
     corki_shoe = corki_top1["shoe"]
     corki_rune = corki_top1["rune"]
@@ -349,7 +349,7 @@ def compare_builds():
     )
     print(
         f"- CogMaw : [{cogmaw_best.get('pkg_label','?')}] {'-'.join(cogmaw_best['path'])} / {cogmaw_best['rune_label']}+CutDown "
-        f"(룬 무관 최강; LT·PtA 중 절대 weighted-DPG 우위)"
+        f"(룬 무관 최강; LT·PtA 중 절대 weighted-DPS 우위)"
     )
     print(
         f"- Vayne  : [{vayne_best.get('pkg_label','?')}] {'-'.join(vayne_best['path'])} / LT+CutDown "
