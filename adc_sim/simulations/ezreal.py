@@ -1,6 +1,7 @@
 from adc_sim.champion import Ezreal, Target
 from adc_sim.engine import run_simulation
 from adc_sim.runes import Conqueror, LethalTempo, CutDown
+from adc_sim.settings import CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL
 from adc_sim.data.items_registry import create_item_from_key
 from adc_sim.data.items_data import DORAN_OPTIONS, DORAN_SHORT
 import matplotlib.pyplot as plt
@@ -141,8 +142,8 @@ def _iter_paths():
 
 
 if __name__ == "__main__":
-    print("\n=== Ezreal 4-Core Efficiency (DPG vs Control, 5:4:3:3, W/E 제외) ===")
-    w1, w2, w3, w4 = 5.0, 4.0, 3.0, 3.0
+    print(f"\n=== Ezreal 4-Core Efficiency (DPG vs Control, {CORE_WEIGHTS_LABEL}, W/E 제외) ===")
+    w1, w2, w3, w4 = CORE_WEIGHTS_RAW
     wsum = w1 + w2 + w3 + w4
     results = []
     for rune_key in RUNE_CANDIDATES:
@@ -178,7 +179,7 @@ if __name__ == "__main__":
     ranked = sorted(results, key=lambda r: r["score"], reverse=True)
     print(f"Control: {control_row['label']} | "
           f"1C {cd[0]:.2f}, 2C {cd[1]:.2f}, 3C {cd[2]:.2f}, 4C {cd[3]:.2f} DPG")
-    print("\nTop 30 (rank by weighted relative DPG, 5:4:3:3)")
+    print(f"\nTop 30 (rank by weighted relative DPG, {CORE_WEIGHTS_LABEL})")
     print("RK | BUILD                                                    | 1C DPS/ΔDPG% | 2C | 3C | 4C | SCORE")
     print("-" * 140)
     top_n = min(30, len(ranked))

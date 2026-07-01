@@ -4,7 +4,7 @@ from datetime import datetime
 
 import matplotlib.pyplot as plt
 
-from adc_sim.settings import get_result_export_settings
+from adc_sim.settings import get_result_export_settings, CORE_WEIGHTS_RAW
 from adc_sim.simulations.ashe import (
     simulate_ashe_core_path,
     get_ashe_4core_top1_build,
@@ -81,10 +81,10 @@ def _simulate_compare_stat(champ_name, cfg, core_tier):
 
 
 def _best_pkg_cfg(champ_name, path):
-    """주어진 (챔프, path)를 정배 패키지 A/B 중 4코어 weighted-DPG(5:4:3:3) 최적으로 평가해
+    """주어진 (챔프, path)를 정배 패키지 A/B 중 4코어 weighted-DPG(1:1:1:1) 최적으로 평가해
     패키지 설정(doran/boots/rune_as/pkg_label) 반환. basic 비교를 개별 sim(컨트롤이 최적 패키지를
     고름)과 일치시키기 위함. Corki/CogMaw 는 자체 패키지 메커니즘이라 이 헬퍼를 쓰지 않는다."""
-    weights = [5.0, 4.0, 3.0, 3.0]
+    weights = list(CORE_WEIGHTS_RAW)
     best_cfg, best_w = None, -1.0
     for pkg in ADC_PACKAGES:
         probe = {"path": path, "doran": pkg["doran"], "boots": pkg["boots"],
@@ -124,7 +124,7 @@ def _build_compare_export_rows(rows, variant):
     flat_rows = []
     summary_rows = []
     for row in rows:
-        winner = max(row["stats"].items(), key=lambda kv: kv[1]["dpg"])[0]
+        winner = max(row["stats"].items(), key=lambda kv: kv[1]["dps"])[0]
         summary_rows.append({"variant": variant, "core": row["core"], "winner": winner})
         for champ_name, stat in row["stats"].items():
             flat_rows.append({
@@ -297,16 +297,16 @@ def export_compare_reports(top1_rows, basic_rows):
 def compare_builds():
     """Run cross-champion Top1/Basic comparisons and optionally export them."""
     print("[Info] Loading Ashe top1 from simulation_ashe 4-core ranking...")
-    ashe_top1 = get_ashe_4core_top1_build()
+    ashe_top1 = get_ashe_4core_top1_build(rank_by="dps")
     print("[Info] Loading Yunara top1 from simulation_yunara 4-core ranking (단일 대상/tc=1 기준)...")
-    yunara_top1 = get_yunara_4core_top1_build(target_count=1)
+    yunara_top1 = get_yunara_4core_top1_build(target_count=1, rank_by="dps")
     ashe_path = ashe_top1["path"]
     yunara_path = yunara_top1["path"]
     print("[Info] Loading KaiSa top1 from simulation_kaisa 4-core ranking...")
-    kaisa_top1 = get_kaisa_4core_top1_build()
+    kaisa_top1 = get_kaisa_4core_top1_build(rank_by="dps")
     kaisa_path = kaisa_top1["path"]
     print("[Info] Loading Corki top1 from simulation_corki 4-core ranking (can take some time)...")
-    corki_top1 = get_corki_4core_top1_build()
+    corki_top1 = get_corki_4core_top1_build(rank_by="dps")
     corki_path = corki_top1["path"]
     corki_shoe = corki_top1["shoe"]
     corki_rune = corki_top1["rune"]
@@ -337,7 +337,7 @@ def compare_builds():
     )
     print(
         f"- CogMaw : [{cogmaw_best.get('pkg_label','?')}] {'-'.join(cogmaw_best['path'])} / {cogmaw_best['rune_label']}+CutDown "
-        f"(룬 무관 최강; LT·PtA 중 절대 weighted-DPG 우위)"
+        f"(룬 무관 최강; LT·PtA 중 절대 weighted-DPS 우위)"
     )
     print()
 

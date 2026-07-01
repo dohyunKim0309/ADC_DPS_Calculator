@@ -17,6 +17,7 @@ from adc_sim.items import (
     RabadonsDeathcap, Shadowflame, ImmortalShieldbow,
 )
 from adc_sim.runes import LethalTempo, CutDown
+from adc_sim.settings import CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL
 from adc_sim.engine import run_simulation
 
 
@@ -162,14 +163,13 @@ def is_kaisa_w_evolved_at_core(full_path, core_tier=4, include_ap_400_component=
     return False
 
 
-_KAISA_4CORE_TOP1_CACHE = None
+_KAISA_4CORE_TOP1_CACHE = {}  # rank_by -> top1 dict
 
 
-def get_kaisa_4core_top1_build():
+def get_kaisa_4core_top1_build(rank_by="dpg"):
     """Return the ranked 4-core Kai'Sa top1 build with control metadata."""
-    global _KAISA_4CORE_TOP1_CACHE
-    if _KAISA_4CORE_TOP1_CACHE is not None:
-        return _KAISA_4CORE_TOP1_CACHE
+    if rank_by in _KAISA_4CORE_TOP1_CACHE:
+        return _KAISA_4CORE_TOP1_CACHE[rank_by]
 
     # simulation_kaisa 메인 연구 조건 기준(4코어 비교용)
     # core1/core2 풀 통일: (기존 core1 ∪ core2) + nashor/ie/c44 추가 → 1·2코어 동일 풀
@@ -243,7 +243,7 @@ def get_kaisa_4core_top1_build():
             })
 
     # main script와 동일한 4코어 중복 규칙 (윤탈 위치 민감)
-    dedupe_weight_raw = [5.0, 4.0, 3.0, 3.0]
+    dedupe_weight_raw = list(CORE_WEIGHTS_RAW)
     for r in rows:
         r["dedupe_eff"] = sum(dedupe_weight_raw[i] * r["dpg"][i] for i in range(4))
 
@@ -273,12 +273,13 @@ def get_kaisa_4core_top1_build():
         if _cands:
             rows_dedup.append(max(_cands, key=lambda r: sum(dedupe_weight_raw[i] * r["dpg"][i] for i in range(4))))
 
-    # baseline control (weighted DPG 5:4:3:3 최대)
-    core_weight_raw = [5.0, 4.0, 3.0, 3.0]
+    # baseline control (weighted DPG 1:1:1:1 최대)
+    core_weight_raw = list(CORE_WEIGHTS_RAW)
     weight_sum = sum(core_weight_raw)
     core_weights = [w / weight_sum for w in core_weight_raw]
     for r in rows_dedup:
         r["weighted_dpg"] = sum(core_weights[i] * r["dpg"][i] for i in range(4))
+        r["weighted_dps"] = sum(core_weights[i] * r["y"][i] for i in range(4))
 
     control_rows = [r for r in rows_dedup if r["is_control"]]
     ctrl1_rows = [r for r in control_rows if r["control_label"] == "CTRL 1"]
@@ -301,20 +302,23 @@ def get_kaisa_4core_top1_build():
             core_rel_pct.append(ratio_pct)
         r["rel_dpg_score"] = sum(core_weights[i] * core_rel_pct[i] for i in range(4))
 
-    ranked = sorted(rows_dedup, key=lambda r: r["rel_dpg_score"], reverse=True)
+    sort_key = (lambda r: r["weighted_dps"]) if rank_by == "dps" else (lambda r: r["rel_dpg_score"])
+    ranked = sorted(rows_dedup, key=sort_key, reverse=True)
     top1 = ranked[0]
-    _KAISA_4CORE_TOP1_CACHE = {
+    result = {
         "path": top1["path"],
         "doran": top1["doran"],
         "boots": top1["boots"],
         "rune_as": top1["rune_as"],
         "pkg_label": top1["pkg_label"],
         "score": top1["rel_dpg_score"],
+        "weighted_dps": top1["weighted_dps"],
         "control_path": best_control["path"],
         "control_pkg": best_control["pkg_label"],
         "total_paths_tested": len(all_paths),
     }
-    return _KAISA_4CORE_TOP1_CACHE
+    _KAISA_4CORE_TOP1_CACHE[rank_by] = result
+    return result
 
 
 if __name__ == "__main__":
@@ -430,8 +434,8 @@ if __name__ == "__main__":
 
     # 중복 조합 처리 규칙(4코어 평가 기준)
     # 1) 윤탈 포함 + 윤탈 위치가 다르면 서로 다른 빌드로 취급
-    # 2) 1이 아니면서 조합이 같고 순서만 다르면, 5:4:3:3 효율 최고 1개만 유지
-    dedupe_weight_raw = [5.0, 4.0, 3.0, 3.0]
+    # 2) 1이 아니면서 조합이 같고 순서만 다르면, 1:1:1:1 효율 최고 1개만 유지
+    dedupe_weight_raw = list(CORE_WEIGHTS_RAW)
 
     for r in results:
         dpg = []
@@ -479,13 +483,13 @@ if __name__ == "__main__":
 
     print(
         f"\nPower Spike Paths Used: {len(results)} builds "
-        "(yuntal-position-sensitive + no-yuntal best-order-by-5:4:3:3, controls fixed to canonical order)"
+        f"(yuntal-position-sensitive + no-yuntal best-order-by-{CORE_WEIGHTS_LABEL}, controls fixed to canonical order)"
     )
 
     # 랭킹 기준:
     # 대조군 중 최강 빌드의 코어별 DPS/1000g를 baseline으로 두고,
-    # 각 빌드의 상대 비율(부호 있는 %)을 5:4:3:3 가중 평균한 값(%)
-    core_weight_raw = [5.0, 4.0, 3.0, 3.0]
+    # 각 빌드의 상대 비율(부호 있는 %)을 1:1:1:1 가중 평균한 값(%)
+    core_weight_raw = list(CORE_WEIGHTS_RAW)
     weight_sum = sum(core_weight_raw)
     core_weights = [w / weight_sum for w in core_weight_raw]
 
@@ -623,7 +627,7 @@ if __name__ == "__main__":
 
     print(
         f"\nTop {len(output_rows)} Rows: Top {top_n} + All Controls "
-        f"(Rel DPG Score: control 대비 코어별 DPG 비율(×100) 가중 평균, 5:4:3:3)"
+        f"(Rel DPG Score: control 대비 코어별 DPG 비율(×100) 가중 평균, {CORE_WEIGHTS_LABEL})"
     )
     col_build = 34
     col_ctrl = 24

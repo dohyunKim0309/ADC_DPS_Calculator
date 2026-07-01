@@ -4,6 +4,7 @@ from adc_sim.runes import LethalTempo, PressTheAttack, CutDown
 from adc_sim.engine import run_simulation
 from adc_sim.data.items_registry import create_item_from_key
 from adc_sim.data.items_data import ADC_PACKAGES
+from adc_sim.settings import CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL
 
 # 코어 단계별 고정 타겟 (Ashe/KaiSa 시뮬과 동일)
 CORE_TARGET_STATS = {
@@ -66,10 +67,10 @@ def simulate_cogmaw_core_path(full_path, core_tier, doran_key="doranblade",
 
 # 컨트롤(베이스라인) = 실전 메타 빌드 — 모든 빌드 RelDPG 를 '메타 대비'로 측정. 풀에 존재해야 함.
 CONTROL_PATH = ("guinsoo", "navori", "terminus", "wit")
-_COGMAW_TOP1_CACHE = {}  # keystone_cls → top1 dict (룬별 캐시)
+_COGMAW_TOP1_CACHE = {}  # (keystone_cls, rank_by) → top1 dict (룬·랭킹기준별 캐시)
 
 
-def get_cogmaw_4core_top1_build(keystone_cls=LethalTempo):
+def get_cogmaw_4core_top1_build(keystone_cls=LethalTempo, rank_by="dpg"):
     """Return the ranked 4-core Cog'Maw top1 build (주어진 keystone 룬) with control metadata.
 
     Control = CONTROL_PATH (실전 메타 빌드 guinsoo-navori-terminus-wit). Raises RuntimeError
@@ -77,8 +78,8 @@ def get_cogmaw_4core_top1_build(keystone_cls=LethalTempo):
     [H-KOG-6] yuntal dedup uses simple sorted-combo (no position sensitivity) because
     cogmaw v1 makes no yuntal-crit distinction per build position.
     """
-    if keystone_cls in _COGMAW_TOP1_CACHE:
-        return _COGMAW_TOP1_CACHE[keystone_cls]
+    if (keystone_cls, rank_by) in _COGMAW_TOP1_CACHE:
+        return _COGMAW_TOP1_CACHE[(keystone_cls, rank_by)]
 
     core1_candidates = ["guinsoo", "kraken", "nashor", "terminus", "bot", "rfc", "statikk", "storm", "pd", "ie", "yuntal", "shadowflame", "dawn", "navori", "wit"]
     core2_candidates = ["guinsoo", "kraken", "nashor", "terminus", "bot", "rfc", "statikk", "storm", "pd", "ie", "yuntal", "shadowflame", "void", "dawn", "navori", "wit"]
@@ -105,8 +106,8 @@ def get_cogmaw_4core_top1_build(keystone_cls=LethalTempo):
                     seen_paths.add(path)
                     all_paths.append(path)
 
-    dedupe_weight_raw = [5.0, 4.0, 3.0, 3.0]
-    core_weight_raw = [5.0, 4.0, 3.0, 3.0]
+    dedupe_weight_raw = list(CORE_WEIGHTS_RAW)
+    core_weight_raw = list(CORE_WEIGHTS_RAW)
     weight_sum = sum(core_weight_raw)
     core_weights = [w / weight_sum for w in core_weight_raw]
 
@@ -149,6 +150,7 @@ def get_cogmaw_4core_top1_build(keystone_cls=LethalTempo):
 
     for r in rows_dedup:
         r["weighted_dpg"] = sum(core_weights[i] * r["dpg"][i] for i in range(4))
+        r["weighted_dps"] = sum(core_weights[i] * r["y"][i] for i in range(4))
 
     control_rows = [r for r in rows_dedup if r["is_control"]]
     if not control_rows:
@@ -166,7 +168,8 @@ def get_cogmaw_4core_top1_build(keystone_cls=LethalTempo):
         ]
         r["rel_dpg_score"] = sum(core_weights[i] * core_rel_pct[i] for i in range(4))
 
-    ranked = sorted(rows_dedup, key=lambda r: r["rel_dpg_score"], reverse=True)
+    sort_key = (lambda r: r["weighted_dps"]) if rank_by == "dps" else (lambda r: r["rel_dpg_score"])
+    ranked = sorted(rows_dedup, key=sort_key, reverse=True)
     top1 = ranked[0]
     result = {
         "path": top1["path"],
@@ -176,6 +179,7 @@ def get_cogmaw_4core_top1_build(keystone_cls=LethalTempo):
         "pkg_label": top1["pkg_label"],
         "score": top1["rel_dpg_score"],
         "weighted_dpg": top1["weighted_dpg"],          # 절대 파워(룬 간 비교용)
+        "weighted_dps": top1["weighted_dps"],          # 절대 DPS 가중합(rank_by="dps" 선택 기준)
         "keystone_cls": keystone_cls,
         "control_path": best_control["path"],
         "control_doran": best_control["doran"],
@@ -185,7 +189,7 @@ def get_cogmaw_4core_top1_build(keystone_cls=LethalTempo):
         "control_weighted_dpg": best_control["weighted_dpg"],
         "total_paths_tested": len(all_paths),
     }
-    _COGMAW_TOP1_CACHE[keystone_cls] = result
+    _COGMAW_TOP1_CACHE[(keystone_cls, rank_by)] = result
     return result
 
 
@@ -205,22 +209,22 @@ def build_cogmaw_core_report_meta(full_path, core_tier):
 def get_cogmaw_powercompare_builds():
     """power_compare 연동용 두 빌드 (best, meta) 반환.
 
-    - best: 룬 무관 가장 강한 빌드 — LethalTempo·PressTheAttack top1 중 절대 weighted-DPG 가
-      높은 (빌드, 룬). (룬별 rel-DPG 는 베이스라인이 달라 직접 비교 불가 → 절대 파워로 선택.)
+    - best: 룬 무관 가장 강한 빌드 — LethalTempo·PressTheAttack 각각 DPS 1:1:1:1 top1(rank_by="dps")
+      중 절대 weighted-DPS 가 높은 (빌드, 룬). power_compare 가 DPS 기준 비교라 DPS 로 선택.
     - meta: 실전 메타 빌드(CONTROL_PATH=guinsoo-navori-terminus-wit) under 치속(LethalTempo),
       최적 패키지(= LT 랭킹의 control 행).
     각 dict: path / keystone_cls / doran / boots / rune_as / pkg_label / rune_label / weighted_dpg.
     주의: LT·PtA 두 룬 전수 랭킹을 돌리므로 느리다(룬별 캐시됨).
     """
-    lt = get_cogmaw_4core_top1_build(LethalTempo)
-    pta = get_cogmaw_4core_top1_build(PressTheAttack)
-    src = lt if lt["weighted_dpg"] >= pta["weighted_dpg"] else pta
+    lt = get_cogmaw_4core_top1_build(LethalTempo, rank_by="dps")
+    pta = get_cogmaw_4core_top1_build(PressTheAttack, rank_by="dps")
+    src = lt if lt["weighted_dps"] >= pta["weighted_dps"] else pta
     best = {
         "path": src["path"], "keystone_cls": src["keystone_cls"],
         "doran": src["doran"], "boots": src["boots"], "rune_as": src["rune_as"],
         "pkg_label": src["pkg_label"],
         "rune_label": "LT" if src["keystone_cls"] is LethalTempo else "PtA",
-        "weighted_dpg": src["weighted_dpg"],
+        "weighted_dps": src["weighted_dps"],
     }
     meta = {  # LT 결과의 control = 메타 빌드(최적 패키지)
         "path": lt["control_path"], "keystone_cls": LethalTempo,
@@ -232,10 +236,10 @@ def get_cogmaw_powercompare_builds():
 
 
 def _run_cogmaw_ranking(keystone_cls, keystone_label, all_paths, item_short, ctrl_combo):
-    """주어진 keystone(룬)으로 전 빌드 시뮬→dedup→5:4:3:3 rel-DPG 랭킹→표 출력. ranked 반환.
+    """주어진 keystone(룬)으로 전 빌드 시뮬→dedup→1:1:1:1 rel-DPG 랭킹→표 출력. ranked 반환.
     룬-2배: __main__ 이 치명적 속도·집중공격 두 번 호출. 보조룬은 CutDown 고정(simulate 내부)."""
-    dedupe_weight_raw = [5.0, 4.0, 3.0, 3.0]
-    core_weight_raw = [5.0, 4.0, 3.0, 3.0]
+    dedupe_weight_raw = list(CORE_WEIGHTS_RAW)
+    core_weight_raw = list(CORE_WEIGHTS_RAW)
     weight_sum = sum(core_weight_raw)
     core_weights = [w / weight_sum for w in core_weight_raw]
 
@@ -278,7 +282,7 @@ def _run_cogmaw_ranking(keystone_cls, keystone_label, all_paths, item_short, ctr
         rows_dedup.append(max(ctrl_cands, key=lambda r: r["dedupe_eff"]))
 
     print(f"\n{'=' * 28}  RUNE: {keystone_label}  {'=' * 28}")
-    print(f"Builds after dedup (best-order-by-5:4:3:3, control fixed to canonical): {len(rows_dedup)}")
+    print(f"Builds after dedup (best-order-by-{CORE_WEIGHTS_LABEL}, control fixed to canonical): {len(rows_dedup)}")
 
     for r in rows_dedup:
         r["weighted_dpg"] = sum(core_weights[i] * r["dpg"][i] for i in range(4))
@@ -332,7 +336,7 @@ def _run_cogmaw_ranking(keystone_cls, keystone_label, all_paths, item_short, ctr
     )
     print(
         f"\nTop {len(output_rows)} Rows: Top {top_n} + Controls "
-        f"(RelDPG = control-normalised weighted DPG ×100, 5:4:3:3)"
+        f"(RelDPG = control-normalised weighted DPG ×100, {CORE_WEIGHTS_LABEL})"
     )
     print(header)
     print("-" * len(header))
