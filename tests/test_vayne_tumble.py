@@ -2,6 +2,15 @@
 from adc_sim.champion import Vayne, Target, ANIM_CANCEL_CLIP
 
 
+def test_q_auto_enabled_by_default_guards_both_default_lines():
+    # Task3 회귀 가드: Q 오토 기본 True — __init__ 과 init_combat_state(_defaults) 두 라인 모두.
+    # 어느 한 라인이라도 False 로 되돌아가면 이 테스트가 실패해야 한다.
+    fresh = Vayne(level=11, q_level=5)
+    assert fresh.auto_skill_enabled["q"] is True          # __init__ 기본
+    fresh.init_combat_state()                              # skill_plan 미지정 → _defaults 적용
+    assert fresh.auto_skill_enabled["q"] is True           # init_combat_state 기본
+
+
 def test_empowered_attack_scales_p_base():
     v = Vayne(level=11, q_level=5, w_level=5)   # Q5 → ratio 1.15
     v.init_combat_state()
