@@ -54,6 +54,7 @@ class Champion:
         self.magic_pen_flat = 0 # 마법 관통력 (고정)
         self.ability_haste = 0.0 # 스킬 가속
         self._combat_time = 0.0
+        self._last_damage_amp = 1.0  # [H-VAYNE-W] 직전 평타의 일반 대미지증폭(mod_factor). 은화살 true 증폭용 stash.
 
         # 마나 자원 (Phase 0). total_mana = 풀; current_mana = 전투 중 현재값.
         self.current_mana = 0.0
@@ -360,6 +361,7 @@ class Champion:
 
         # 일반 증폭 계수 적용 (예: 1.15)
         mod_factor = 1.0 + damage_multiplier
+        self._last_damage_amp = mod_factor  # [H-VAYNE-W] 값 저장만(반환 불변). Vayne 은화살이 읽어 true 증폭.
 
         phys_base *= mod_factor
         magic_base *= mod_factor
