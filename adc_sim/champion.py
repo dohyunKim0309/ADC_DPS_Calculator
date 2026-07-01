@@ -2066,7 +2066,7 @@ class Vayne(Champion):
         self.cooldowns_remaining = {"q": 0.0, "r": 0.0}
         self.manual_skill_casts = []
         self.manual_skill_index = 0
-        self.auto_skill_enabled = {"q": False, "r": False}   # Task 3/4 에서 활성
+        self.auto_skill_enabled = {"q": True, "r": False}
         self.auto_skill_order = ["q"]
 
     # ---- W 은화살 (+ Q 강화 훅): get_one_hit_damage 오버라이드 ----
@@ -2112,7 +2112,7 @@ class Vayne(Champion):
         self.cooldowns_remaining = {"q": 0.0, "r": 0.0}
         plan = skill_plan or {}
         auto_cfg = plan.get("auto_cast", {})
-        _defaults = {"q": False, "r": False}   # Task 3/4 에서 q/r 기본 True 로 전환
+        _defaults = {"q": True, "r": False}   # Q 오토 기본 활성(R 은 매뉴얼 t=0)
         self.auto_skill_enabled = {k: auto_cfg.get(k, _defaults[k]) for k in ("q", "r")}
         self.auto_skill_order = list(plan.get("auto_order", ["q"]))
         self.manual_skill_casts = sorted(list(plan.get("manual_casts", [])), key=lambda x: x[0])
