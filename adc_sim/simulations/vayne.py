@@ -217,7 +217,7 @@ def get_vayne_powercompare_builds():
         "rune_as": best_src["rune_as"], "pkg_label": best_src["pkg_label"],
         "weighted_dps": best_src["weighted_dps"],
     }
-    dpg_src = get_vayne_4core_top1_build(rank_by="dpg")
+    dpg_src = best_src  # control metadata is identical across rank_by; avoid a second ~30s ranking
     meta = {
         "path": dpg_src["control_path"], "doran": dpg_src["control_doran"],
         "boots": dpg_src["control_boots"], "rune_as": dpg_src["control_rune_as"],
