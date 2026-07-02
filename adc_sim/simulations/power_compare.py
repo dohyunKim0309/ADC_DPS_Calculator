@@ -31,6 +31,11 @@ from adc_sim.simulations.vayne import (
     get_vayne_powercompare_builds,
     build_vayne_core_report_meta,
 )
+from adc_sim.simulations.jinx import (
+    simulate_jinx_core_path,
+    get_jinx_powercompare_builds,
+    build_jinx_core_report_meta,
+)
 from adc_sim.runes import LethalTempo
 from adc_sim.data.items_data import DORAN_SHORT, ADC_PACKAGES
 
@@ -73,6 +78,10 @@ def _simulate_compare_stat(champ_name, cfg, core_tier):
     elif champ_name == "Vayne":
         dps, gold = simulate_vayne_core_path(cfg["path"], core_tier, **pkg_kw)
         meta = build_vayne_core_report_meta(cfg["path"], core_tier)
+        choice = cfg.get("pkg_label", "Bld+Zerk")
+    elif champ_name == "Jinx":
+        dps, gold = simulate_jinx_core_path(cfg["path"], core_tier, **pkg_kw)
+        meta = build_jinx_core_report_meta(cfg["path"], core_tier)
         choice = cfg.get("pkg_label", "Bld+Zerk")
     else:
         raise ValueError(f"Unknown champion config: {champ_name}")
@@ -133,7 +142,7 @@ def _build_compare_export_rows(rows, variant):
     flat_rows = []
     summary_rows = []
     for row in rows:
-        winner = max(row["stats"].items(), key=lambda kv: kv[1]["dps"])[0]
+        winner = max(row["stats"].items(), key=lambda kv: kv[1]["dpg"])[0]
         summary_rows.append({"variant": variant, "core": row["core"], "winner": winner})
         for champ_name, stat in row["stats"].items():
             flat_rows.append({
@@ -186,6 +195,7 @@ def _plot_combined_compare(top1_rows, basic_rows):
         "Corki": "#2ca02c",
         "CogMaw": "#17becf",
         "Vayne": "#d62728",
+        "Jinx": "#e377c2",
     }
 
     plt.figure(figsize=(13, 8))
@@ -194,7 +204,7 @@ def _plot_combined_compare(top1_rows, basic_rows):
         (top1_rows, "Top1", "-", "o", 0.95),
         (basic_rows, "Basic", "--", "s", 0.9),
     ]:
-        for champ in ("Ashe", "Yunara", "KaiSa", "Corki", "CogMaw", "Vayne"):
+        for champ in ("Ashe", "Yunara", "KaiSa", "Corki", "CogMaw", "Vayne", "Jinx"):
             xs = [row["stats"][champ]["gold"] for row in rows]
             ys = [row["stats"][champ]["dps"] for row in rows]
             # 선택된 옵션(패키지 A/B 또는 코르키 도란) — variant 내 챔프당 고정이라 첫 행에서 취득
@@ -307,16 +317,16 @@ def export_compare_reports(top1_rows, basic_rows):
 def compare_builds():
     """Run cross-champion Top1/Basic comparisons and optionally export them."""
     print("[Info] Loading Ashe top1 from simulation_ashe 4-core ranking...")
-    ashe_top1 = get_ashe_4core_top1_build(rank_by="dps")
+    ashe_top1 = get_ashe_4core_top1_build()
     print("[Info] Loading Yunara top1 from simulation_yunara 4-core ranking (단일 대상/tc=1 기준)...")
-    yunara_top1 = get_yunara_4core_top1_build(target_count=1, rank_by="dps")
+    yunara_top1 = get_yunara_4core_top1_build(target_count=1)
     ashe_path = ashe_top1["path"]
     yunara_path = yunara_top1["path"]
     print("[Info] Loading KaiSa top1 from simulation_kaisa 4-core ranking...")
-    kaisa_top1 = get_kaisa_4core_top1_build(rank_by="dps")
+    kaisa_top1 = get_kaisa_4core_top1_build()
     kaisa_path = kaisa_top1["path"]
     print("[Info] Loading Corki top1 from simulation_corki 4-core ranking (can take some time)...")
-    corki_top1 = get_corki_4core_top1_build(rank_by="dps")
+    corki_top1 = get_corki_4core_top1_build()
     corki_path = corki_top1["path"]
     corki_shoe = corki_top1["shoe"]
     corki_rune = corki_top1["rune"]
@@ -327,6 +337,8 @@ def compare_builds():
     cogmaw_best, cogmaw_meta = get_cogmaw_powercompare_builds()
     print("[Info] Loading Vayne top1/meta from simulation_vayne (can take some time)...")
     vayne_best, vayne_meta = get_vayne_powercompare_builds()
+    print("[Info] Loading Jinx top1/meta from simulation_jinx (can take some time)...")
+    jinx_best, jinx_meta = get_jinx_powercompare_builds()
 
     print("\n=== Cross-Champion Power Compare (1~4 Core) ===")
     print("Configured Top1 builds (Ashe/Yunara/KaiSa: 정배 패키지 A=Bld+Zerk+핏빛길 / B=Bow+Glut+민첩함 중 최적):")
@@ -353,7 +365,11 @@ def compare_builds():
     )
     print(
         f"- Vayne  : [{vayne_best.get('pkg_label','?')}] {'-'.join(vayne_best['path'])} / LT+CutDown "
-        f"(top1 by DPS)"
+        f"(top1 by DPG)"
+    )
+    print(
+        f"- Jinx   : [{jinx_best.get('pkg_label','?')}] {'-'.join(jinx_best['path'])} / LT+CutDown "
+        f"(minigun +130% AS + W nuke; top1 by DPG)"
     )
     print()
 
@@ -379,6 +395,8 @@ def compare_builds():
                    **_pkg_cfg(cogmaw_best, {"keystone_cls": cogmaw_best["keystone_cls"], "rune_label": cogmaw_best["rune_label"]})},
         # 베인 = 절대 weighted-DPS top1
         "Vayne": {"path": vayne_best["path"], **_pkg_cfg(vayne_best)},
+        # 징크스 = RelDPG top1(미니건+W); Get Excited OFF
+        "Jinx": {"path": jinx_best["path"], **_pkg_cfg(jinx_best)},
     }
     top1_rows = _print_compare_section("Cross-Champion Top1 Compare (1~4 Core)", top1_configs)
 
@@ -400,6 +418,8 @@ def compare_builds():
                    **_pkg_cfg(cogmaw_meta, {"keystone_cls": cogmaw_meta["keystone_cls"], "rune_label": cogmaw_meta["rune_label"]})},
         # 베인 = 컨트롤(botrk-guinsoo-terminus-pd, 최적 패키지)
         "Vayne": {"path": vayne_meta["path"], **_pkg_cfg(vayne_meta)},
+        # 징크스 = 컨트롤(kraken-pd-ie-ldr, 최적 패키지)
+        "Jinx": {"path": jinx_meta["path"], **_pkg_cfg(jinx_meta)},
     }
 
     print("Configured Basic builds (Ashe/Yunara/KaiSa: 정배 A/B 중 최적 — 개별 파일 기준과 일치):")
@@ -410,6 +430,7 @@ def compare_builds():
     print(f"- Corki  : {'-'.join(corki_basic_path)} + {corki_basic_shoe} / {corki_basic_rune}+CutDown (requested base build)")
     print(f"- CogMaw : {'-'.join(cogmaw_meta['path'])} + {cogmaw_meta.get('boots','glutton')} / {cogmaw_meta['rune_label']}+CutDown (실전 메타 빌드 / 치속)")
     print(f"- Vayne  : [{vayne_meta.get('pkg_label','?')}] {'-'.join(vayne_meta['path'])} + {vayne_meta.get('boots','berserker')} / LT+CutDown (control botrk-guinsoo-terminus-pd)")
+    print(f"- Jinx   : [{jinx_meta.get('pkg_label','?')}] {'-'.join(jinx_meta['path'])} + {jinx_meta.get('boots','berserker')} / LT+CutDown (control kraken-pd-ie-ldr)")
     print()
     basic_rows = _print_compare_section("Cross-Champion Basic Build Compare (1~4 Core)", basic_configs)
 

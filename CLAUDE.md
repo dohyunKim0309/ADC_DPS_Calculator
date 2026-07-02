@@ -15,6 +15,7 @@
   - `.venv/bin/python -m adc_sim.simulations.ashe` — 애쉬 4코어 랭킹(+1~3코어 5:4:3 별도 랭킹)
   - `… adc_sim.simulations.yunara` / `.kaisa` / `.corki` / `.ezreal` / `.cogmaw`
   - `… adc_sim.simulations.vayne` — 베인 4코어 랭킹(온힛+크리 풀, 컨트롤 botrk-guinsoo-terminus-pd)
+  - `… adc_sim.simulations.jinx` — 징크스 4코어 랭킹(미니건+W, Get Excited OFF, Ashe 크리풀·컨트롤 kraken-pd-ie-ldr 재사용)
   - `… adc_sim.simulations.power_compare` — 챔피언 간 Top1/Basic 비교
   - `… adc_sim.simulations.case_ranking ["케이스필터"]` — **애쉬 케이스 기반 빌드 랭킹**(비-방어 전 아이템 전수조사, 14케이스). 표만 출력(그래프/`plt.show()` 없음)이라 **헤드리스 안전**. 인자로 케이스명 부분일치 필터(예: `"alldps/nohc"`). 전체 ~45초.
 - 각 시뮬 모듈은 `if __name__ == "__main__"` 진입점을 가진다. (`case_ranking` 제외) 실행 끝에 `plt.show()`가 **블로킹**으로 창을 띄운다(헤드리스/자동화 시 유의). import만으로는 안 뜸 — 실행 코드가 main 가드 안에 있어 import 스모크 테스트는 안전.
@@ -29,7 +30,7 @@ adc_sim/                  ← 소스 패키지 (코어 모듈끼리는 서로 im
   champion.py ─ Target(더미), Champion 베이스(데미지 모델·스탯·이벤트 인터페이스) + 챔피언 서브클래스
   engine.py   ─ run_simulation(): 이벤트 루프 / calculate_mitigation(): 방저·관통 적용
   simulations/
-    ashe.py · yunara.py · kaisa.py · corki.py · ezreal.py · cogmaw.py ─ 빌드 탐색·랭킹·리포트·그래프 (챔피언별)
+    ashe.py · yunara.py · kaisa.py · corki.py · ezreal.py · cogmaw.py · vayne.py · jinx.py ─ 빌드 탐색·랭킹·리포트·그래프 (챔피언별)
     power_compare.py ─ 각 챔피언 Top1을 모아 교차 비교 (simulations만 `adc_sim.*` import)
     sim_settings.py ─ 케이스랭킹 '모델' 설정 데이터(가중 프로파일/축/제약/풀 제외세트/컨트롤 오프닝). 순수 설정·헬퍼(코어 import 안 함)
     case_ranking.py ─ 케이스 기반 빌드 랭킹 엔진(집합 메모이즈 시뮬 + 14케이스 전수). 현재 Ashe 전용(레벨표/타깃은 ashe.py 재사용)
@@ -66,7 +67,7 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 
 ### 마나 자원 모델 (전 챔피언)
 - **마나는 하드 바운드 소비 자원**(`champion` 베이스): 전투 시작 `current_mana=total_mana` 충전, 매 스텝 `mana_regen_per_sec=(base_mp5+성장+아이템mp5)/5` 재생, 스킬은 `can_afford`/`spend_mana` 게이트 — **비용>현재마나면 시전 불가**(off-CD라도 충전까지 대기; `get_time_to_next_skill_event`가 `_afford_in`으로 0-dt 스핀 방지). 평타는 무비용. (K개 처치 지속딜 동안 마나 지속·재생, init 1회.)
-- 챔프별 `base_mana/mana_growth/base_mp5/mp5_growth/mana_cost{skill}`는 각 서브클래스(`champion.py`, DDragon 16.13.1 교차검증). 캐스트형(KaiSa/Corki/Ezreal/CogMaw)=`mana_cost` 게이트, 버프형(Ashe/Yunara)=`activate_q` 게이트, Jinx=데이터만.
+- 챔프별 `base_mana/mana_growth/base_mp5/mp5_growth/mana_cost{skill}`는 각 서브클래스(`champion.py`, DDragon 16.13.1 교차검증). 캐스트형(KaiSa/Corki/Ezreal/CogMaw/Jinx)=`mana_cost` 게이트, 버프형(Ashe/Yunara)=`activate_q` 게이트.
 
 ### Cog'Maw (`champion.py` CogMaw + `simulations/cogmaw.py`) [수치 4소스 교차검증·가설은 spec 참조]
 - **W 바이오아케인**(쿨관리 버프 8s/17s/마나40): 활성 중 평타가 **대상 최대체력 `[3,3.75,4.5,5.25,6]%` + 0.00015·AP 마법 온힛**(`get_champion_onhit`→구인수 2배·증폭·Shadowflame 적용). **Q 패시브**=공속 상수, **Q 액티브**=마법넛지+방/마저 %셔레드(Corki E식), **E**=마법넛지, **R**=`(base+0.75추가AD+apMin·AP)×잃은체력배율`(≤40%HP ×2) + 마나램프(40→400)로 자연 스로틀. ad_growth=3.11.
@@ -91,6 +92,17 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
   (탐색공간 필수·없으면 RuntimeError). 5:4:3:3 가중 RelDPG, ADC_PACKAGES A/B, K=2. **power_compare 통합**:
   top1=절대 DPS 최강, basic=컨트롤(실전 기준). 스킬 선마 Q→W→E, R=lvl 기반. E(콘뎀)·패시브(이속) 미모델.
 
+### Jinx (`champion.py` Jinx + `simulations/jinx.py`) [수치 3소스 교차검증 patch16.13·가설 태그]
+- **미니건 크리 평타 캐리 + W 넛지**. Q 스위쳐루=미니건(평타 최대 3스택 +130% 공속, 2.5s 감쇠)/로켓 토글 —
+  **단일 더미선 로켓 전략적 열세(미니건 스택 상실 + 20마나/발)라 미니건 고정**. base AD 59(**+3.25**, CDragon+Wiki+Meraki),
+  AS 0.625(ratio 0.625, +1%/lvl — V26.01 너프). 마나 260(+50)/mp5 6.7(+1.0). 공속캡은 엔진 3.0(의도된 값 — 건드리지 말 것).
+- **W(Zap!) 엔진 스킬 넛지**(Ezreal 미러): 마나[40~60]+쿨[8~4] 게이트, **base[10~210] + 140% *추가*AD 순수 물리**
+  (크리·평타온힛 미적용 = `get_on_skill_hit_damage` 미오버라이드; manamune류 스킬훅만 base가 처리). `_cast_w`. 테스트 `tests/test_jinx.py`.
+- **Get Excited! 패시브 미모델(OFF, 사용자 합의)** — 처치 조건이라 더미 시뮬엔 안 뜸 + 타 챔프 조건부 스틸과 일관.
+  → **Jinx 저평가**(리셋/AoE/궁 강점이 모델 밖; Vayne 사거리 캐비엇의 거울상). E·R 미모델.
+- **전용 sim**: vayne.py 미러. Ashe 크리풀(`_build_ashe_4core_all_paths`)·컨트롤 `kraken-pd-ie-ldr` 재사용,
+  스킬 선마 로컬 계산(Q선마). power_compare 7번째 챔프 연동(best=RelDPG top1, meta=컨트롤). Top1=`윤탈-C44-LDR-무한`(Ashe와 동일 크리코어).
+
 ## 패치마다 갱신 (이 프로젝트의 일상)
 새 패치가 나오면 보통 아래를 손본 뒤 시뮬을 다시 돌려 랭킹을 갱신한다. **변경 전 `AGENTS.md`의 승인 절차를 따른다.**
 1. **아이템 스탯/가격 변경** → `adc_sim/data/items_data.py`의 `ITEMS[key]`(`stats`/`cost`). 숫자의 단일 출처.
@@ -112,7 +124,7 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 - **유나라 W**(`adc_sim/champion.py`)는 엔진 스킬 이벤트로 모델링: Q활성(초월)이면 강화 W(파멸의 궤적, 궁 레벨 색인 160/320/480 +1.2추가AD +0.75AP, 쿨5s), 비활성이면 기본 W(심판의 궤적, W 레벨 색인, 적중+6초 DoT, 쿨10s). **`[Hypothesis]` 나무위키 수치(CDragon API 미검증)**. W 레벨/궁 레벨은 `CORE_YUNARA_LEVELS`의 `w_level`/`r_level`(Q선마→W차선마 가정). `Yunara(w_enabled=False)`로 W 이전 동작 복귀(검증/AB용). 평타는 안 끊는 가정(스킬/평타 타이머 독립).
 - **방어구 관통**은 `add_item`에서 곱연산으로 합치지만 주석상 "단순화" 영역 — 정밀화하려면 모델 가정부터 합의.
 - **가설은 가설로 표시**: 모델 안에 이미 가설 코드가 있다(예: `adc_sim/champion.py`의 유나라 패시브 재귀 증폭, Shadowflame 상호작용). 새 메커니즘은 `AGENTS.md` 4장대로 `Hypothesis/Experimental/Unsupported`로 명시하고 단정하지 말 것.
-- **Jinx는 전용 시뮬 파일이 없다** — `adc_sim/simulations/ashe.py` 안의 레퍼런스 빌드로만 등장.
+- **Jinx 전용 시뮬 `simulations/jinx.py` 있음**(미니건+W, §Jinx 참조). `ashe.py` 안의 옛 `simulate_jinx_reference_path`(Ashe 대비 그래프용)도 잔존하나, 랭킹/파워비교 정본은 `jinx.py`.
 - 정의돼 있는 챔피언: Ashe / Jinx / Yunara / KaiSa / Corki / Ezreal / Cog'Maw / **Vayne**. 룬: LethalTempo / PressTheAttack / CoupDeGrace / CutDown / Conqueror. **LT·PtA 온힛 보너스는 적응형**(`runes._adaptive_split`: bonus AP>bonus AD 면 마법, 아니면 물리) — AP 빌드(코그모 등)는 마법으로 들어가 마저 경감·마관(공허/그불)·Shadowflame 증폭 경로를 탄다. 물리 ADC는 그대로 물리.
 
 ## 거버넌스

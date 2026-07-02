@@ -1,53 +1,53 @@
-from adc_sim.champion import Vayne, Target
+"""Jinx 4코어 빌드 랭킹 — 미니건(+130% 정상상태) 평타 + W(Zap!) 주기 넛지. K=2.
+
+vayne.py 미러. 크리 ADC 라 Ashe 공유 인프라 재사용:
+  · 후보 풀 = `_build_ashe_4core_all_paths()` (크리/공속 풀)
+  · 컨트롤 = kraken-pd-ie-ldr (타 크리 ADC 와 일관; 탐색공간 필수)
+  · 레벨표 = CORE_JINX_LEVELS (챔프 레벨만; 스킬레벨은 로컬 표준 선마)
+
+모델 가정(사용자 합의 2026-07):
+  · Q 로켓(Fishbones)은 단일 더미서 전략적 열세(미니건 스택 상실 + 20마나/발) → 미니건 고정.
+  · Get Excited! 패시브 미모델(OFF) — 처치 조건이라 더미 시뮬엔 안 뜸. Jinx 실제 한타
+    스노우볼 고점은 이 모델이 과소평가함(모델 밖 상방).
+  · 공속캡: 엔진 3.0(실제 롤 2.5) — 전 챔프 공통, 별도 결정사항. Jinx 는 base/ratio 0.625 라
+    현실 빌드서 ~2.5 근처에 머묾(캡 갭은 공속 과다 빌드서만 소폭).
+
+Run: .venv/bin/python -m adc_sim.simulations.jinx
+"""
+from adc_sim.champion import Jinx, Target
 import matplotlib.pyplot as plt
 from adc_sim.runes import LethalTempo, CutDown
 from adc_sim.engine import run_simulation
 from adc_sim.data.items_registry import create_item_from_key
 from adc_sim.data.items_data import ADC_PACKAGES
 from adc_sim.settings import CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL
-from adc_sim.simulations.ashe import build_ashe_like_core_report_meta
-
-# 코어 단계별 고정 타겟 (Ashe/KaiSa/CogMaw 시뮬과 동일)
-CORE_TARGET_STATS = {
-    1: {"hp": 1700, "armor": 50, "mr": 25},
-    2: {"hp": 1900, "armor": 70, "mr": 30},
-    3: {"hp": 2400, "armor": 100, "mr": 50},
-    4: {"hp": 2600, "armor": 120, "mr": 70},
-}
-CORE_VAYNE_LEVELS = {1: {"level": 9}, 2: {"level": 11}, 3: {"level": 13}, 4: {"level": 15}}
+from adc_sim.simulations.ashe import (
+    build_ashe_like_core_report_meta, _build_ashe_4core_all_paths,
+    CORE_JINX_LEVELS, build_target_for_core,
+)
 
 
-def build_target_for_core(core_tier):
-    s = CORE_TARGET_STATS[core_tier]
-    return Target(hp=s["hp"], armor=s["armor"], magic_resist=s["mr"],
-                  bonus_hp=max(0, s["hp"] - 1500))
-
-
-def _skill_levels_for_core(core_tier):
-    """스킬 선마 Q→W→E, R=lvl 기반. spec §6 포인트정합표. [H-VAYNE-SKILL]
-    core1(lvl9): q5/w3/r1 · core2(11): q5/w4/r2 · core3(13): q5/w5/r2 · core4(15): q5/w5/e3/r2.
-    (E 는 DPS 미모델 → e_level 은 배열색인 하한 1 로 floor.)"""
-    lvl = CORE_VAYNE_LEVELS[core_tier]["level"]
+def _jinx_skill_levels_for_core(core_tier):
+    """스킬 선마 R>Q>W>E (표준 징크스). Q 선마 → 미니건 +130% 조기 확보.
+    C1(lvl9): q5/w2 · C2(11): q5/w3 · C3(13): q5/w5 · C4(15): q5/w5. E·R 미모델."""
     q = 5
-    w = {1: 3, 2: 4, 3: 5, 4: 5}[core_tier]
-    e = {1: 1, 2: 1, 3: 1, 4: 3}[core_tier]
-    r = 1 if lvl < 11 else (2 if lvl < 16 else 3)
-    return q, w, e, r
+    w = {1: 2, 2: 3, 3: 5, 4: 5}[core_tier]
+    return q, w
 
 
-def simulate_vayne_core_path(full_path, core_tier, doran_key="doranblade",
-                             boots_key="berserker", rune_as_bonus=0.0):
-    """Vayne DPS + total gold for a core timing. R@t=0, Q 쿨마다(마나 바운드). K=2.
+def simulate_jinx_core_path(full_path, core_tier, doran_key="doranblade",
+                            boots_key="berserker", rune_as_bonus=0.0):
+    """Jinx DPS + total gold for a core timing. 미니건 정상상태 평타 + W 쿨마다(마나 바운드). K=2.
 
     full_path: 코어 키 리스트. core_tier: 1~4. doran/boots/rune_as: 패키지.
     반환: (dps, total_cost).
     """
     target = build_target_for_core(core_tier)
-    lvl = CORE_VAYNE_LEVELS[core_tier]["level"]
-    q, w, e, r = _skill_levels_for_core(core_tier)
-    vayne = Vayne(level=lvl, q_level=q, w_level=w, e_level=e, r_level=r)
-    vayne.set_rune(LethalTempo())
-    vayne.set_sub_rune(CutDown())
+    lvl = CORE_JINX_LEVELS[core_tier]["level"]
+    q, w = _jinx_skill_levels_for_core(core_tier)
+    jinx = Jinx(level=lvl, q_level=q, w_level=w, minigun_stacks=3, q_mode="minigun")
+    jinx.set_rune(LethalTempo())
+    jinx.set_sub_rune(CutDown())
 
     items = ([create_item_from_key(doran_key)] if doran_key else []) + [create_item_from_key(boots_key)]
     for key in full_path[:core_tier]:
@@ -61,60 +61,30 @@ def simulate_vayne_core_path(full_path, core_tier, doran_key="doranblade",
     total_cost = 0
     for it in items:
         total_cost += it.cost
-        vayne.add_item(it)
-    vayne.bonus_as_percent += rune_as_bonus
+        jinx.add_item(it)
+    jinx.bonus_as_percent += rune_as_bonus
 
-    skill_plan = {
-        "manual_casts": [(0.0, "r")],          # R t=0 1회
-        "auto_cast": {"q": True, "r": False},  # Q 쿨마다
-        "auto_order": ["q"],
-    }
-    _, dps, _ = run_simulation(vayne, target, verbose=False, skill_plan=skill_plan, respawn_to_full_kills=2)
+    skill_plan = {"auto_cast": {"w": True}}   # W 쿨마다(마나 게이트)
+    _, dps, _ = run_simulation(jinx, target, verbose=False, skill_plan=skill_plan, respawn_to_full_kills=2)
     return dps, total_cost
 
 
-# 컨트롤(베이스라인) = 사용자 확정 실전 온힛+크리 빌드. 탐색공간에 반드시 존재해야 함.
-CONTROL_PATH = ("botrk", "guinsoo", "terminus", "pd")
-_VAYNE_TOP1_CACHE = {}
-
-# 베인 전용 온힛+크리 풀 (spec §6). pen 배타 {ldr, mortal, terminus}.
-CORE1_CANDIDATES = ["botrk", "guinsoo", "kraken", "terminus", "wit", "runaan", "pd",
-                    "rfc", "statikk", "yuntal25", "c44", "storm", "collector"]
-CORE2_CANDIDATES = ["botrk", "guinsoo", "kraken", "terminus", "wit", "runaan", "pd",
-                    "ie", "rfc", "collector", "yuntal25", "statikk"]
-CORE3_CANDIDATES = ["ie", "ldr", "guinsoo", "terminus", "pd", "collector", "wit", "kraken"]
-CORE4_CANDIDATES = ["ie", "ldr", "pd", "runaan", "rfc", "collector", "kraken", "wit", "statikk", "terminus"]
-PEN_EXCLUSIVE = {"terminus", "ldr", "mortal"}
+# 컨트롤(베이스라인) = 크리 ADC 실전 빌드. 탐색공간에 반드시 존재해야 함.
+CONTROL_PATH = ("kraken", "pd", "ie", "ldr")
+_JINX_TOP1_CACHE = {}
 
 ITEM_SHORT = {
-    "botrk": "BotRK", "guinsoo": "Gui", "kraken": "Krk", "terminus": "Terminus",
-    "wit": "Wit's", "runaan": "Runaan", "pd": "PD", "ie": "IE", "ldr": "LDR",
-    "rfc": "RFC", "statikk": "Statikk", "yuntal25": "Yun", "c44": "C44",
-    "storm": "Storm", "collector": "Collector",
+    "kraken": "Krk", "yuntal25": "Yun", "storm": "Storm", "c44": "C44", "bot": "BotRK",
+    "guinsoo": "Gui", "terminus": "Terminus", "pd": "PD", "runaan": "Runaan",
+    "ie": "IE", "ldr": "LDR", "statikk": "Statikk",
 }
 
 
 def _build_all_paths():
-    all_paths, seen = [], set()
-    for c1 in CORE1_CANDIDATES:
-        for c2 in CORE2_CANDIDATES:
-            if len({c1, c2}) < 2:
-                continue
-            for c3 in CORE3_CANDIDATES:
-                for c4 in CORE4_CANDIDATES:
-                    if len({c1, c2, c3, c4}) < 4:
-                        continue
-                    if sum(1 for k in (c1, c2, c3, c4) if k in PEN_EXCLUSIVE) > 1:
-                        continue
-                    path = (c1, c2, c3, c4)
-                    if path in seen:
-                        continue
-                    seen.add(path)
-                    all_paths.append(path)
-    # 컨트롤이 풀에서 안 나오면 강제 삽입(순서 고정)
-    if CONTROL_PATH not in seen:
-        all_paths.append(CONTROL_PATH)
-    return all_paths
+    paths = list(_build_ashe_4core_all_paths())   # 크리/공속 풀 (Ashe 공유)
+    if CONTROL_PATH not in set(paths):
+        paths.append(CONTROL_PATH)
+    return paths
 
 
 def _rank_rows(all_paths):
@@ -131,7 +101,7 @@ def _rank_rows(all_paths):
             kw = dict(doran_key=pkg["doran"], boots_key=pkg["boots"], rune_as_bonus=pkg["rune_as"])
             dps_list, cost_list = [], []
             for tier in range(1, 5):
-                d, c = simulate_vayne_core_path(path, tier, **kw)
+                d, c = simulate_jinx_core_path(path, tier, **kw)
                 dps_list.append(d); cost_list.append(c)
             dpg = [dps_list[i] / (cost_list[i] / 1000.0) if cost_list[i] > 0 else 0.0 for i in range(4)]
             rows.append({
@@ -163,7 +133,7 @@ def _rank_rows(all_paths):
     if not control_rows:
         raise RuntimeError(
             f"Control build {CONTROL_PATH} not found in search space. "
-            "Check candidate pools contain botrk/guinsoo/terminus/pd."
+            "Check Ashe crit pool contains kraken/pd/ie/ldr."
         )
     best_control = max(control_rows, key=lambda r: r["weighted_dpg"])
     baseline_dpg_4 = best_control["dpg"][:4]
@@ -179,10 +149,10 @@ def _rank_rows(all_paths):
     return rows_dedup, best_control
 
 
-def get_vayne_4core_top1_build(rank_by="dpg"):
+def get_jinx_4core_top1_build(rank_by="dpg"):
     """랭킹된 4코어 top1 빌드 + 컨트롤 메타 반환. rank_by: "dpg"(RelDPG) | "dps"(절대 가중DPS)."""
-    if rank_by in _VAYNE_TOP1_CACHE:
-        return _VAYNE_TOP1_CACHE[rank_by]
+    if rank_by in _JINX_TOP1_CACHE:
+        return _JINX_TOP1_CACHE[rank_by]
     rows_dedup, best_control = _rank_rows(_build_all_paths())
     sort_key = (lambda r: r["weighted_dps"]) if rank_by == "dps" else (lambda r: r["rel_dpg_score"])
     ranked = sorted(rows_dedup, key=sort_key, reverse=True)
@@ -196,38 +166,37 @@ def get_vayne_4core_top1_build(rank_by="dpg"):
         "control_boots": best_control["boots"], "control_rune_as": best_control["rune_as"],
         "control_pkg": best_control["pkg_label"], "control_weighted_dpg": best_control["weighted_dpg"],
     }
-    _VAYNE_TOP1_CACHE[rank_by] = result
+    _JINX_TOP1_CACHE[rank_by] = result
     return result
 
 
-def build_vayne_core_report_meta(full_path, core_tier):
+def build_jinx_core_report_meta(full_path, core_tier):
     """직렬화용 리포트 메타(Ashe-like 공용 헬퍼 재사용)."""
-    return build_ashe_like_core_report_meta("Vayne", full_path, core_tier)
+    return build_ashe_like_core_report_meta("Jinx", full_path, core_tier)
 
 
-def get_vayne_powercompare_builds():
+def get_jinx_powercompare_builds():
     """power_compare 연동용 (best, meta).
     - best: RelDPG top1(rank_by="dpg") — power_compare 가 DPG 비교라.
-    - meta: 컨트롤(botrk-guinsoo-terminus-pd, 최적 패키지) — 실전 기준.
+    - meta: 컨트롤(kraken-pd-ie-ldr, 최적 패키지) — 실전 기준.
     각 dict: path/doran/boots/rune_as/pkg_label/weighted_dpg.
     """
-    best_src = get_vayne_4core_top1_build(rank_by="dpg")
+    best_src = get_jinx_4core_top1_build(rank_by="dpg")
     best = {
         "path": best_src["path"], "doran": best_src["doran"], "boots": best_src["boots"],
         "rune_as": best_src["rune_as"], "pkg_label": best_src["pkg_label"],
         "weighted_dpg": best_src["weighted_dpg"],
     }
-    dpg_src = best_src  # control metadata is identical across rank_by; avoid a second ~30s ranking
     meta = {
-        "path": dpg_src["control_path"], "doran": dpg_src["control_doran"],
-        "boots": dpg_src["control_boots"], "rune_as": dpg_src["control_rune_as"],
-        "pkg_label": dpg_src["control_pkg"], "weighted_dpg": dpg_src["control_weighted_dpg"],
+        "path": best_src["control_path"], "doran": best_src["control_doran"],
+        "boots": best_src["control_boots"], "rune_as": best_src["control_rune_as"],
+        "pkg_label": best_src["control_pkg"], "weighted_dpg": best_src["control_weighted_dpg"],
     }
     return best, meta
 
 
 if __name__ == "__main__":
-    print("\n=== Vayne Build Path Power Spike (W/Q auto + R@0, 1->4 Core) ===")
+    print("\n=== Jinx Build Path Power Spike (minigun AA + W auto, 1->4 Core) ===")
     all_paths = _build_all_paths()
     print(f"Total unique paths in search space: {len(all_paths)}")
     rows_dedup, best_control = _rank_rows(all_paths)
@@ -267,7 +236,7 @@ if __name__ == "__main__":
     for r in ctrl_rows:
         lbl = f"[CTRL] {_fmt_build(r)} (RelDPG {r['rel_dpg_score']:.2f})"
         plt.plot(r["x"], r["y"], color="#111111", linewidth=2.8, marker="o", markersize=7, linestyle="--", label=lbl)
-    plt.title("Vayne Power Spike: 4-Core Ranked Top5 + Control")
-    plt.xlabel("Total Gold at Core Timing"); plt.ylabel("DPS (AA + W silverbolts + Q, R@0)")
+    plt.title("Jinx Power Spike: 4-Core Ranked Top5 + Control")
+    plt.xlabel("Total Gold at Core Timing"); plt.ylabel("DPS (minigun AA + W)")
     plt.grid(True, alpha=0.3); plt.legend(loc="best", fontsize=8); plt.tight_layout()
     plt.show()

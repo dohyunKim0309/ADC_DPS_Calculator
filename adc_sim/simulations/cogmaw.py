@@ -209,22 +209,22 @@ def build_cogmaw_core_report_meta(full_path, core_tier):
 def get_cogmaw_powercompare_builds():
     """power_compare 연동용 두 빌드 (best, meta) 반환.
 
-    - best: 룬 무관 가장 강한 빌드 — LethalTempo·PressTheAttack 각각 DPS 1:1:1:1 top1(rank_by="dps")
-      중 절대 weighted-DPS 가 높은 (빌드, 룬). power_compare 가 DPS 기준 비교라 DPS 로 선택.
+    - best: 룬 무관 가장 강한 빌드 — LethalTempo·PressTheAttack top1 중 절대 weighted-DPG 가
+      높은 (빌드, 룬). (룬별 rel-DPG 는 베이스라인이 달라 직접 비교 불가 → 절대 파워로 선택.)
     - meta: 실전 메타 빌드(CONTROL_PATH=guinsoo-navori-terminus-wit) under 치속(LethalTempo),
       최적 패키지(= LT 랭킹의 control 행).
     각 dict: path / keystone_cls / doran / boots / rune_as / pkg_label / rune_label / weighted_dpg.
     주의: LT·PtA 두 룬 전수 랭킹을 돌리므로 느리다(룬별 캐시됨).
     """
-    lt = get_cogmaw_4core_top1_build(LethalTempo, rank_by="dps")
-    pta = get_cogmaw_4core_top1_build(PressTheAttack, rank_by="dps")
-    src = lt if lt["weighted_dps"] >= pta["weighted_dps"] else pta
+    lt = get_cogmaw_4core_top1_build(LethalTempo)
+    pta = get_cogmaw_4core_top1_build(PressTheAttack)
+    src = lt if lt["weighted_dpg"] >= pta["weighted_dpg"] else pta
     best = {
         "path": src["path"], "keystone_cls": src["keystone_cls"],
         "doran": src["doran"], "boots": src["boots"], "rune_as": src["rune_as"],
         "pkg_label": src["pkg_label"],
         "rune_label": "LT" if src["keystone_cls"] is LethalTempo else "PtA",
-        "weighted_dps": src["weighted_dps"],
+        "weighted_dpg": src["weighted_dpg"],
     }
     meta = {  # LT 결과의 control = 메타 빌드(최적 패키지)
         "path": lt["control_path"], "keystone_cls": LethalTempo,

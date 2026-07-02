@@ -519,8 +519,14 @@ class Ashe(Champion):
 
 
 class Jinx(Champion):
-    def __init__(self, level=1, q_level=5, minigun_stacks=3, q_mode="minigun"):
-        # 요청 스펙 기준: AD 59(+3.15), AS 0.625(+1%)
+    # W 재장전(Zap!) — 순수 스킬 넛지(물리, 크리·평타온힛 미적용). [검증 patch16.13: CDragon raw + Wiki V26.04 + Meraki]
+    W_BASE = [10.0, 60.0, 110.0, 160.0, 210.0]   # 랭크별 기본 물리피해
+    W_BONUS_AD_RATIO = 1.40                        # +140% 추가AD(bonus AD — total_ad 아님)
+    W_CD = [8.0, 7.0, 6.0, 5.0, 4.0]               # 랭크별 쿨다운(초, AH 적용)
+    W_MANA = [40.0, 45.0, 50.0, 55.0, 60.0]        # 랭크별 마나
+
+    def __init__(self, level=1, q_level=5, w_level=5, minigun_stacks=3, q_mode="minigun"):
+        # 검증값(패치16.13 · CDragon raw + Wiki V26.04 + Meraki 3중교차): AD 59(+3.25), AS 0.625(+1% — V26.01 너프)
         super().__init__(
             name="Jinx",
             base_ad=59,
@@ -529,10 +535,11 @@ class Jinx(Champion):
             as_growth=1.0,
             base_range=525,
             level=level,
-            ad_growth=3.15,
+            ad_growth=3.25,
         )
 
         self.q_level = max(1, min(5, q_level))
+        self.w_level = max(1, min(5, w_level))
         self.q_mode = q_mode
         self.minigun_stacks = max(0, min(3, minigun_stacks))
         self.minigun_stack_duration = 2.5
@@ -547,6 +554,8 @@ class Jinx(Champion):
         self.mana_growth = 50.0
         self.base_mp5 = 6.7
         self.mp5_growth = 1.0
+        # W(Zap!) 마나 게이트 — 엔진 스킬 인터페이스가 소비.
+        self.mana_cost = {"w": self.W_MANA[self.w_level - 1]}
 
     def get_total_bonus_as_percent(self):
         # 파워스파이크 비교에서는 유지딜 기준으로 Q 모드를 고정 반영.
@@ -576,6 +585,62 @@ class Jinx(Champion):
         if self.q_mode == "fishbones":
             p_base *= self.fishbones_ad_multiplier
         return p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit
+
+    # ── 엔진 스킬 인터페이스: W(Zap!) 주기 넛지 (마나+쿨 게이트, Ezreal 미러) ──
+    # Get Excited! 패시브는 미모델(OFF, 사용자 합의): 처치 조건이라 더미 시뮬엔 안 뜸.
+    def init_combat_state(self, skill_plan=None):
+        super().init_combat_state(skill_plan)
+        self.cooldowns_remaining = {"w": 0.0}
+        plan = skill_plan or {}
+        auto_cfg = plan.get("auto_cast", {})
+        self.auto_skill_enabled = {"w": auto_cfg.get("w", True)}
+
+    def advance_combat_time(self, delta_time, current_time, target):
+        super().advance_combat_time(delta_time, current_time, target)
+        if delta_time > 0:
+            for k in self.cooldowns_remaining:
+                self.cooldowns_remaining[k] = max(0.0, self.cooldowns_remaining[k] - delta_time)
+
+    def _can_cast(self, name):
+        if not self.can_afford(self.mana_cost.get(name, 0.0)):
+            return False
+        return self.cooldowns_remaining.get(name, float("inf")) <= 1e-9
+
+    def get_time_to_next_skill_event(self, current_time):
+        eps = 1e-9
+        candidates = []
+        for name, enabled in self.auto_skill_enabled.items():
+            if enabled:
+                candidates.append(max(0.0, self.cooldowns_remaining.get(name, float("inf")),
+                                      self._afford_in(self.mana_cost.get(name, 0.0))))
+        valid = [dt for dt in candidates if dt >= -eps]
+        return max(0.0, min(valid)) if valid else float("inf")
+
+    def pop_due_skill_events(self, current_time, target):
+        events = []
+        for name, enabled in self.auto_skill_enabled.items():
+            if enabled and self._can_cast(name):
+                events.append(self._cast_skill(name, target, current_time))
+        return events
+
+    def _cast_skill(self, name, target, time):
+        self.spend_mana(self.mana_cost.get(name, 0.0))
+        if name == "w":
+            p, m = self._cast_w(time)
+            return ("w", p, m, True)
+        return (name, 0.0, 0.0, False)
+
+    def _cast_w(self, time):
+        """W Zap! — 순수 물리 넛지. 계수 140% 추가AD(bonus AD). 크리·평타온힛 미적용
+        (get_on_skill_hit_damage 미오버라이드 → base가 manamune류 스킬훅만 처리).
+        방어/방관 경감은 엔진 calculate_mitigation."""
+        self._combat_time = time
+        idx = self.w_level - 1
+        bonus_ad = max(0.0, self.total_ad - self.base_attack_ad)
+        phys = self.W_BASE[idx] + (self.W_BONUS_AD_RATIO * bonus_ad)
+        self.cooldowns_remaining["w"] = self.apply_haste_to_cooldown(self.W_CD[idx])
+        self.cast_spell(time)   # 주문검 장전(있으면); 없으면 no-op
+        return phys, 0.0
 
 
 class Yunara(Champion):
