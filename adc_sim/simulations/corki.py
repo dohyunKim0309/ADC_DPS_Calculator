@@ -24,6 +24,7 @@ from adc_sim.items import (
 )
 from adc_sim.engine import run_simulation
 from adc_sim.runes import Conqueror, LethalTempo, CutDown
+from adc_sim.settings import CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL
 import matplotlib.pyplot as plt
 import random
 
@@ -179,8 +180,11 @@ def build_corki_core_report_meta(full_path, shoe_key, rune_key, core_tier):
     }
 
 
-def get_corki_4core_top1_build():
-    """현재 simulation_corki 랭킹 기준(4코어, 5:4:3:3) top1 빌드 반환."""
+def get_corki_4core_top1_build(rank_by="dpg"):
+    """현재 simulation_corki 랭킹 기준(4코어, 1:1:1:1) top1 빌드 반환.
+
+    rank_by="dpg"(기본)=컨트롤 대비 상대 DPG 가중합 1위, "dps"=원시 DPS 가중합 1위.
+    """
     core12_candidates = [
         "muramana", "trinity", "statikk", "kraken", "guinsoo", "storm",
         "essence", "ie", "collector", "yuntal", "botrk", "terminus",
@@ -251,7 +255,7 @@ def get_corki_4core_top1_build():
                                     "is_control": (path == control_path and shoe == control_shoe and rune_key == control_rune),
                                 })
 
-    w = [5.0, 4.0, 3.0, 3.0]
+    w = list(CORE_WEIGHTS_RAW)
     wsum = sum(w)
 
     # 컨트롤도 도란검/도란활 중 가중 DPG 최대를 baseline 으로
@@ -268,13 +272,15 @@ def get_corki_4core_top1_build():
             rel.append(((r["dpg"][i] / base) * 100.0 - 100.0) if base > 0 else 0.0)
         r["rel_dpg_core"] = rel
         r["score"] = sum(w[i] * rel[i] for i in range(4)) / wsum
+        r["weighted_dps"] = sum(w[i] * r["dps"][i] for i in range(4)) / wsum
 
-    ranked = sorted(results, key=lambda r: r["score"], reverse=True)
+    sort_key = (lambda r: r["weighted_dps"]) if rank_by == "dps" else (lambda r: r["score"])
+    ranked = sorted(results, key=sort_key, reverse=True)
     return ranked[0]
 
 
 if __name__ == "__main__":
-    print("\n=== Corki 4-Core Efficiency (DPG vs Control, 5:4:3:3) ===")
+    print(f"\n=== Corki 4-Core Efficiency (DPG vs Control, {CORE_WEIGHTS_LABEL}) ===")
 
     core12_candidates = [
         "muramana", "trinity", "statikk", "kraken", "guinsoo", "storm",
@@ -353,7 +359,7 @@ if __name__ == "__main__":
                                     "is_control": is_control,
                                 })
 
-    w1, w2, w3, w4 = 5.0, 4.0, 3.0, 3.0
+    w1, w2, w3, w4 = CORE_WEIGHTS_RAW
     wsum = w1 + w2 + w3 + w4
 
     # 컨트롤도 도란검/도란활 중 가중 DPG 최대를 baseline 으로
@@ -382,7 +388,7 @@ if __name__ == "__main__":
         f"1C DPG {ctrl_dpg1:.2f}, 2C DPG {ctrl_dpg2:.2f}, 3C DPG {ctrl_dpg3:.2f}, 4C DPG {ctrl_dpg4:.2f}"
     )
     print(
-        "\nTop 50 (rank by weighted relative DPG, 5:4:3:3)\n"
+        f"\nTop 50 (rank by weighted relative DPG, {CORE_WEIGHTS_LABEL})\n"
         "RK | BUILD                                                    | 1C DPS/ΔDPG% | 2C DPS/ΔDPG% | 3C DPS/ΔDPG% | 4C DPS/ΔDPG% | SCORE"
     )
     print("-" * 152)

@@ -32,6 +32,17 @@ def get_result_export_settings():
 
 
 # ──────────────────────────────────────────────────────────────────────────
+# 코어(1~4) 가중치 — 챔피언 sim 의 top1 빌드 선정·rel-DPG 랭킹 가중평균.
+# 전 챔프 sim(ashe/yunara/kaisa/corki/ezreal/cogmaw)이 이 하나를 import → 여기 한 줄로 전 챔프 적용.
+# [1,1,1,1]=전 코어 동일, [5,4,3,3]=초반(1코어) 편중. 3코어 변형은 CORE_WEIGHTS_RAW[:3].
+# (case_ranking 은 별도 sim_settings.WEIGHT_PROFILES — 여기와 무관.)
+# ──────────────────────────────────────────────────────────────────────────
+CORE_WEIGHTS_RAW = [4.0, 4.0, 3.0, 3.0]
+# 출력 라벨용(예: "1:1:1:1") — CORE_WEIGHTS_RAW 에서 자동 생성되니 가중치 바꾸면 라벨도 따라감.
+CORE_WEIGHTS_LABEL = ":".join(f"{w:g}" for w in CORE_WEIGHTS_RAW)
+
+
+# ──────────────────────────────────────────────────────────────────────────
 # 케이스 기반 코어 빌드 랭킹 — 출력 설정 (Phase B)
 # 케이스/축/가중/제약 등 '모델' 설정은 adc_sim/simulations/sim_settings.py 에 있다.
 # 여기서는 '출력' 정책만 둔다(표시 개수 / 대상 케이스 등). 엔진은 case_ranking.py.

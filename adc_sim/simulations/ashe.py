@@ -10,7 +10,7 @@ from adc_sim.items import (
     Pickaxe, BFSword, ScoutingsSlingshot, LongSword, RecurveBow, Noonquiver, VampiricScepter, HearthboundAxe, Dagger, CloakofAgility,
     EssenceReaver, DemonHunterCrossbow
 )
-from adc_sim.settings import SIMULATION_SETTINGS
+from adc_sim.settings import SIMULATION_SETTINGS, CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL
 from adc_sim.runes import LethalTempo, CutDown
 from adc_sim.engine import run_simulation
 
@@ -192,7 +192,7 @@ def _rank_ashe_like_4core_paths(simulate_core_path_fn):
     control_combo_key = tuple(sorted(("kraken", "pd", "ie", "ldr")))
     all_paths = _build_ashe_4core_all_paths()
 
-    core_weight_raw = [5.0, 4.0, 3.0, 3.0]
+    core_weight_raw = list(CORE_WEIGHTS_RAW)
     weight_sum = sum(core_weight_raw)
     core_weights = [w / weight_sum for w in core_weight_raw]
 
@@ -256,26 +256,31 @@ def _rank_ashe_like_4core_paths(simulate_core_path_fn):
     }
 
 
-_ASHE_4CORE_TOP1_CACHE = None
+_ASHE_4CORE_TOP1_CACHE = {}  # rank_by -> top1 dict
 
 
-def get_ashe_4core_top1_build():
-    global _ASHE_4CORE_TOP1_CACHE
-    if _ASHE_4CORE_TOP1_CACHE is None:
+def get_ashe_4core_top1_build(rank_by="dpg"):
+    if rank_by not in _ASHE_4CORE_TOP1_CACHE:
         ranking = _rank_ashe_like_4core_paths(simulate_ashe_core_path)
-        top1 = ranking["top1"]
-        _ASHE_4CORE_TOP1_CACHE = {
+        core_weight_raw = list(CORE_WEIGHTS_RAW)
+        weight_sum = sum(core_weight_raw)
+        core_weights = [w / weight_sum for w in core_weight_raw]
+        for r in ranking["ranked"]:
+            r["weighted_dps"] = sum(core_weights[i] * r["y"][i] for i in range(4))
+        top1 = max(ranking["ranked"], key=lambda r: r["weighted_dps"]) if rank_by == "dps" else ranking["top1"]
+        _ASHE_4CORE_TOP1_CACHE[rank_by] = {
             "path": top1["base_key"],
             "doran": top1["doran"],
             "boots": top1["boots"],
             "rune_as": top1["rune_as"],
             "pkg_label": top1["pkg_label"],
             "score": top1["rel_dpg_score"],
+            "weighted_dps": top1["weighted_dps"],
             "control_path": ranking["control"]["base_key"],
             "control_pkg": ranking["control"]["pkg_label"],
             "total_paths_tested": ranking["all_paths_count"],
         }
-    return _ASHE_4CORE_TOP1_CACHE
+    return _ASHE_4CORE_TOP1_CACHE[rank_by]
 
 
 # Yunara 의 4코어 top1 랭킹은 adc_sim/simulations/yunara.py 가 정본(자체 표/그래프 포함).
@@ -729,13 +734,13 @@ if __name__ == "__main__":
     base_results = list(base_results.values())
 
     # 상위 빌드 출력 (1~4코어 기준, DPG-only)
-    core_weight_raw = [5.0, 4.0, 3.0, 3.0]
+    core_weight_raw = list(CORE_WEIGHTS_RAW)
     weight_sum = sum(core_weight_raw)
     core_weights = [w / weight_sum for w in core_weight_raw]
 
-    # [추가] 새 순위 기준: 1~3코어 5:4:3 가중 (기존 1~4코어 5:4:3:3 랭킹과 병행)
-    core_weight_raw_3c = [5.0, 4.0, 3.0]
-    weight_sum_3c = sum(core_weight_raw_3c)
+    # [추가] 새 순위 기준: 1~3코어 1:1:1 가중 (기존 1~4코어 1:1:1:1 랭킹과 병행)
+    core_weight_raw_3c = list(CORE_WEIGHTS_RAW[:3])
+    weight_sum_3c = sum(core_weight_raw_3c) or 1.0  # [0,0,0,1] 등 앞3코어 합0 시 0div 방지(3코어 랭킹은 의미↓)
     core_weights_3c = [w / weight_sum_3c for w in core_weight_raw_3c]
 
     control_results = [r for r in base_results if r["is_control"]]
@@ -786,7 +791,7 @@ if __name__ == "__main__":
         ) * 100.0
         res["spike_score"] = res["rel_dpg_score"]
 
-        # [추가] 1~3코어(5:4:3) 상대 DPG 점수 (기존 1~4 점수와 병행 저장)
+        # [추가] 1~3코어(1:1:1) 상대 DPG 점수 (기존 1~4 점수와 병행 저장)
         rel3_1 = (dpg1 / ctrl3_dpg[0]) if ctrl3_dpg[0] > 0 else 0.0
         rel3_2 = (dpg2 / ctrl3_dpg[1]) if ctrl3_dpg[1] > 0 else 0.0
         rel3_3 = (dpg3 / ctrl3_dpg[2]) if ctrl3_dpg[2] > 0 else 0.0
@@ -826,7 +831,7 @@ if __name__ == "__main__":
 
     best_control_rel_dpg = best_control["rel_dpg_score"]
     print(
-        f"\nBest Control Baseline (Weighted Relative 5:4:3:3 over 1~4 Core, DPG-only): "
+        f"\nBest Control Baseline (Weighted Relative {CORE_WEIGHTS_LABEL} over 1~4 Core, DPG-only): "
         f"DPG={best_control_rel_dpg:.2f} "
         f"({best_control['control_label']} / {best_control['label']})"
     )
@@ -894,14 +899,14 @@ if __name__ == "__main__":
             print(line)
 
     print_relative_table(
-        f"Top {total_rows} Rows: Top {top_n} + All Controls (Rel by DPS/1000g ratio, weighted 5:4:3:3 over 1~4 Core)",
+        f"Top {total_rows} Rows: Top {top_n} + All Controls (Rel by DPS/1000g ratio, weighted {CORE_WEIGHTS_LABEL} over 1~4 Core)",
         top20_dpg,
         "rel_dpg_score",
         " REL_DPG%",
         show_dpg_columns=True
     )
 
-    # === [추가] 새 순위: 1~3코어 5:4:3 가중 상대 DPG (기존 1~4 표와 별개로 출력) ===
+    # === [추가] 새 순위: 1~3코어 1:1:1 가중 상대 DPG (기존 1~4 표와 별개로 출력) ===
     best_control_3c_score = best_control_3c["rel_dpg_score_3c"]  # 자기 자신 기준 ≈ 100
     ctrl3_y = best_control_3c["y"]
     ctrl3_x = best_control_3c["x"]
@@ -909,15 +914,15 @@ if __name__ == "__main__":
     top_3c_rows = ranked_by_3c[:top_n_3c]
 
     print(
-        f"\n[NEW] Best Control Baseline (Weighted Relative 5:4:3 over 1~3 Core, DPG-only): "
+        f"\n[NEW] Best Control Baseline (Weighted Relative {':'.join(f'{w:g}' for w in CORE_WEIGHTS_RAW[:3])} over 1~3 Core, DPG-only): "
         f"DPG={best_control_3c_score:.2f} "
         f"({best_control_3c['control_label']} / {best_control_3c['label']})"
     )
 
     def print_relative_table_3c(title, rows):
-        """[추가] 1~3코어(5:4:3) 가중 상대 DPG 기준 순위 표.
+        """[추가] 1~3코어(1:1:1) 가중 상대 DPG 기준 순위 표.
 
-        기존 print_relative_table(1~4코어 5:4:3:3)는 그대로 두고, 초중반(1~3코어)
+        기존 print_relative_table(1~4코어 1:1:1:1)는 그대로 두고, 초중반(1~3코어)
         골드효율 위주의 새 정렬 결과를 추가로 출력한다. 모델 기반 지표(실측 아님).
         rows: rel_dpg_score_3c 내림차순 상위 행. control_results_3c 를 뒤에 덧붙여 출력.
         """
@@ -961,7 +966,7 @@ if __name__ == "__main__":
     total_rows_3c = top_n_3c + len(control_results_3c)
     print_relative_table_3c(
         f"[NEW] Top {total_rows_3c} Rows: Top {top_n_3c} + All Controls "
-        f"(Rel by DPS/1000g ratio, weighted 5:4:3 over 1~3 Core)",
+        f"(Rel by DPS/1000g ratio, weighted {':'.join(f'{w:g}' for w in CORE_WEIGHTS_RAW[:3])} over 1~3 Core)",
         top_3c_rows,
     )
 

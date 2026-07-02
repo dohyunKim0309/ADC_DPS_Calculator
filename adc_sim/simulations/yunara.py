@@ -211,9 +211,9 @@ ITEM_SHORT = {
 
 CONTROL_COMBO = tuple(sorted(("kraken", "pd", "ie", "ldr")))
 CONTROL_LABEL = "Control Krk-PD-IE-LDR"
-CORE_WEIGHTS_RAW = [5.0, 4.0, 3.0, 3.0]
+from adc_sim.settings import CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL  # 코어 가중치 중앙 config(settings.py)
 CORE_WEIGHTS = [w / sum(CORE_WEIGHTS_RAW) for w in CORE_WEIGHTS_RAW]
-_YUNARA_4CORE_TOP1_CACHE = {}  # target_count -> top1 build summary
+_YUNARA_4CORE_TOP1_CACHE = {}  # (target_count, rank_by) -> top1 build summary
 
 
 def _path_label(path):
@@ -309,16 +309,21 @@ def rank_yunara_4core_paths(target_count=1):
     }
 
 
-def get_yunara_4core_top1_build(target_count=1):
+def get_yunara_4core_top1_build(target_count=1, rank_by="dpg"):
     """Return the cached Yunara 4-core top1 build summary for the given target_count.
 
     target_count=1: 순수 단일 대상 Top1. 2+: 다대상 유효 DPS 기준 Top1(크라켄/루난 업리프트 반영).
-    target_count별로 별도 캐시한다.
+    rank_by="dpg"(기본)=상대 골드효율 가중합 1위, "dps"=원시 DPS 가중합 1위.
+    (target_count, rank_by)별로 별도 캐시한다.
     """
-    cached = _YUNARA_4CORE_TOP1_CACHE.get(target_count)
+    cache_key = (target_count, rank_by)
+    cached = _YUNARA_4CORE_TOP1_CACHE.get(cache_key)
     if cached is None:
         ranked_data = rank_yunara_4core_paths(target_count=target_count)
-        top1 = ranked_data["ranked"][0]
+        ranked = ranked_data["ranked"]
+        for row in ranked:
+            row["weighted_dps"] = sum(CORE_WEIGHTS[i] * row["y"][i] for i in range(4))
+        top1 = max(ranked, key=lambda row: row["weighted_dps"]) if rank_by == "dps" else ranked[0]
         cached = {
             "path": top1["path"],
             "doran": top1["doran"],
@@ -326,13 +331,14 @@ def get_yunara_4core_top1_build(target_count=1):
             "rune_as": top1["rune_as"],
             "pkg_label": top1["pkg_label"],
             "score": top1["rel_dpg_score"],
+            "weighted_dps": top1["weighted_dps"],
             "control_path": ranked_data["best_control"]["path"],
             "control_pkg": ranked_data["best_control"]["pkg_label"],
             "total_paths_tested": ranked_data["total_paths_simulated"],
             "label": top1["label"],
             "target_count": target_count,
         }
-        _YUNARA_4CORE_TOP1_CACHE[target_count] = cached
+        _YUNARA_4CORE_TOP1_CACHE[cache_key] = cached
     return cached
 
 
@@ -450,7 +456,7 @@ def print_case_style_table(ranked, best_control, target_count, top_n=20):
     """
     scenario = "단일 대상(적 1명)" if target_count == 1 else f"적 {target_count}명 교전(다대상 유효 DPS)"
     print(f"\n{'=' * 132}")
-    print(f"[YUNARA] target_count={target_count}  ({scenario})  가중 1~4코어 5:4:3:3")
+    print(f"[YUNARA] target_count={target_count}  ({scenario})  가중 1~4코어 {CORE_WEIGHTS_LABEL}")
     print("  제약: pen-exclusive≤1(terminus/ldr/mortal) | "
           "후보=YUNARA_CORE1~4_CANDIDATES(core1·2에 statikk 포함, 애쉬와 분리)")
     print("좌 4열=DPS(코어1~4), 우 4열=DPG(코어1~4), GOLD=4코어 총골드 | "

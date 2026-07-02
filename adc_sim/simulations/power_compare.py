@@ -4,7 +4,7 @@ from datetime import datetime
 
 import matplotlib.pyplot as plt
 
-from adc_sim.settings import get_result_export_settings
+from adc_sim.settings import get_result_export_settings, CORE_WEIGHTS_RAW
 from adc_sim.simulations.ashe import (
     simulate_ashe_core_path,
     get_ashe_4core_top1_build,
@@ -25,6 +25,16 @@ from adc_sim.simulations.cogmaw import (
     simulate_cogmaw_core_path,
     get_cogmaw_powercompare_builds,
     build_cogmaw_core_report_meta,
+)
+from adc_sim.simulations.vayne import (
+    simulate_vayne_core_path,
+    get_vayne_powercompare_builds,
+    build_vayne_core_report_meta,
+)
+from adc_sim.simulations.jinx import (
+    simulate_jinx_core_path,
+    get_jinx_powercompare_builds,
+    build_jinx_core_report_meta,
 )
 from adc_sim.runes import LethalTempo
 from adc_sim.data.items_data import DORAN_SHORT, ADC_PACKAGES
@@ -65,6 +75,14 @@ def _simulate_compare_stat(champ_name, cfg, core_tier):
         dps, gold = simulate_cogmaw_core_path(cfg["path"], core_tier, keystone_cls=keystone_cls, **pkg_kw)
         meta = build_cogmaw_core_report_meta(cfg["path"], core_tier)
         choice = f"{cfg.get('pkg_label', 'Bow+Glut')}/{cfg.get('rune_label', 'LT')}"
+    elif champ_name == "Vayne":
+        dps, gold = simulate_vayne_core_path(cfg["path"], core_tier, **pkg_kw)
+        meta = build_vayne_core_report_meta(cfg["path"], core_tier)
+        choice = cfg.get("pkg_label", "Bld+Zerk")
+    elif champ_name == "Jinx":
+        dps, gold = simulate_jinx_core_path(cfg["path"], core_tier, **pkg_kw)
+        meta = build_jinx_core_report_meta(cfg["path"], core_tier)
+        choice = cfg.get("pkg_label", "Bld+Zerk")
     else:
         raise ValueError(f"Unknown champion config: {champ_name}")
 
@@ -81,10 +99,10 @@ def _simulate_compare_stat(champ_name, cfg, core_tier):
 
 
 def _best_pkg_cfg(champ_name, path):
-    """주어진 (챔프, path)를 정배 패키지 A/B 중 4코어 weighted-DPG(5:4:3:3) 최적으로 평가해
+    """주어진 (챔프, path)를 정배 패키지 A/B 중 4코어 weighted-DPG(1:1:1:1) 최적으로 평가해
     패키지 설정(doran/boots/rune_as/pkg_label) 반환. basic 비교를 개별 sim(컨트롤이 최적 패키지를
     고름)과 일치시키기 위함. Corki/CogMaw 는 자체 패키지 메커니즘이라 이 헬퍼를 쓰지 않는다."""
-    weights = [5.0, 4.0, 3.0, 3.0]
+    weights = list(CORE_WEIGHTS_RAW)
     best_cfg, best_w = None, -1.0
     for pkg in ADC_PACKAGES:
         probe = {"path": path, "doran": pkg["doran"], "boots": pkg["boots"],
@@ -176,6 +194,8 @@ def _plot_combined_compare(top1_rows, basic_rows):
         "KaiSa": "#e4572e",
         "Corki": "#2ca02c",
         "CogMaw": "#17becf",
+        "Vayne": "#d62728",
+        "Jinx": "#e377c2",
     }
 
     plt.figure(figsize=(13, 8))
@@ -184,7 +204,7 @@ def _plot_combined_compare(top1_rows, basic_rows):
         (top1_rows, "Top1", "-", "o", 0.95),
         (basic_rows, "Basic", "--", "s", 0.9),
     ]:
-        for champ in ("Ashe", "Yunara", "KaiSa", "Corki", "CogMaw"):
+        for champ in ("Ashe", "Yunara", "KaiSa", "Corki", "CogMaw", "Vayne", "Jinx"):
             xs = [row["stats"][champ]["gold"] for row in rows]
             ys = [row["stats"][champ]["dps"] for row in rows]
             # 선택된 옵션(패키지 A/B 또는 코르키 도란) — variant 내 챔프당 고정이라 첫 행에서 취득
@@ -315,6 +335,10 @@ def compare_builds():
 
     print("[Info] Loading Cog'Maw rune-agnostic best + meta build (LT·PtA 두 룬 전수 랭킹 — 시간 걸림)...")
     cogmaw_best, cogmaw_meta = get_cogmaw_powercompare_builds()
+    print("[Info] Loading Vayne top1/meta from simulation_vayne (can take some time)...")
+    vayne_best, vayne_meta = get_vayne_powercompare_builds()
+    print("[Info] Loading Jinx top1/meta from simulation_jinx (can take some time)...")
+    jinx_best, jinx_meta = get_jinx_powercompare_builds()
 
     print("\n=== Cross-Champion Power Compare (1~4 Core) ===")
     print("Configured Top1 builds (Ashe/Yunara/KaiSa: 정배 패키지 A=Bld+Zerk+핏빛길 / B=Bow+Glut+민첩함 중 최적):")
@@ -337,7 +361,15 @@ def compare_builds():
     )
     print(
         f"- CogMaw : [{cogmaw_best.get('pkg_label','?')}] {'-'.join(cogmaw_best['path'])} / {cogmaw_best['rune_label']}+CutDown "
-        f"(룬 무관 최강; LT·PtA 중 절대 weighted-DPG 우위)"
+        f"(룬 무관 최강; LT·PtA 중 절대 weighted-DPS 우위)"
+    )
+    print(
+        f"- Vayne  : [{vayne_best.get('pkg_label','?')}] {'-'.join(vayne_best['path'])} / LT+CutDown "
+        f"(top1 by DPG)"
+    )
+    print(
+        f"- Jinx   : [{jinx_best.get('pkg_label','?')}] {'-'.join(jinx_best['path'])} / LT+CutDown "
+        f"(minigun +130% AS + W nuke; top1 by DPG)"
     )
     print()
 
@@ -361,6 +393,10 @@ def compare_builds():
         # 코그모 = 룬 무관 최강 빌드(LT·PtA 중 우위)
         "CogMaw": {"path": cogmaw_best["path"],
                    **_pkg_cfg(cogmaw_best, {"keystone_cls": cogmaw_best["keystone_cls"], "rune_label": cogmaw_best["rune_label"]})},
+        # 베인 = 절대 weighted-DPS top1
+        "Vayne": {"path": vayne_best["path"], **_pkg_cfg(vayne_best)},
+        # 징크스 = RelDPG top1(미니건+W); Get Excited OFF
+        "Jinx": {"path": jinx_best["path"], **_pkg_cfg(jinx_best)},
     }
     top1_rows = _print_compare_section("Cross-Champion Top1 Compare (1~4 Core)", top1_configs)
 
@@ -380,6 +416,10 @@ def compare_builds():
         # 코그모 = 실전 메타 빌드(guinsoo-navori-terminus-wit) under 치속(LethalTempo)
         "CogMaw": {"path": cogmaw_meta["path"],
                    **_pkg_cfg(cogmaw_meta, {"keystone_cls": cogmaw_meta["keystone_cls"], "rune_label": cogmaw_meta["rune_label"]})},
+        # 베인 = 컨트롤(botrk-guinsoo-terminus-pd, 최적 패키지)
+        "Vayne": {"path": vayne_meta["path"], **_pkg_cfg(vayne_meta)},
+        # 징크스 = 컨트롤(kraken-pd-ie-ldr, 최적 패키지)
+        "Jinx": {"path": jinx_meta["path"], **_pkg_cfg(jinx_meta)},
     }
 
     print("Configured Basic builds (Ashe/Yunara/KaiSa: 정배 A/B 중 최적 — 개별 파일 기준과 일치):")
@@ -389,6 +429,8 @@ def compare_builds():
         print(f"- {_c:<6} : [{_cfg.get('pkg_label','?')}] {'-'.join(_cfg['path'])} + {_cfg.get('boots','berserker')} / LT+CutDown{_note}")
     print(f"- Corki  : {'-'.join(corki_basic_path)} + {corki_basic_shoe} / {corki_basic_rune}+CutDown (requested base build)")
     print(f"- CogMaw : {'-'.join(cogmaw_meta['path'])} + {cogmaw_meta.get('boots','glutton')} / {cogmaw_meta['rune_label']}+CutDown (실전 메타 빌드 / 치속)")
+    print(f"- Vayne  : [{vayne_meta.get('pkg_label','?')}] {'-'.join(vayne_meta['path'])} + {vayne_meta.get('boots','berserker')} / LT+CutDown (control botrk-guinsoo-terminus-pd)")
+    print(f"- Jinx   : [{jinx_meta.get('pkg_label','?')}] {'-'.join(jinx_meta['path'])} + {jinx_meta.get('boots','berserker')} / LT+CutDown (control kraken-pd-ie-ldr)")
     print()
     basic_rows = _print_compare_section("Cross-Champion Basic Build Compare (1~4 Core)", basic_configs)
 
