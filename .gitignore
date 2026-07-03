@@ -17,6 +17,10 @@ venv/
 # ── Tooling scratch ────────────────────────
 .air/
 
+# ── Local-only drafts ──────────────────────
+# 커뮤니티 글·아웃리치 초안 (개인 이메일 포함 — 공개 리포에 push 금지)
+drafts/
+
 # ── Generated outputs ──────────────────────
 # 시뮬 결과 이미지(results/)와 export 리포트(reports/)는 생성물이라 추적 제외.
 # 보관하고 싶은 결과는 Archive/ 로 직접 옮겨서 관리.
