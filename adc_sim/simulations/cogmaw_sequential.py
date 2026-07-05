@@ -8,12 +8,13 @@ spec: docs/superpowers/specs/2026-07-06-cogmaw-sequential-ranking-design.md
 from adc_sim.simulations.cogmaw import (
     COGMAW_CORE_CANDIDATES, CONTROL_PATH, CONTROL2_PATH, simulate_cogmaw_core_path,
 )
-from adc_sim.data.items_data import ADC_PACKAGES
+from adc_sim.data.items_data import ADC_PACKAGES, pen_rule_ok, ARMOR_PEN_EXCLUSIVE as PEN_EXCLUSIVE
 from adc_sim.runes import LethalTempo, PressTheAttack
 
+# PEN_EXCLUSIVE: 하위호환 재노출(tests/test_cogmaw_sequential.py 임포트용, 미사용).
+# 실제 판정은 legal_next_items 가 공유 pen_rule_ok 로 수행한다.
 GAMMA = 0.9
 HORIZON = 5
-PEN_EXCLUSIVE = {"terminus", "ldr", "mortal"}
 # 슬롯5 전용 후보 리스트가 없어 1~4티어 합집합 사용(스펙 승인, 추후 조정 지점).
 SLOT5_CANDIDATES = sorted(set().union(*COGMAW_CORE_CANDIDATES.values()))
 
@@ -25,12 +26,11 @@ def default_candidates_map():
 
 
 def legal_next_items(owned, slot, candidates_map):
-    pen_owned = sum(1 for k in owned if k in PEN_EXCLUSIVE)
     out = []
     for k in candidates_map[slot]:
         if k in owned:
             continue
-        if k in PEN_EXCLUSIVE and pen_owned >= 1:
+        if not pen_rule_ok(tuple(owned) + (k,)):
             continue
         out.append(k)
     return out

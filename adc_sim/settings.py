@@ -37,9 +37,26 @@ def get_result_export_settings():
 # [1,1,1,1]=전 코어 동일, [5,4,3,3]=초반(1코어) 편중. 3코어 변형은 CORE_WEIGHTS_RAW[:3].
 # (case_ranking 은 별도 sim_settings.WEIGHT_PROFILES — 여기와 무관.)
 # ──────────────────────────────────────────────────────────────────────────
-CORE_WEIGHTS_RAW = [4.0, 4.0, 3.0, 3.0]
-# 출력 라벨용(예: "1:1:1:1") — CORE_WEIGHTS_RAW 에서 자동 생성되니 가중치 바꾸면 라벨도 따라감.
-CORE_WEIGHTS_LABEL = ":".join(f"{w:g}" for w in CORE_WEIGHTS_RAW)
+# 점수 방식 선택 [사용자 확정 2026-07-06]: "weighted"=고정 가중합 / "discounted"=γ-할인합.
+# 할인합은 코어별 가중 [γ^1..γ^n] 과 동치라 기존 rel-DPG 파이프라인을 그대로 쓴다.
+RANKING_SCORING = {
+    "mode": "discounted",
+    "fixed_raw": [4.0, 4.0, 3.0, 3.0],
+    "gamma": 0.9,
+}
+
+
+def derive_core_weights(scoring, n=4):
+    """RANKING_SCORING → 코어별 raw 가중 벡터(길이 n)."""
+    if scoring["mode"] == "discounted":
+        g = scoring["gamma"]
+        return [g ** k for k in range(1, n + 1)]
+    return list(scoring["fixed_raw"][:n])
+
+
+CORE_WEIGHTS_RAW = derive_core_weights(RANKING_SCORING)
+_mode_tag = "" if RANKING_SCORING["mode"] == "weighted" else f" (disc γ={RANKING_SCORING['gamma']:g})"
+CORE_WEIGHTS_LABEL = ":".join(f"{w:g}" for w in CORE_WEIGHTS_RAW) + _mode_tag
 
 
 # ──────────────────────────────────────────────────────────────────────────

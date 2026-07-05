@@ -54,7 +54,7 @@ def build_target_for_core(core_tier):
 
 # 아이템 키 → 인스턴스 생성은 통합 레지스트리 사용 (스탯/가격은 adc_sim/data/items_data.py)
 from adc_sim.data.items_registry import create_item_from_key
-from adc_sim.data.items_data import DORAN_OPTIONS, DORAN_SHORT, ADC_PACKAGES
+from adc_sim.data.items_data import DORAN_OPTIONS, DORAN_SHORT, ADC_PACKAGES, pen_rule_ok
 
 
 def simulate_ashe_core_path(core_item_keys, core_tier, doran_key=None, boots_key="berserker", rune_as_bonus=0.0):
@@ -139,7 +139,6 @@ def _build_ashe_4core_all_paths():
 
     all_paths = []
     seen_exact_paths = set()
-    pen_exclusive_keys = {"terminus", "ldr", "mortal"}
 
     for c1 in core1_candidates:
         for c2 in core2_candidates:
@@ -151,9 +150,7 @@ def _build_ashe_4core_all_paths():
                 for c4 in core4_candidates:
                     if c4 in {c1, c2, c3}:
                         continue
-                    path_keys = [c1, c2, c3, c4]
-                    pen_count = sum(1 for key in path_keys if key in pen_exclusive_keys)
-                    if pen_count > 1:
+                    if not pen_rule_ok((c1, c2, c3, c4)):
                         continue
                     exact_path = (c1, c2, c3, c4)
                     if exact_path in seen_exact_paths:
@@ -168,9 +165,7 @@ def _build_ashe_4core_all_paths():
                 continue
             if c4 in {"yuntal25", "kraken"}:
                 continue
-            path_keys = ["yuntal25", "kraken", c3, c4]
-            pen_count = sum(1 for key in path_keys if key in pen_exclusive_keys)
-            if pen_count > 1:
+            if not pen_rule_ok(("yuntal25", "kraken", c3, c4)):
                 continue
             forced_paths.append(("yuntal25", "kraken", c3, c4))
             forced_paths.append(("kraken", "yuntal25", c3, c4))
@@ -647,7 +642,6 @@ if __name__ == "__main__":
 
     all_paths = []
     seen_exact_paths = set()
-    pen_exclusive_keys = {"terminus", "ldr", "mortal"}
     for c1 in core1_candidates:
         for c2 in core2_candidates:
             if c1 == c2:
@@ -659,9 +653,7 @@ if __name__ == "__main__":
                     if c4 in {c1, c2, c3}:
                         continue
                     # 방관/관통 계열(경계, LDR, 모렐로 대체 키)의 상호 배타 규칙 (4코어 베이스 기준)
-                    path_keys = [c1, c2, c3, c4]
-                    pen_count = sum(1 for key in path_keys if key in pen_exclusive_keys)
-                    if pen_count > 1:
+                    if not pen_rule_ok((c1, c2, c3, c4)):
                         continue
 
                     # 정확히 같은 경로만 제거 (순서 차이는 점수 계산 후 최적 1개 선택)
@@ -680,9 +672,7 @@ if __name__ == "__main__":
             # 같은 아이템 중복 구매 불가
             if c4 in {"yuntal25", "kraken"}:
                 continue
-            path_keys = ["yuntal25", "kraken", c3, c4]
-            pen_count = sum(1 for key in path_keys if key in pen_exclusive_keys)
-            if pen_count > 1:
+            if not pen_rule_ok(("yuntal25", "kraken", c3, c4)):
                 continue
             forced_paths.append(("yuntal25", "kraken", c3, c4))
             forced_paths.append(("kraken", "yuntal25", c3, c4))

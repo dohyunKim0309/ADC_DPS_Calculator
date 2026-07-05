@@ -17,7 +17,7 @@ from adc_sim.champion import Ashe
 from adc_sim.runes import LethalTempo, CutDown
 from adc_sim.engine import run_simulation
 from adc_sim.data.items_registry import create_item_from_key
-from adc_sim.data.items_data import ITEMS, ADC_PACKAGES
+from adc_sim.data.items_data import ITEMS, ADC_PACKAGES, pen_rule_ok
 from adc_sim.settings import CASE_RANKING_OUTPUT
 from adc_sim.simulations import sim_settings as ss
 from adc_sim.simulations.ashe import CORE_ASHE_LEVELS, build_target_for_core
@@ -147,7 +147,7 @@ def _iter_continuations(opening, cont_pos, pools, heal_cut):
             if c in used:
                 continue
             full = opening + (c,)
-            if pen_count(full) > 1 or (heal_cut and _HEAL not in full):
+            if not pen_rule_ok(full) or (heal_cut and _HEAL not in full):
                 continue
             yield (c,)
     else:
@@ -159,7 +159,7 @@ def _iter_continuations(opening, cont_pos, pools, heal_cut):
                 if c5 in used or c5 == c4:
                     continue
                 full = opening + (c4, c5)
-                if pen_count(full) > 1 or (heal_cut and _HEAL not in full):
+                if not pen_rule_ok(full) or (heal_cut and _HEAL not in full):
                     continue
                 yield (c4, c5)
 
@@ -229,7 +229,7 @@ def rank_case(case, top_n, prune_k=None):
                 for o1 in pools[p1]
                 for o2 in pools[p2] if o2 != o1
                 for o3 in pools[p3] if o3 not in (o1, o2)
-                if pen_count((o1, o2, o3)) <= 1
+                if pen_rule_ok((o1, o2, o3))
                 and (not need_zeal or any(o in _ZEAL for o in (o1, o2, o3)))]
 
     pruned = 0

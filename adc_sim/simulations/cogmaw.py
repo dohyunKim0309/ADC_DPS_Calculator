@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from adc_sim.runes import LethalTempo, PressTheAttack, CutDown
 from adc_sim.engine import run_simulation
 from adc_sim.data.items_registry import create_item_from_key
-from adc_sim.data.items_data import ADC_PACKAGES
+from adc_sim.data.items_data import ADC_PACKAGES, pen_rule_ok
 from adc_sim.settings import CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL
 
 # 코어 단계별 고정 타겟 (Ashe/KaiSa 시뮬과 동일)
@@ -98,7 +98,6 @@ def get_cogmaw_4core_top1_build(keystone_cls=LethalTempo, rank_by="dpg"):
     core2_candidates = COGMAW_CORE_CANDIDATES[2]
     core3_candidates = COGMAW_CORE_CANDIDATES[3]
     core4_candidates = COGMAW_CORE_CANDIDATES[4]
-    pen_exclusive = {"terminus", "ldr", "mortal"}
     ctrl_combo = tuple(sorted(CONTROL_PATH))
 
     all_paths = []
@@ -111,7 +110,7 @@ def get_cogmaw_4core_top1_build(keystone_cls=LethalTempo, rank_by="dpg"):
                 for c4 in core4_candidates:
                     if len({c1, c2, c3, c4}) < 4:
                         continue
-                    if sum(1 for k in (c1, c2, c3, c4) if k in pen_exclusive) > 1:
+                    if not pen_rule_ok((c1, c2, c3, c4)):
                         continue
                     path = (c1, c2, c3, c4)
                     if path in seen_paths:
@@ -445,7 +444,6 @@ if __name__ == "__main__":
     core2_candidates = COGMAW_CORE_CANDIDATES[2]
     core3_candidates = COGMAW_CORE_CANDIDATES[3]
     core4_candidates = COGMAW_CORE_CANDIDATES[4]
-    pen_exclusive = {"terminus", "ldr", "mortal"}
     ctrl_combo = tuple(sorted(CONTROL_PATH))
 
     item_short = {
@@ -466,7 +464,7 @@ if __name__ == "__main__":
                 for c4 in core4_candidates:
                     if len({c1, c2, c3, c4}) < 4:
                         continue
-                    if sum(1 for k in (c1, c2, c3, c4) if k in pen_exclusive) > 1:
+                    if not pen_rule_ok((c1, c2, c3, c4)):
                         continue
                     path = (c1, c2, c3, c4)
                     if path in seen_paths:

@@ -3,9 +3,10 @@ import matplotlib.pyplot as plt
 from adc_sim.runes import LethalTempo, CutDown
 from adc_sim.engine import run_simulation
 from adc_sim.data.items_registry import create_item_from_key
-from adc_sim.data.items_data import ADC_PACKAGES
-from adc_sim.settings import CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL
+from adc_sim.data.items_data import pen_rule_ok
+from adc_sim.settings import CORE_WEIGHTS_LABEL
 from adc_sim.simulations.ashe import build_ashe_like_core_report_meta
+from adc_sim.simulations.ranking_core import rank_builds
 
 # 코어 단계별 고정 타겟 (Ashe/KaiSa/CogMaw 시뮬과 동일)
 CORE_TARGET_STATS = {
@@ -84,7 +85,6 @@ CORE2_CANDIDATES = ["botrk", "guinsoo", "kraken", "terminus", "wit", "runaan", "
                     "ie", "rfc", "collector", "yuntal25", "statikk"]
 CORE3_CANDIDATES = ["ie", "ldr", "guinsoo", "terminus", "pd", "collector", "wit", "kraken"]
 CORE4_CANDIDATES = ["ie", "ldr", "pd", "runaan", "rfc", "collector", "kraken", "wit", "statikk", "terminus"]
-PEN_EXCLUSIVE = {"terminus", "ldr", "mortal"}
 
 ITEM_SHORT = {
     "botrk": "BotRK", "guinsoo": "Gui", "kraken": "Krk", "terminus": "Terminus",
@@ -104,7 +104,7 @@ def _build_all_paths():
                 for c4 in CORE4_CANDIDATES:
                     if len({c1, c2, c3, c4}) < 4:
                         continue
-                    if sum(1 for k in (c1, c2, c3, c4) if k in PEN_EXCLUSIVE) > 1:
+                    if not pen_rule_ok((c1, c2, c3, c4)):
                         continue
                     path = (c1, c2, c3, c4)
                     if path in seen:
@@ -117,66 +117,10 @@ def _build_all_paths():
     return all_paths
 
 
-def _rank_rows(all_paths):
-    """전 (경로×패키지) 시뮬 → dedup(정렬 combo 최고점) → 컨트롤 정규화 RelDPG. rows 반환."""
-    dedupe_weight_raw = list(CORE_WEIGHTS_RAW)
-    core_weight_raw = list(CORE_WEIGHTS_RAW)
-    weight_sum = sum(core_weight_raw)
-    core_weights = [w / weight_sum for w in core_weight_raw]
-    ctrl_combo = tuple(sorted(CONTROL_PATH))
-
-    rows = []
-    for path in all_paths:
-        for pkg in ADC_PACKAGES:
-            kw = dict(doran_key=pkg["doran"], boots_key=pkg["boots"], rune_as_bonus=pkg["rune_as"])
-            dps_list, cost_list = [], []
-            for tier in range(1, 5):
-                d, c = simulate_vayne_core_path(path, tier, **kw)
-                dps_list.append(d); cost_list.append(c)
-            dpg = [dps_list[i] / (cost_list[i] / 1000.0) if cost_list[i] > 0 else 0.0 for i in range(4)]
-            rows.append({
-                "path": path, "doran": pkg["doran"], "boots": pkg["boots"],
-                "rune_as": pkg["rune_as"], "pkg_label": pkg["label"],
-                "x": cost_list, "y": dps_list, "dpg": dpg,
-                "is_control": tuple(sorted(path)) == ctrl_combo,
-                "dedupe_eff": sum(dedupe_weight_raw[i] * dpg[i] for i in range(4)),
-            })
-
-    dedupe_best = {}
-    for r in rows:
-        key = tuple(sorted(r["path"]))
-        if key not in dedupe_best or r["dedupe_eff"] > dedupe_best[key]["dedupe_eff"]:
-            dedupe_best[key] = r
-    rows_dedup = list(dedupe_best.values())
-
-    # 컨트롤은 정규 순서(CONTROL_PATH)로 고정
-    rows_dedup = [r for r in rows_dedup if not r["is_control"]]
-    ctrl_cands = [r for r in rows if tuple(r["path"]) == CONTROL_PATH]
-    if ctrl_cands:
-        rows_dedup.append(max(ctrl_cands, key=lambda r: r["dedupe_eff"]))
-
-    for r in rows_dedup:
-        r["weighted_dpg"] = sum(core_weights[i] * r["dpg"][i] for i in range(4))
-        r["weighted_dps"] = sum(core_weights[i] * r["y"][i] for i in range(4))
-
-    control_rows = [r for r in rows_dedup if r["is_control"]]
-    if not control_rows:
-        raise RuntimeError(
-            f"Control build {CONTROL_PATH} not found in search space. "
-            "Check candidate pools contain botrk/guinsoo/terminus/pd."
-        )
-    best_control = max(control_rows, key=lambda r: r["weighted_dpg"])
-    baseline_dpg_4 = best_control["dpg"][:4]
-
-    for r in rows_dedup:
-        core_rel_pct = [
-            (r["dpg"][i] / baseline_dpg_4[i] * 100.0 if baseline_dpg_4[i] > 0 else 0.0)
-            for i in range(4)
-        ]
-        r["core_rel_delta_pct_4"] = [p - 100.0 for p in core_rel_pct]
-        r["rel_dpg_score"] = sum(core_weights[i] * core_rel_pct[i] for i in range(4))
-
-    return rows_dedup, best_control
+def _rank_rows(all_paths, weights_raw=None):
+    """전 (경로×패키지) 시뮬 → dedup → 컨트롤 정규화 RelDPG. (ranking_core 위임)"""
+    return rank_builds(simulate_vayne_core_path, all_paths, CONTROL_PATH,
+                       weights_raw=weights_raw)
 
 
 def get_vayne_4core_top1_build(rank_by="dpg"):

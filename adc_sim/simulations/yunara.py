@@ -9,14 +9,9 @@ from adc_sim.runes import LethalTempo, CutDown
 from adc_sim.engine import run_simulation
 from adc_sim.settings import get_result_export_settings
 from adc_sim.data.items_registry import create_item_from_key
-from adc_sim.data.items_data import DORAN_OPTIONS, DORAN_SHORT, ADC_PACKAGES
-
-
-# pen 배타(챔피언 무관 필수 규칙): 한 빌드에 방관 1개·마관 1개까지만.
-#   방관 배타 = {ldr, mortal, terminus}, 마관 배타 = {void, terminus}.
-#   (terminus 는 방관·마관 겸비라 양쪽 모두에 속함 → 공허와도 공존 불가)
-ARMOR_PEN_EXCLUSIVE = {"ldr", "mortal", "terminus"}
-MAGIC_PEN_EXCLUSIVE = {"void", "terminus"}
+from adc_sim.data.items_data import (
+    DORAN_OPTIONS, DORAN_SHORT, ADC_PACKAGES, pen_rule_ok,
+)
 
 
 def _build_yunara_4core_all_paths():
@@ -48,9 +43,7 @@ def _build_yunara_4core_all_paths():
                     if c4 in (c1, c2, c3):
                         continue
                     keys = (c1, c2, c3, c4)
-                    if sum(1 for k in keys if k in ARMOR_PEN_EXCLUSIVE) > 1:
-                        continue
-                    if sum(1 for k in keys if k in MAGIC_PEN_EXCLUSIVE) > 1:
+                    if not pen_rule_ok(keys):
                         continue
                     if keys in seen:
                         continue
@@ -63,9 +56,7 @@ def _build_yunara_4core_all_paths():
             if c4 == c3 or c4 in {"yuntal25", "kraken"}:
                 continue
             for opening in (("yuntal25", "kraken", c3, c4), ("kraken", "yuntal25", c3, c4)):
-                if sum(1 for k in opening if k in ARMOR_PEN_EXCLUSIVE) > 1:
-                    continue
-                if sum(1 for k in opening if k in MAGIC_PEN_EXCLUSIVE) > 1:
+                if not pen_rule_ok(opening):
                     continue
                 if opening in seen:
                     continue

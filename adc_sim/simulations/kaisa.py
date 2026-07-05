@@ -58,7 +58,7 @@ def build_target_for_core(core_tier):
 
 # 아이템 키 → 인스턴스 생성은 통합 레지스트리 사용 (스탯/가격은 adc_sim/data/items_data.py)
 from adc_sim.data.items_registry import create_item_from_key, get_item_ad_from_key
-from adc_sim.data.items_data import DORAN_OPTIONS, DORAN_SHORT, ADC_PACKAGES
+from adc_sim.data.items_data import DORAN_OPTIONS, DORAN_SHORT, ADC_PACKAGES, pen_rule_ok
 
 
 def get_yuntal_crit_for_tier(purchase_tier, current_tier):
@@ -180,7 +180,6 @@ def get_kaisa_4core_top1_build(rank_by="dpg"):
 
     ctrl1_core4_combo = tuple(sorted(["kraken", "guinsoo", "nashor", "terminus"]))
     ctrl2_core4_combo = tuple(sorted(["kraken", "guinsoo", "pd", "ie"]))
-    pen_exclusive = {"terminus", "ldr", "mortal"}
 
     ad_by_key = {}
     as_by_key = {}
@@ -203,8 +202,7 @@ def get_kaisa_4core_top1_build(rank_by="dpg"):
                 for c4 in core4_candidates:
                     if len({c1, c2, c3, c4}) < 4:
                         continue
-                    pen_count = sum(1 for k in [c1, c2, c3, c4] if k in pen_exclusive)
-                    if pen_count > 1:
+                    if not pen_rule_ok((c1, c2, c3, c4)):
                         continue
                     path = (c1, c2, c3, c4)
                     if path in seen_paths:
@@ -359,7 +357,6 @@ if __name__ == "__main__":
 
     all_paths = []
     seen_paths = set()
-    pen_exclusive = {"terminus", "ldr", "mortal"}
     ad_by_key = {}
     as_by_key = {}
     for k in set(core1_candidates + core2_candidates + core3_candidates + core4_candidates + core5_candidates):
@@ -384,8 +381,7 @@ if __name__ == "__main__":
                             continue
 
                         # 경계/도미닉/모탈은 동시 구매 불가
-                        pen_count = sum(1 for k in [c1, c2, c3, c4, c5] if k in pen_exclusive)
-                        if pen_count > 1:
+                        if not pen_rule_ok((c1, c2, c3, c4, c5)):
                             continue
 
                         path_tuple = (c1, c2, c3, c4, c5)
