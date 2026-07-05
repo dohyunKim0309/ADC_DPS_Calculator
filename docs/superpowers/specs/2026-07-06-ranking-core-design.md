@@ -60,11 +60,15 @@ def rank_builds(cfg, weights_raw=None) -> dict
 ```
 - 파이프라인: 경로×패키지 시뮬(rows) → sorted-combo dedup(best-order) → 컨트롤·pinned canonical
   고정 → weights_raw(기본 settings 파생값) 채점 → 컨트롤 baseline rel 점수 → 정렬.
-- **이관 대상(Phase 1): cogmaw / vayne / jinx** — 각 파일은 rank_builds 호출 + 자기 고유 출력
-  (코그모 A/B 비교표·룬 2종·CTRL2 태그, 베인/징크스 표)만 유지.
-- **동작 보존 검증(핵심 안전장치)**: 이관 커밋마다 weighted 모드로 고정한 전후 랭킹 표 diff 0
-  확인(스냅샷 비교 테스트 또는 수동 diff 기록) → 전부 이관 후 기본 discounted 전환 커밋.
-- Phase 2(후속 브랜치): kaisa/ashe/corki/yunara/ezreal — 변형별 어댑터 설계 후 순차.
+- **이관 대상(Phase 1): vayne 단독** (사용자 확정 2026-07-06: "1챔프 먼저 — 베인부터. 이후
+  확인하고 나머지 이관 시도"). 베인이 가장 깨끗한 미러(단일 키스톤 LT, CTRL2/AB표 없음).
+  vayne.py는 rank_builds 호출 + 자기 출력만 유지, 외부 인터페이스
+  (`simulate_vayne_core_path`/`get_vayne_powercompare_builds`/`build_vayne_core_report_meta` —
+  power_compare가 import) 불변.
+- **동작 보존 검증(핵심 안전장치)**: weighted 모드로 고정한 전후 랭킹 표 diff 0
+  확인(스냅샷 비교 테스트 또는 수동 diff 기록) → 검증 후 기본 discounted 전환 커밋.
+- Phase 1.5(사용자 확인 후 이 브랜치 또는 후속): cogmaw / jinx 이관.
+  Phase 2(후속 브랜치): kaisa/ashe/corki/yunara/ezreal — 변형별 어댑터 설계 후 순차.
 
 ## 테스트
 
