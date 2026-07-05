@@ -379,8 +379,7 @@ class HextechScopeC44(Item):
     def get_damage_modifier(self, target, champion):
         """
         확대: 적과의 거리(champion.range)에 따라 최대 10% 증가된 피해
-        - 700 거리일 때 최대 (10%)
-        - 버프 적용: 600 거리일 때 최대 (10%)
+        - 500 거리일 때 최대 (10%) [26.13 버프, 사용자 인게임 툴팁 확인]
         """
 
         # 1. 현재 사거리 가져오기
@@ -391,9 +390,9 @@ class HextechScopeC44(Item):
         if self.is_buff_active:
             current_range += 100
 
-        # 2. 증폭률 계산 (최대 600 거리 기준)
-        # 거리 600 이상이면 1.0, 그 미만이면 (거리/600) 비율
-        ratio = min(1.0, current_range / 600.0)
+        # 2. 증폭률 계산 (최대 500 거리 기준 — 26.13 버프)
+        # 거리 500 이상이면 1.0, 그 미만이면 (거리/500) 비율
+        ratio = min(1.0, current_range / 500.0)
 
         # 3. 최대 10% 증폭
         modifier = ratio * 0.10
