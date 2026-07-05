@@ -57,7 +57,7 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 - **Control(기준) 빌드** = `kraken-pd-ie-ldr` 로 하드코딩. 탐색 경로 안에 반드시 존재해야 하며 없으면 `RuntimeError`. 후보 풀이나 키 이름을 바꿀 때 이 빌드가 빠지지 않게 할 것.
 - **코어 티어 1~4** = 아이템 1/2/3/4개 시점의 파워 스파이크. 티어마다 타깃 스탯(`CORE_TARGET_STATS`)과 챔피언 레벨/스킬 레벨(`CORE_<CHAMP>_LEVELS`)이 고정. (케이스 랭킹은 티어 1~5 사용 — `CORE_ASHE_LEVELS[5]`/`CORE_TARGET_STATS[5]`.)
 - 같은 4개 아이템 "집합"은 순서 후보 중 **최고 점수 하나로 dedup**(`combo_best`).
-- **`ashe.py` 보조 랭킹**: 메인 1~4(5:4:3:3) 표와 **별도로** 1~3코어(설정 파생 가중 상위 3개) 랭킹을 같이 출력(`rel_dpg_score_3c`). 1~3 오프닝(앞 3아이템 집합)별 1행으로 dedup. 근거: 4코어는 실전상 보통 방어템이라 DPS-골드 랭킹에서 1~3코어가 더 현실적.
+- **`ashe.py` 보조 랭킹**: 메인 1~4(설정 파생 가중) 표와 **별도로** 1~3코어(설정 파생 가중 상위 3개) 랭킹을 같이 출력(`rel_dpg_score_3c`). 1~3 오프닝(앞 3아이템 집합)별 1행으로 dedup. 근거: 4코어는 실전상 보통 방어템이라 DPS-골드 랭킹에서 1~3코어가 더 현실적.
 
 ### 케이스 기반 랭킹 (`case_ranking.py` / `sim_settings.py`)
 - **케이스 = 축들의 (조건부) 곱**: 방어 타이밍 {def@4, def@5, alldps} × (방어 타이밍이면) 방어템 {maw, ga, mercurial} × 치유감소 {nohc, hc} × zeal {zealfree, zealreq} = **28케이스**. 각 케이스 별도 랭킹. 축 추가 시 자동 확장(`build_ranking_cases`). 출력은 `settings.CASE_RANKING_OUTPUT['exclude']`(name 부분일치, 현재 alldps·mercurial)로 일부 끔 — 엔진/케이스 정의는 유지.
