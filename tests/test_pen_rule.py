@@ -17,3 +17,14 @@ def test_pen_rule_ok_cases():
     assert not pen_rule_ok(("terminus", "ldr", "pd", "ie"))
     assert not pen_rule_ok(("ldr", "mortal", "pd", "ie"))
     assert pen_rule_ok(("void", "pd"))                        # 부분 빌드도 판정 가능
+
+
+def test_cogmaw_generated_paths_respect_pen_rule():
+    """T1 의도된 행동 변화 고정: 코그모 경로 생성물에 void+terminus 등 배타 위반 없음."""
+    from adc_sim.simulations.cogmaw import COGMAW_CORE_CANDIDATES
+    from adc_sim.simulations.cogmaw_sequential import legal_next_items, default_candidates_map
+    cm = default_candidates_map()
+    owned = frozenset({"terminus"})
+    assert "void" not in legal_next_items(owned, 2, cm)
+    owned = frozenset({"void"})
+    assert "terminus" not in legal_next_items(owned, 2, cm)

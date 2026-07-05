@@ -12,7 +12,7 @@
   - 셋업: `python3.10 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt`
   - ⚠️ 시스템 `python3`(3.9)나 다른 인터프리터로 돌리지 말 것. 항상 **`.venv/bin/python`** 사용.
 - 시뮬은 패키지 모듈이라 **repo 루트에서 `-m`으로 실행**한다:
-  - `.venv/bin/python -m adc_sim.simulations.ashe` — 애쉬 4코어 랭킹(+1~3코어 5:4:3 별도 랭킹)
+  - `.venv/bin/python -m adc_sim.simulations.ashe` — 애쉬 4코어 랭킹(+1~3코어 별도 랭킹 — 가중은 설정 파생 상위 3개)
   - `… adc_sim.simulations.yunara` / `.kaisa` / `.corki` / `.ezreal` / `.cogmaw`
   - `… adc_sim.simulations.vayne` — 베인 4코어 랭킹(온힛+크리 풀, 컨트롤 botrk-guinsoo-terminus-pd)
   - `… adc_sim.simulations.jinx` — 징크스 4코어 랭킹(미니건+W, Get Excited OFF, Ashe 크리풀·컨트롤 kraken-pd-ie-ldr 재사용)
@@ -53,15 +53,15 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 ## 핵심 지표·개념
 - **DPS** = 누적 피해 / 처치 시간. (엔진 `run_simulation(respawn_to_full_kills=K)`: 처치 시 오버킬 이월+풀피 리필로 K개 체력바를 처치하는 지속딜 측정 — 시작 버스트(W/궁캔슬) 분산, 바 크기 유지로 몰왕검(현재체력%) 과대평가 방지. **기본 K=2(리스폰 1회)가 프로젝트 표준**; `respawn_to_full_kills=1`로 단일 처치 복원.)
 - **DPG** = `DPS / (gold/1000)` — 1000골드당 DPS, 즉 골드 효율.
-- **rel_dpg_score**(주 랭킹 지표) = 각 코어 구간의 `row_DPG / control_DPG` 비율을 **코어 1~4 가중치 5:4:3:3**으로 가중합 ×100. 즉 **컨트롤 빌드 대비 상대 골드효율**. 가중은 settings.RANKING_SCORING("weighted" 고정벡터 | "discounted" γ-할인, **기본 discounted γ=0.9**)에서 파생 — CORE_WEIGHTS_RAW 소비처는 자동 반영.
+- **rel_dpg_score**(주 랭킹 지표) = 각 코어 구간의 `row_DPG / control_DPG` 비율을 **`settings.RANKING_SCORING`에서 파생된 코어 가중**(기본 discounted γ=0.9 → [0.9, 0.81, 0.729, 0.6561]; "weighted" 모드 시 fixed_raw)으로 가중합 ×100. 즉 **컨트롤 빌드 대비 상대 골드효율**. 가중은 settings.RANKING_SCORING("weighted" 고정벡터 | "discounted" γ-할인, **기본 discounted γ=0.9**)에서 파생 — CORE_WEIGHTS_RAW 소비처는 자동 반영.
 - **Control(기준) 빌드** = `kraken-pd-ie-ldr` 로 하드코딩. 탐색 경로 안에 반드시 존재해야 하며 없으면 `RuntimeError`. 후보 풀이나 키 이름을 바꿀 때 이 빌드가 빠지지 않게 할 것.
 - **코어 티어 1~4** = 아이템 1/2/3/4개 시점의 파워 스파이크. 티어마다 타깃 스탯(`CORE_TARGET_STATS`)과 챔피언 레벨/스킬 레벨(`CORE_<CHAMP>_LEVELS`)이 고정. (케이스 랭킹은 티어 1~5 사용 — `CORE_ASHE_LEVELS[5]`/`CORE_TARGET_STATS[5]`.)
 - 같은 4개 아이템 "집합"은 순서 후보 중 **최고 점수 하나로 dedup**(`combo_best`).
-- **`ashe.py` 보조 랭킹**: 메인 1~4(5:4:3:3) 표와 **별도로** 1~3코어 5:4:3 가중 랭킹을 같이 출력(`rel_dpg_score_3c`). 1~3 오프닝(앞 3아이템 집합)별 1행으로 dedup. 근거: 4코어는 실전상 보통 방어템이라 DPS-골드 랭킹에서 1~3코어가 더 현실적.
+- **`ashe.py` 보조 랭킹**: 메인 1~4(5:4:3:3) 표와 **별도로** 1~3코어(설정 파생 가중 상위 3개) 랭킹을 같이 출력(`rel_dpg_score_3c`). 1~3 오프닝(앞 3아이템 집합)별 1행으로 dedup. 근거: 4코어는 실전상 보통 방어템이라 DPS-골드 랭킹에서 1~3코어가 더 현실적.
 
 ### 케이스 기반 랭킹 (`case_ranking.py` / `sim_settings.py`)
 - **케이스 = 축들의 (조건부) 곱**: 방어 타이밍 {def@4, def@5, alldps} × (방어 타이밍이면) 방어템 {maw, ga, mercurial} × 치유감소 {nohc, hc} × zeal {zealfree, zealreq} = **28케이스**. 각 케이스 별도 랭킹. 축 추가 시 자동 확장(`build_ranking_cases`). 출력은 `settings.CASE_RANKING_OUTPUT['exclude']`(name 부분일치, 현재 alldps·mercurial)로 일부 끔 — 엔진/케이스 정의는 유지.
-- **전수조사 풀**: `ITEMS`에서 `NON_DPS_KEYS`(방어/신발/도란/중복키)만 뺀 비-방어 전 아이템(현재 23종). 슬롯 제약 `SLOT_RESTRICTED_ITEMS`(윤탈/마나무네=1~2코어만, statikk=1~3코어만). `hc`는 펜 슬롯을 `mortal`로 강제. `zealreq`는 오프닝(1~3코어)에 zeal 아이템(`ZEAL_ITEMS`={pd,runaan,rfc}; 윤탈·스태틱 제외) 1개+ 강제. 방어템은 케이스 슬롯(4/5)에 고정 삽입.
+- **전수조사 풀**: `ITEMS`에서 `NON_DPS_KEYS`(방어/신발/도란/중복키)만 뺀 비-방어 전 아이템(현재 27종, ITEMS 파생 — 자동 확장). 슬롯 제약 `SLOT_RESTRICTED_ITEMS`(윤탈/마나무네=1~2코어만, statikk=1~3코어만). `hc`는 펜 슬롯을 `mortal`로 강제. `zealreq`는 오프닝(1~3코어)에 zeal 아이템(`ZEAL_ITEMS`={pd,runaan,rfc}; 윤탈·스태틱 제외) 1개+ 강제. 방어템은 케이스 슬롯(4/5)에 고정 삽입.
 - **점수 = 1~5코어 가중 상대-DPG**: `WEIGHT_PROFILES`(callable(n)→가중치 또는 명시벡터, 기본 `early_heavy`)로 코어별 rel-DPG 가중합·정규화 ×100. 표에는 **DPG(랭킹 지표)와 DPS(절대 파워) 점수·vsCTRL 둘 다** 표시. 컨트롤 = `CONTROL_OPENING`(kraken-pd-ie) + 같은 케이스 구조(최적 연계). 오프닝마다 최적 연계 1빌드 평가, 같은 DPS 집합은 dedup.
 - **스택 아이템**: 구매코어=약/다음코어=풀을 resolved-key 로 인코딩(윤탈 crit 10%→25%, 마나무네 100스택→무라마나). **DPS는 장착 '집합'에만 의존**하므로 (집합, 패키지) 단위 메모이즈 — 각 고유 셋 1회만 시뮬. 채점은 오프닝 prefix(1~3) 재사용으로 중복 제거.
 - 모델 설정은 전부 `sim_settings.py` 데이터(하드코딩 가중치 없음), 출력 정책은 `settings.CASE_RANKING_OUTPUT`.
@@ -72,7 +72,7 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 
 ### Cog'Maw (`champion.py` CogMaw + `simulations/cogmaw.py`) [수치 4소스 교차검증·가설은 spec 참조]
 - **W 바이오아케인**(쿨관리 버프 8s/17s/마나40): 활성 중 평타가 **대상 최대체력 `[3,3.75,4.5,5.25,6]%` + 0.00015·AP 마법 온힛**(`get_champion_onhit`→구인수 2배·증폭·Shadowflame 적용). **Q 패시브**=공속 상수, **Q 액티브**=마법넛지+방/마저 %셔레드(Corki E식), **E**=마법넛지, **R**=`(base+0.75추가AD+apMin·AP)×잃은체력배율`(≤40%HP ×2) + 마나램프(40→400)로 자연 스로틀. ad_growth=3.11.
-- **전용 sim**: kaisa.py 미러(4코어 전수→`rel_dpg` 5:4:3:3). 컨트롤 `guinsoo-navori-terminus-wit`(실전 메타 빌드 — RelDPG를 '메타 대비'로 측정; 풀에 존재해야 함). 풀=온힛+AP(guinsoo/kraken/nashor/terminus/bot/rfc/pd/ie/yuntal/statikk/storm + 4코어 rabadon/shadowflame; **shadowflame은 1~4코어 전부**, **void 2~4코어**, **황혼과 새벽(`dawn`)·나보리(`navori`)·마법사의최후(`wit`)·**C44(`c44`)** 1~4코어 전부**; c44는 26.13 버프(확대: 500거리부터 최대 10% 증폭, `items.py` 반영) 편입). 후보 풀은 `COGMAW_CORE_CANDIDATES` 상수로 중앙화(top1·`__main__` 공유). 랭킹 표 뒤에 **패키지 A/B(도란검+광전사+핏빛길 vs 도란활+피흡신발+민첩함) RelDPG 비교표**(상위 10+컨트롤)를 룬별로 출력. 크리 레퍼런스 `[CTRL2]`=c44-pd-ldr-ie(표시 전용, baseline 아님)도 표·A/B 비교에 항상 표시. **룬 2종 평가**: `__main__`이 `_run_cogmaw_ranking`을 **치명적속도(LethalTempo)·집중공격(PressTheAttack)** 두 keystone으로 각각 호출(룬별 표 2개; `simulate_cogmaw_core_path(keystone_cls=...)`, 보조룬 CutDown 고정). **power_compare 연동 완료**: top1=룬무관 최강(`get_cogmaw_powercompare_builds` — LT·PtA top1 중 절대 weighted-DPG 우위), basic=메타빌드(치속). skill-level 튜닝은 미완(todo).
+- **전용 sim**: kaisa.py 미러(4코어 전수→`rel_dpg`(설정 파생 가중)). 컨트롤 `guinsoo-navori-terminus-wit`(실전 메타 빌드 — RelDPG를 '메타 대비'로 측정; 풀에 존재해야 함). 풀=온힛+AP(guinsoo/kraken/nashor/terminus/bot/rfc/pd/ie/yuntal/statikk/storm + 4코어 rabadon/shadowflame; **shadowflame은 1~4코어 전부**, **void 2~4코어**, **황혼과 새벽(`dawn`)·나보리(`navori`)·마법사의최후(`wit`)·**C44(`c44`)** 1~4코어 전부**; c44는 26.13 버프(확대: 500거리부터 최대 10% 증폭, `items.py` 반영) 편입). 후보 풀은 `COGMAW_CORE_CANDIDATES` 상수로 중앙화(top1·`__main__` 공유). 랭킹 표 뒤에 **패키지 A/B(도란검+광전사+핏빛길 vs 도란활+피흡신발+민첩함) RelDPG 비교표**(상위 10+컨트롤)를 룬별로 출력. 크리 레퍼런스 `[CTRL2]`=c44-pd-ldr-ie(표시 전용, baseline 아님)도 표·A/B 비교에 항상 표시. **룬 2종 평가**: `__main__`이 `_run_cogmaw_ranking`을 **치명적속도(LethalTempo)·집중공격(PressTheAttack)** 두 keystone으로 각각 호출(룬별 표 2개; `simulate_cogmaw_core_path(keystone_cls=...)`, 보조룬 CutDown 고정). **power_compare 연동 완료**: top1=룬무관 최강(`get_cogmaw_powercompare_builds` — LT·PtA top1 중 절대 weighted-DPG 우위), basic=메타빌드(치속). skill-level 튜닝은 미완(todo).
 - **황혼과 새벽(`dawn`, 주문검)** [H-DAWN-1, 나무위키/LoL Wiki V26.09/CDragon id2510 교차검증]: 3100G·AP60/AS20%/AH20(체력300은 STAT_KEYS 미포함→DPS 미반영, 가격엔 포함). 스킬 시전 후 다음 평타에 **(기본AD75%+AP10%) 마법 버스트**(`DuskAndDawn.on_hit`, 1회 소비) + **온힛 효과 1회 추가**(`get_extra_onhit_applications`=가산 → 코그모 W 최대체력%·나셔 온힛 시너지). 쿨2s는 시전시각 기준(EssenceReaver와 동일), 회복은 DPS 모델 무시. Q/E/R/W 시전 모두 `cast_spell`→`on_spell_cast`로 arm. 테스트 `tests/test_dusk_dawn.py`.
 - **나보리(`navori`) / 마법사의최후(`wit`)** [H-NAVORI-1, LoL Wiki/CDragon 교차검증]: **navori** 2650G·AS40%/치확25%(이속4% 미모델) — 패시브 **평타마다 기본스킬 Q/W/E 남은 쿨 ×0.85**(궁 R 제외, 치명타 무관). `on_hit` 이 아니라 **엔진 평타훅 `champion.on_basic_attack(time)`**(base=no-op, `CogMaw`만 적용)에서 **평타당 1회** — 구인수 proc_count 에 안 곱해지도록. **wit** 2800G·AS50%/MR45(보존,DPS무영향)/인내20%(미모델) — 온힛 **45 마법**(`WitsEnd.on_hit`, 구인수×2·dawn 가산 적용). 테스트 `tests/test_navori_witend.py`.
 - **순차 최적 빌드 탐색**(`simulations/cogmaw_sequential.py`, 파일럿): 매 코어 시점에서 다음
@@ -95,7 +95,7 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
   `ANIM_CANCEL_CLIP`) + 마나30 게이트. 강화 평타는 `p_base×(1+ratio)`(치명·증폭 자연반영). R 은 t=0
   매뉴얼 시전(마나80): `bonus_ad += R_BONUS_AD`, Q쿨 `×(1-R_Q_CDR)`, 지속 만료 시 원복(짧은 버스트라 상시).
 - **전용 sim**: cogmaw.py 단일-키스톤(LethalTempo) 미러. 온힛+크리 풀, 컨트롤 **`botrk-guinsoo-terminus-pd`**
-  (탐색공간 필수·없으면 RuntimeError). 5:4:3:3 가중 RelDPG, ADC_PACKAGES A/B, K=2. **power_compare 통합**:
+  (탐색공간 필수·없으면 RuntimeError). 설정 파생 가중 RelDPG, ADC_PACKAGES A/B, K=2. **power_compare 통합**:
   top1=절대 DPS 최강, basic=컨트롤(실전 기준). 스킬 선마 Q→W→E, R=lvl 기반. E(콘뎀)·패시브(이속) 미모델.
 
 ### Jinx (`champion.py` Jinx + `simulations/jinx.py`) [수치 3소스 교차검증 patch16.13·가설 태그]
