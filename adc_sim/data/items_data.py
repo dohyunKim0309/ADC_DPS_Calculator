@@ -26,6 +26,18 @@ STAT_KEYS = (
     "mr", "armor",
 )
 
+# 관통 배타 — 게임 규칙(챔피언 무관): 방관 1개 + 마관 1개, terminus 는 양쪽 겸비.
+ARMOR_PEN_EXCLUSIVE = frozenset({"ldr", "mortal", "terminus"})
+MAGIC_PEN_EXCLUSIVE = frozenset({"void", "terminus"})
+
+
+def pen_rule_ok(keys):
+    """빌드(부분 포함) 내 방관 ≤1 AND 마관 ≤1. [사용자 확정 2026-07-06: 게임 자체 규칙]"""
+    armor = sum(1 for k in keys if k in ARMOR_PEN_EXCLUSIVE)
+    magic = sum(1 for k in keys if k in MAGIC_PEN_EXCLUSIVE)
+    return armor <= 1 and magic <= 1
+
+
 # 도란 시작 아이템 토글 — 최고 빌드 탐색 시 검/활 두 경우(2배)를 평가하고
 # 빌드별로 점수 높은 쪽을 고른다. 표/그래프 라벨에 DORAN_SHORT 로 표기.
 # (현재 Corki 만 이 자유 토글을 사용; Ashe/Yunara/KaiSa 는 ADC_PACKAGES 사용)

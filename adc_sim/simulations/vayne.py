@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from adc_sim.runes import LethalTempo, CutDown
 from adc_sim.engine import run_simulation
 from adc_sim.data.items_registry import create_item_from_key
-from adc_sim.data.items_data import ADC_PACKAGES
+from adc_sim.data.items_data import ADC_PACKAGES, pen_rule_ok
 from adc_sim.settings import CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL
 from adc_sim.simulations.ashe import build_ashe_like_core_report_meta
 
@@ -84,7 +84,6 @@ CORE2_CANDIDATES = ["botrk", "guinsoo", "kraken", "terminus", "wit", "runaan", "
                     "ie", "rfc", "collector", "yuntal25", "statikk"]
 CORE3_CANDIDATES = ["ie", "ldr", "guinsoo", "terminus", "pd", "collector", "wit", "kraken"]
 CORE4_CANDIDATES = ["ie", "ldr", "pd", "runaan", "rfc", "collector", "kraken", "wit", "statikk", "terminus"]
-PEN_EXCLUSIVE = {"terminus", "ldr", "mortal"}
 
 ITEM_SHORT = {
     "botrk": "BotRK", "guinsoo": "Gui", "kraken": "Krk", "terminus": "Terminus",
@@ -104,7 +103,7 @@ def _build_all_paths():
                 for c4 in CORE4_CANDIDATES:
                     if len({c1, c2, c3, c4}) < 4:
                         continue
-                    if sum(1 for k in (c1, c2, c3, c4) if k in PEN_EXCLUSIVE) > 1:
+                    if not pen_rule_ok((c1, c2, c3, c4)):
                         continue
                     path = (c1, c2, c3, c4)
                     if path in seen:

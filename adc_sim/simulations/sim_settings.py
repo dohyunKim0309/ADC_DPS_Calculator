@@ -5,8 +5,11 @@
 랭킹 엔진(adc_sim/simulations/case_ranking.py)은 이 설정을 소비만 한다.
 출력 정책(top_n 등)은 글로벌 adc_sim/settings.py 의 CASE_RANKING_OUTPUT 에 있다.
 
-(이 모듈은 순수 설정·헬퍼라 adc_sim 코어 모듈을 import 하지 않는다.)
+(이 모듈은 순수 설정·헬퍼라 adc_sim 코어 모듈을 import 하지 않는다;
+단, 관통 배타 세트는 adc_sim.data.items_data 의 데이터를 그대로 참조한다.)
 """
+
+from adc_sim.data.items_data import ARMOR_PEN_EXCLUSIVE
 
 # ── 코어별 가중 프로파일 ───────────────────────────────────────────────────
 # 이름 → 코어수 n 을 받아 가중치 리스트를 돌려주는 callable, 또는 명시 벡터.
@@ -55,8 +58,9 @@ SLOT_RESTRICTED_ITEMS = {
 }
 # 스택 아이템: 구매한 코어 타이밍엔 스택 0(비활성), '다음' 코어 타이밍부터 풀스택으로 취급.
 STACK_ITEMS = ("yuntal25", "manamune")
-# 관통/방관 계열 상호 배타(한 빌드에 1개까지).
-PEN_EXCLUSIVE_KEYS = ("ldr", "terminus", "mortal")
+# 관통/방관 계열 상호 배타(한 빌드에 1개까지). items_data.ARMOR_PEN_EXCLUSIVE 의 별칭
+# (case_ranking 은 방관 세트만 참조 — 의미 불변).
+PEN_EXCLUSIVE_KEYS = tuple(sorted(ARMOR_PEN_EXCLUSIVE))
 # 치유감소(hc) 케이스가 강제로 포함시키는 치감 아이템.
 HEAL_CUT_ITEM = "mortal"
 # Zeal(질풍검) 계열 — 이동속도+공속/치명. (윤탈·스태틱은 zeal 아이템으로 보지 않음.)

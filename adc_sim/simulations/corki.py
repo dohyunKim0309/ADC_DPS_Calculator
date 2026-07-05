@@ -69,7 +69,7 @@ def build_target_for_core(core_tier):
 # 윤탈 기본 crit: 과거 corki 는 0.05 였으나, 데미지 경로는 항상 명시적 crit 을 전달하므로
 # 통합 기본값(0.25)으로 합쳐도 결과 불변(검증됨).
 from adc_sim.data.items_registry import create_item_from_key
-from adc_sim.data.items_data import DORAN_OPTIONS, DORAN_SHORT
+from adc_sim.data.items_data import DORAN_OPTIONS, DORAN_SHORT, pen_rule_ok
 
 
 def short_name(item_key):
@@ -197,7 +197,6 @@ def get_corki_4core_top1_build(rank_by="dpg"):
     core4_candidates = ["ie", "ldr", "botrk", "bt", "kraken", "yuntal", "storm", "essence", "trinity", "statikk"]
     shoe_candidates = ["plated", "berserker"]
     rune_candidates = ["conq", "lt"]
-    pen_exclusive = {"terminus", "ldr", "mortal"}
 
     control_path = ("trinity", "muramana", "collector", "ldr")
     control_shoe = "plated"
@@ -229,8 +228,7 @@ def get_corki_4core_top1_build(rank_by="dpg"):
                                     continue
                                 if "trinity" in (c1, c2, c3, c4) and "essence" in (c1, c2, c3, c4):
                                     continue
-                                pen_count = sum(1 for k in (c1, c2, c3, c4) if k in pen_exclusive)
-                                if pen_count > 1:
+                                if not pen_rule_ok((c1, c2, c3, c4)):
                                     continue
 
                                 path = (c1, c2, c3, c4)
@@ -295,7 +293,6 @@ if __name__ == "__main__":
     core4_candidates = ["ie", "ldr", "botrk", "bt", "kraken", "yuntal", "storm", "essence", "trinity", "statikk"]
     shoe_candidates = ["plated", "berserker"]
     rune_candidates = ["conq", "lt"]
-    pen_exclusive = {"terminus", "ldr", "mortal"}
 
     # 대조군: 트포-무라마나-징수-LDR + 판금 + 정복자/체력차극복
     control_path = ("trinity", "muramana", "collector", "ldr")
@@ -322,8 +319,7 @@ if __name__ == "__main__":
                             if "trinity" in (c1, c2, c3, c4) and "essence" in (c1, c2, c3, c4):
                                 continue
                             # 경계/LDR/필멸자는 셋 중 하나만
-                            pen_count = sum(1 for k in (c1, c2, c3, c4) if k in pen_exclusive)
-                            if pen_count > 1:
+                            if not pen_rule_ok((c1, c2, c3, c4)):
                                 continue
 
                             for doran in DORAN_OPTIONS:

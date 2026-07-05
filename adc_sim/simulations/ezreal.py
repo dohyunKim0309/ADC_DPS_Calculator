@@ -3,7 +3,7 @@ from adc_sim.engine import run_simulation
 from adc_sim.runes import Conqueror, LethalTempo, CutDown
 from adc_sim.settings import CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL
 from adc_sim.data.items_registry import create_item_from_key
-from adc_sim.data.items_data import DORAN_OPTIONS, DORAN_SHORT
+from adc_sim.data.items_data import DORAN_OPTIONS, DORAN_SHORT, pen_rule_ok
 import matplotlib.pyplot as plt
 import random
 
@@ -108,7 +108,6 @@ CORE4_CANDIDATES = ["ie", "ldr", "botrk", "bt", "kraken", "yuntal", "storm", "es
                     "trinity", "statikk", "nashor"]
 SHOE_CANDIDATES = ["plated", "berserker"]
 RUNE_CANDIDATES = ["conq", "lt"]
-PEN_EXCLUSIVE = {"terminus", "ldr", "mortal"}
 
 CONTROL_PATH = ("trinity", "muramana", "ie", "ldr")
 CONTROL_SHOE = "berserker"
@@ -132,7 +131,7 @@ def _iter_paths():
                     quad = (c1, c2, c3, c4)
                     if "trinity" in quad and "essence" in quad:
                         continue
-                    if sum(1 for k in quad if k in PEN_EXCLUSIVE) > 1:
+                    if not pen_rule_ok(quad):
                         continue
                     yield quad
 
