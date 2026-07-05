@@ -85,3 +85,31 @@ def node_alternatives(state, W, power, gamma, candidates_map, top_n=3):
         vals.append((x, gamma * (power(nxt) + W[nxt])))
     vals.sort(key=lambda t: t[1], reverse=True)
     return vals[:top_n]
+
+
+class PowerCache:
+    """(집합) → (dps, gold) 메모 — 패키지·룬 고정. DPS/DPG DP 가 같은 캐시 공유."""
+
+    def __init__(self, pkg, keystone_cls, sim_fn=simulate_cogmaw_core_path):
+        self.pkg = pkg
+        self.keystone_cls = keystone_cls
+        self.sim_fn = sim_fn
+        self.cache = {}
+        self.sim_calls = 0
+
+    def dps_gold(self, state):
+        if state not in self.cache:
+            self.sim_calls += 1
+            kw = dict(doran_key=self.pkg["doran"], boots_key=self.pkg["boots"],
+                      rune_as_bonus=self.pkg["rune_as"])
+            if self.keystone_cls is not None:
+                kw["keystone_cls"] = self.keystone_cls
+            self.cache[state] = self.sim_fn(tuple(sorted(state)), len(state), **kw)
+        return self.cache[state]
+
+    def dps(self, state):
+        return self.dps_gold(state)[0]
+
+    def dpg(self, state):
+        d, g = self.dps_gold(state)
+        return d / (g / 1000.0) if g > 0 else 0.0

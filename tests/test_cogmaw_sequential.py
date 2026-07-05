@@ -1,7 +1,7 @@
 """순차 최적화 DP 코어 테스트 — 주입식 power/후보맵, 시뮬 무의존."""
 from adc_sim.simulations.cogmaw_sequential import (
     legal_next_items, solve_sequential, extract_trajectory, node_alternatives,
-    default_candidates_map, SLOT5_CANDIDATES, PEN_EXCLUSIVE,
+    default_candidates_map, SLOT5_CANDIDATES, PEN_EXCLUSIVE, PowerCache,
 )
 
 # 수계산 합성 사례: horizon=2, γ=0.5
@@ -53,3 +53,32 @@ def test_default_candidates_map_shape():
     m = default_candidates_map()
     assert set(m.keys()) == {1, 2, 3, 4, 5}
     assert m[5] == SLOT5_CANDIDATES and "c44" in m[1]
+
+
+def _fake_sim(full_path, core_tier, doran_key=None, boots_key=None,
+              rune_as_bonus=0.0, keystone_cls=None):
+    return 100.0 * core_tier, 1000.0 * core_tier
+
+
+def test_power_cache_memoizes_and_computes_dpg():
+    pkg = {"doran": "doranblade", "boots": "berserker", "rune_as": 0.0, "label": "T"}
+    pc = PowerCache(pkg, keystone_cls=None, sim_fn=_fake_sim)
+    s2 = frozenset({"a", "b"})
+    assert abs(pc.dps(s2) - 200.0) < 1e-9
+    assert abs(pc.dpg(s2) - 100.0) < 1e-9      # 200 / (2000/1000)
+    assert pc.sim_calls == 1                    # dps→dpg 재호출에도 시뮬 1회
+    pc.dps(s2)
+    assert pc.sim_calls == 1
+
+
+def test_power_cache_passes_sorted_tuple_and_tier():
+    seen = {}
+
+    def spy(full_path, core_tier, **kw):
+        seen["path"], seen["tier"] = full_path, core_tier
+        return 1.0, 1.0
+
+    pkg = {"doran": "doranblade", "boots": "berserker", "rune_as": 0.0, "label": "T"}
+    pc = PowerCache(pkg, keystone_cls=None, sim_fn=spy)
+    pc.dps(frozenset({"b", "a", "c"}))
+    assert seen["path"] == ("a", "b", "c") and seen["tier"] == 3
