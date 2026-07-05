@@ -67,6 +67,16 @@ def simulate_cogmaw_core_path(full_path, core_tier, doran_key="doranblade",
 
 # 컨트롤(베이스라인) = 실전 메타 빌드 — 모든 빌드 RelDPG 를 '메타 대비'로 측정. 풀에 존재해야 함.
 CONTROL_PATH = ("guinsoo", "navori", "terminus", "wit")
+
+# 후보 풀(1~4코어) — get_cogmaw_4core_top1_build 와 __main__ 이 공유(중복 하드코딩 제거).
+# c44: 26.13 버프(500거리부터 최대 10% 증폭)로 풀 편입 [spec 2026-07-05]. 관통 배타와 무관.
+COGMAW_CORE_CANDIDATES = {
+    1: ["guinsoo", "kraken", "nashor", "terminus", "bot", "rfc", "statikk", "storm", "pd", "ie", "yuntal", "shadowflame", "dawn", "navori", "wit", "c44"],
+    2: ["guinsoo", "kraken", "nashor", "terminus", "bot", "rfc", "statikk", "storm", "pd", "ie", "yuntal", "shadowflame", "void", "dawn", "navori", "wit", "c44"],
+    3: ["guinsoo", "nashor", "terminus", "bot", "kraken", "rfc", "pd", "ie", "ldr", "rabadon", "shadowflame", "void", "dawn", "navori", "wit", "c44"],
+    4: ["nashor", "rabadon", "shadowflame", "ie", "ldr", "mortal", "terminus", "bot", "guinsoo", "kraken", "pd", "void", "dawn", "navori", "wit", "c44"],
+}
+
 _COGMAW_TOP1_CACHE = {}  # (keystone_cls, rank_by) → top1 dict (룬·랭킹기준별 캐시)
 
 
@@ -81,10 +91,10 @@ def get_cogmaw_4core_top1_build(keystone_cls=LethalTempo, rank_by="dpg"):
     if (keystone_cls, rank_by) in _COGMAW_TOP1_CACHE:
         return _COGMAW_TOP1_CACHE[(keystone_cls, rank_by)]
 
-    core1_candidates = ["guinsoo", "kraken", "nashor", "terminus", "bot", "rfc", "statikk", "storm", "pd", "ie", "yuntal", "shadowflame", "dawn", "navori", "wit"]
-    core2_candidates = ["guinsoo", "kraken", "nashor", "terminus", "bot", "rfc", "statikk", "storm", "pd", "ie", "yuntal", "shadowflame", "void", "dawn", "navori", "wit"]
-    core3_candidates = ["guinsoo", "nashor", "terminus", "bot", "kraken", "rfc", "pd", "ie", "ldr", "rabadon", "shadowflame", "void", "dawn", "navori", "wit"]
-    core4_candidates = ["nashor", "rabadon", "shadowflame", "ie", "ldr", "mortal", "terminus", "bot", "guinsoo", "kraken", "pd", "void", "dawn", "navori", "wit"]
+    core1_candidates = COGMAW_CORE_CANDIDATES[1]
+    core2_candidates = COGMAW_CORE_CANDIDATES[2]
+    core3_candidates = COGMAW_CORE_CANDIDATES[3]
+    core4_candidates = COGMAW_CORE_CANDIDATES[4]
     pen_exclusive = {"terminus", "ldr", "mortal"}
     ctrl_combo = tuple(sorted(CONTROL_PATH))
 
@@ -359,10 +369,10 @@ def _run_cogmaw_ranking(keystone_cls, keystone_label, all_paths, item_short, ctr
 if __name__ == "__main__":
     print("\n=== Cog'Maw Build Path Power Spike (W/Q/E/R auto-cast, 1→4 Core) ===")
 
-    core1_candidates = ["guinsoo", "kraken", "nashor", "terminus", "bot", "rfc", "statikk", "storm", "pd", "ie", "yuntal", "shadowflame", "dawn", "navori", "wit"]
-    core2_candidates = ["guinsoo", "kraken", "nashor", "terminus", "bot", "rfc", "statikk", "storm", "pd", "ie", "yuntal", "shadowflame", "void", "dawn", "navori", "wit"]
-    core3_candidates = ["guinsoo", "nashor", "terminus", "bot", "kraken", "rfc", "pd", "ie", "ldr", "rabadon", "shadowflame", "void", "dawn", "navori", "wit"]
-    core4_candidates = ["nashor", "rabadon", "shadowflame", "ie", "ldr", "mortal", "terminus", "bot", "guinsoo", "kraken", "pd", "void", "dawn", "navori", "wit"]
+    core1_candidates = COGMAW_CORE_CANDIDATES[1]
+    core2_candidates = COGMAW_CORE_CANDIDATES[2]
+    core3_candidates = COGMAW_CORE_CANDIDATES[3]
+    core4_candidates = COGMAW_CORE_CANDIDATES[4]
     pen_exclusive = {"terminus", "ldr", "mortal"}
     ctrl_combo = tuple(sorted(CONTROL_PATH))
 
@@ -371,7 +381,7 @@ if __name__ == "__main__":
         "bot": "BotRK", "rfc": "RFC", "statikk": "Statikk", "storm": "Storm",
         "pd": "PD", "ie": "IE", "yuntal": "Yun", "ldr": "LDR",
         "rabadon": "Rabadon", "shadowflame": "ShadowFlame", "mortal": "Mortal", "void": "Void", "dawn": "D&D",
-        "navori": "Navori", "wit": "Wit's",
+        "navori": "Navori", "wit": "Wit's", "c44": "C44",
     }
 
     all_paths = []
