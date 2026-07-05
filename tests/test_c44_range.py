@@ -54,14 +54,31 @@ def _make_champ_with_c44():
     return champ
 
 
-def test_c44_amps_magic_onhit_channel():
+def test_c44_does_not_amp_generic_onhit():
     champ = _make_champ_with_c44()
     result = champ.get_one_hit_damage(_Dummy())
-    magic_onhit = result[3]
-    assert abs(magic_onhit - 100.0 * 1.10) < 1e-6
+    assert abs(result[3] - 100.0) < 1e-6
 
 
-def test_c44_multiplies_last_damage_amp_for_true_onhit():
+def test_c44_does_not_touch_last_damage_amp():
     champ = _make_champ_with_c44()
     champ.get_one_hit_damage(_Dummy())
-    assert abs(champ._last_damage_amp - 1.10) < 1e-9
+    assert abs(champ._last_damage_amp - 1.0) < 1e-9
+
+
+def test_c44_amps_cogmaw_w_onhit_bug():
+    from adc_sim.champion import CogMaw
+
+    def w_magic(with_c44):
+        cog = CogMaw(level=15, q_level=4, w_level=5, e_level=3, r_level=2)
+        cog.init_combat_state()
+        cog.w_active = True
+        if with_c44:
+            cog.add_item(create_item_from_key("c44"))
+        return cog.get_champion_onhit(_Dummy())[1]
+
+    base = w_magic(False)
+    amped = w_magic(True)
+    assert base > 0
+    # c44 는 AP 0 → W pct 불변, 코그모 사거리 500 → modifier 0.10 → 정확히 ×1.10
+    assert abs(amped / base - 1.10) < 1e-9

@@ -368,16 +368,10 @@ class Champion:
         total_phys_onhit *= mod_factor
         total_magic_onhit *= mod_factor
         
-        # C44 증폭 — 평타 패키지 전체(기본+온힛 물리/마법)에 별도 배수, 스킬 직격딜 제외("기본 공격 시").
-        # [H-C44-ONHIT-1] 사용자 인게임 확인(2026-07-06): 평타에 실리는 온힛(코그모 W 마법 등)까지 적용.
-        # 은화살 true 온힛은 _last_damage_amp 경유로 증폭 — H-VAYNE-W-2(LDR) 관례와 일관.
+        # C44 증폭 — 평타 물리 기본딜에만 적용(룬·아이템 온힛/마법 미적용, 사용자 확인 2026-07-06).
+        # 예외: 코그모 W 온힛의 C44 증폭(인게임 일시적 버그)은 CogMaw.get_champion_onhit 에서 처리.
         if c44_multiplier > 0:
-            c44_factor = 1.0 + c44_multiplier
-            phys_base *= c44_factor
-            magic_base *= c44_factor
-            total_phys_onhit *= c44_factor
-            total_magic_onhit *= c44_factor
-            self._last_damage_amp *= c44_factor
+            phys_base *= (1.0 + c44_multiplier)
         
         # ---------------------------------------------------------
         # 4. 그림자불꽃 (Shadowflame) 적용
@@ -1905,7 +1899,13 @@ class CogMaw(Champion):
             return 0, 0
         idx = self.w_level - 1
         pct = self.W_PCT[idx] + 0.00015 * self.total_ap   # 100AP당 +1.5%
-        return 0, pct * target.max_hp
+        w_magic = pct * target.max_hp
+        # [H-C44-KOGW-BUG-1] 인게임 일시적 버그(사용자 확인 2026-07-06): C44 '확대' 증폭이
+        # 코그모 W 온힛에만 적용됨(룬·일반 온힛 미적용). 라이엇 픽스 시 이 블록 제거.
+        for it in self.inventory:
+            if getattr(it, "name", "") == "Hextech Scope C44":
+                w_magic *= (1.0 + it.get_damage_modifier(target, self))
+        return 0, w_magic
 
     def init_combat_state(self, skill_plan=None):
         super().init_combat_state(skill_plan)   # _combat_time=0, current_mana=total_mana
