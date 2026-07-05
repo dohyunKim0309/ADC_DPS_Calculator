@@ -49,3 +49,13 @@ def test_pkg_compare_skips_path_missing_a_package():
     rows = [_row(("a", "b", "c", "d"), "Bld+Zerk", [100.0] * 4)]
     out = _build_pkg_compare_rows(rows, [("a", "b", "c", "d")], BASELINE, WEIGHTS)
     assert out == []
+
+
+def test_control2_path_is_legal_in_pools():
+    from adc_sim.simulations.cogmaw import CONTROL2_PATH, COGMAW_CORE_CANDIDATES
+    assert CONTROL2_PATH == ("c44", "pd", "ldr", "ie")
+    assert len(set(CONTROL2_PATH)) == 4
+    for tier, key in enumerate(CONTROL2_PATH, start=1):
+        assert key in COGMAW_CORE_CANDIDATES[tier], f"{key} not in tier {tier}"
+    pen_exclusive = {"terminus", "ldr", "mortal"}
+    assert sum(1 for k in CONTROL2_PATH if k in pen_exclusive) <= 1

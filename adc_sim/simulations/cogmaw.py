@@ -68,6 +68,9 @@ def simulate_cogmaw_core_path(full_path, core_tier, doran_key="doranblade",
 # 컨트롤(베이스라인) = 실전 메타 빌드 — 모든 빌드 RelDPG 를 '메타 대비'로 측정. 풀에 존재해야 함.
 CONTROL_PATH = ("guinsoo", "navori", "terminus", "wit")
 
+# 표시 전용 고정 레퍼런스(크리 빌드) — baseline 아님, 랭킹 표에 [CTRL2]로 항상 표시 [사용자 요청 2026-07-05]
+CONTROL2_PATH = ("c44", "pd", "ldr", "ie")
+
 # 후보 풀(1~4코어) — get_cogmaw_4core_top1_build 와 __main__ 이 공유(중복 하드코딩 제거).
 # c44: 26.13 버프(500거리부터 최대 10% 증폭)로 풀 편입 [spec 2026-07-05]. 관통 배타와 무관.
 COGMAW_CORE_CANDIDATES = {
@@ -290,6 +293,7 @@ def _run_cogmaw_ranking(keystone_cls, keystone_label, all_paths, item_short, ctr
     weight_sum = sum(core_weight_raw)
     core_weights = [w / weight_sum for w in core_weight_raw]
 
+    ctrl2_combo = tuple(sorted(CONTROL2_PATH))
     rows = []
     for path in all_paths:
         for pkg in ADC_PACKAGES:
@@ -311,6 +315,7 @@ def _run_cogmaw_ranking(keystone_cls, keystone_label, all_paths, item_short, ctr
                 "y": dps_list,
                 "dpg": dpg,
                 "is_control": tuple(sorted(path)) == ctrl_combo,
+                "is_control2": tuple(sorted(path)) == ctrl2_combo,
                 "dedupe_eff": sum(dedupe_weight_raw[i] * dpg[i] for i in range(4)),
             })
 
@@ -323,10 +328,13 @@ def _run_cogmaw_ranking(keystone_cls, keystone_label, all_paths, item_short, ctr
     rows_dedup = list(dedupe_best.values())
 
     # fix control to canonical ordering
-    rows_dedup = [r for r in rows_dedup if not r["is_control"]]
+    rows_dedup = [r for r in rows_dedup if not (r["is_control"] or r["is_control2"])]
     ctrl_cands = [r for r in rows if tuple(r["path"]) == CONTROL_PATH]
     if ctrl_cands:
         rows_dedup.append(max(ctrl_cands, key=lambda r: r["dedupe_eff"]))
+    ctrl2_cands = [r for r in rows if tuple(r["path"]) == CONTROL2_PATH]
+    if ctrl2_cands:  # baseline 아님 → 없으면 조용히 생략(RuntimeError 없음)
+        rows_dedup.append(max(ctrl2_cands, key=lambda r: r["dedupe_eff"]))
 
     print(f"\n{'=' * 28}  RUNE: {keystone_label}  {'=' * 28}")
     print(f"Builds after dedup (best-order-by-{CORE_WEIGHTS_LABEL}, control fixed to canonical): {len(rows_dedup)}")
@@ -358,7 +366,8 @@ def _run_cogmaw_ranking(keystone_cls, keystone_label, all_paths, item_short, ctr
     top_n = min(30, len(ranked))
     top_rows = ranked[:top_n]
     top_row_paths = {tuple(r["path"]) for r in top_rows}
-    extra_controls = [r for r in control_rows if tuple(r["path"]) not in top_row_paths]
+    control2_rows = [r for r in rows_dedup if r["is_control2"]]
+    extra_controls = [r for r in control_rows + control2_rows if tuple(r["path"]) not in top_row_paths]
     output_rows = top_rows + extra_controls
 
     def trim_text(text, width):
@@ -376,7 +385,7 @@ def _run_cogmaw_ranking(keystone_cls, keystone_label, all_paths, item_short, ctr
     col_core = 18
     col_rep = 9
     header = (
-        f"{'RK':>3} | {'BUILD(4C)':<{col_build}} | {'CTRL':>6} | "
+        f"{'RK':>3} | {'BUILD(4C)':<{col_build}} | {'CTRL':>7} | "
         f"{'1C DPS/ΔDPG%':>{col_core}} | {'2C DPS/ΔDPG%':>{col_core}} | "
         f"{'3C DPS/ΔDPG%':>{col_core}} | {'4C DPS/ΔDPG%':>{col_core}} | "
         f"{'RelDPG':>{col_rep}}"
@@ -391,10 +400,10 @@ def _run_cogmaw_ranking(keystone_cls, keystone_label, all_paths, item_short, ctr
     for rank, r in enumerate(output_rows, start=1):
         y1, y2, y3, y4 = r["y"][:4]
         d1, d2, d3, d4 = r["core_rel_delta_pct_4"]
-        ctrl_tag = "[CTRL]" if r["is_control"] else ""
+        ctrl_tag = "[CTRL]" if r["is_control"] else ("[CTRL2]" if r["is_control2"] else "")
         label = trim_text(fmt_build4(r), col_build)
         print(
-            f"{rank:>3} | {label:<{col_build}} | {ctrl_tag:>6} | "
+            f"{rank:>3} | {label:<{col_build}} | {ctrl_tag:>7} | "
             f"{fmt_core_cell(y1,d1):>{col_core}} | {fmt_core_cell(y2,d2):>{col_core}} | "
             f"{fmt_core_cell(y3,d3):>{col_core}} | {fmt_core_cell(y4,d4):>{col_core}} | "
             f"{r['rel_dpg_score']:>{col_rep}.2f}"
@@ -402,7 +411,7 @@ def _run_cogmaw_ranking(keystone_cls, keystone_label, all_paths, item_short, ctr
 
     # ── 패키지 A/B 비교표: 상위 10 + 컨트롤, 동일 baseline·재시뮬 없음 [spec 2026-07-05] ──
     compare_targets = [tuple(r["path"]) for r in ranked[:10]]
-    for cr in control_rows:
+    for cr in control_rows + control2_rows:
         if tuple(cr["path"]) not in compare_targets:
             compare_targets.append(tuple(cr["path"]))
     pkg_cmp = _build_pkg_compare_rows(rows, compare_targets, baseline_dpg_4, core_weights)
