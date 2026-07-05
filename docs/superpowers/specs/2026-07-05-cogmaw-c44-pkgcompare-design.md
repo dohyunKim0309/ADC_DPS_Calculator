@@ -59,6 +59,15 @@
 - 기존 `test_cogmaw_ranking.py`(형태 검증)·전체 스위트 통과 확인.
 - 수동 검증: `MPLBACKEND=Agg`로 cogmaw 시뮬 실행 → 비교표 출력·c44 빌드 등장 확인.
 
+### 4. [CTRL2] 고정 레퍼런스 행 — c44-pd-ldr-ie (사용자 추가 요청, 2026-07-05)
+- 모듈 상수 `CONTROL2_PATH = ("c44", "pd", "ldr", "ie")` (크리 빌드 레퍼런스).
+- **표시 전용**: RelDPG baseline은 여전히 `CONTROL_PATH`(메타 빌드). top1/power_compare 무영향.
+- 기존 [CTRL] 관례 미러: 해당 아이템 집합은 dedup에서 제외 후 사용자 지정 순서 행(패키지 A/B 중
+  우수)으로 재삽입, 랭킹 표에 항상 출력(상위 30 밖이면 말미 추가), 태그 `[CTRL2]`(태그 칼럼 6→7자).
+- A/B 패키지 비교표 대상에도 포함. 풀에서 빠지면 조용히 생략(`if ctrl2_cands:` 가드 — CONTROL과
+  달리 RuntimeError 없음: baseline이 아니므로).
+- 테스트: CONTROL2_PATH가 후보 풀·pen 배타 제약상 합법인지 순수 검증.
+
 ## 스코프 밖 (명시적 제외)
 
 - 코그모 W 사거리 증가(+130~250)의 엔진 모델링 — C44 버프로 불필요해짐; 다른 사거리 의존

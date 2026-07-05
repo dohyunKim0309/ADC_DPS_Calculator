@@ -385,3 +385,126 @@ git commit -m "docs: CLAUDE.md 코그모 섹션 c44 편입·풀 상수·A/B 비�
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
+
+---
+
+### Task 5: [CTRL2] 고정 레퍼런스 행 — c44-pd-ldr-ie (사용자 추가 요청)
+
+**Files:**
+- Modify: `adc_sim/simulations/cogmaw.py` (`CONTROL_PATH` 아래 상수 1개; `_run_cogmaw_ranking` 내부 5곳)
+- Modify: `CLAUDE.md` (코그모 "전용 sim" 불릿 끝에 한 구절 추가)
+- Test: `tests/test_cogmaw_pkg_compare.py` (테스트 1개 추가)
+
+**Interfaces:**
+- Consumes: Task 2의 `COGMAW_CORE_CANDIDATES`, Task 3의 A/B 비교표 블록(`control_rows + ...` 대상 목록), `_run_cogmaw_ranking` 로컬 `rows`/`rows_dedup`/`dedupe_best`/`top_row_paths`/`output_rows`/`ctrl_tag`.
+- Produces: 모듈 상수 `CONTROL2_PATH: tuple[str, str, str, str]`, row dict 키 `"is_control2": bool` (해당 함수 내 전 행 보유).
+
+- [ ] **Step 1: 실패하는 테스트 작성** — `tests/test_cogmaw_pkg_compare.py`에 추가:
+
+```python
+def test_control2_path_is_legal_in_pools():
+    from adc_sim.simulations.cogmaw import CONTROL2_PATH, COGMAW_CORE_CANDIDATES
+    assert CONTROL2_PATH == ("c44", "pd", "ldr", "ie")
+    assert len(set(CONTROL2_PATH)) == 4
+    for tier, key in enumerate(CONTROL2_PATH, start=1):
+        assert key in COGMAW_CORE_CANDIDATES[tier], f"{key} not in tier {tier}"
+    pen_exclusive = {"terminus", "ldr", "mortal"}
+    assert sum(1 for k in CONTROL2_PATH if k in pen_exclusive) <= 1
+```
+
+- [ ] **Step 2: 실패 확인**
+
+Run: `.venv/bin/python -m pytest tests/test_cogmaw_pkg_compare.py -v`
+Expected: FAIL — `ImportError: cannot import name 'CONTROL2_PATH'` (신규 테스트만; 기존 테스트는 import 위치가 함수 내부라 영향 없음 — 만약 파일 전체가 죽으면 신규 테스트의 import를 함수 안에 둔 위 코드 그대로인지 확인).
+
+- [ ] **Step 3: 구현** — `adc_sim/simulations/cogmaw.py`:
+
+(a) `CONTROL_PATH = ("guinsoo", "navori", "terminus", "wit")` 바로 아래에 추가:
+
+```python
+# 표시 전용 고정 레퍼런스(크리 빌드) — baseline 아님, 랭킹 표에 [CTRL2]로 항상 표시 [사용자 요청 2026-07-05]
+CONTROL2_PATH = ("c44", "pd", "ldr", "ie")
+```
+
+(b) `_run_cogmaw_ranking` 상단, `rows = []` 직전에 추가:
+
+```python
+    ctrl2_combo = tuple(sorted(CONTROL2_PATH))
+```
+
+(c) 같은 함수 rows.append dict의 `"is_control": ...` 줄 바로 아래에 추가:
+
+```python
+                "is_control2": tuple(sorted(path)) == ctrl2_combo,
+```
+
+(d) canonical 고정 블록 —
+
+```python
+    rows_dedup = [r for r in rows_dedup if not r["is_control"]]
+    ctrl_cands = [r for r in rows if tuple(r["path"]) == CONTROL_PATH]
+    if ctrl_cands:
+        rows_dedup.append(max(ctrl_cands, key=lambda r: r["dedupe_eff"]))
+```
+→
+```python
+    rows_dedup = [r for r in rows_dedup if not (r["is_control"] or r["is_control2"])]
+    ctrl_cands = [r for r in rows if tuple(r["path"]) == CONTROL_PATH]
+    if ctrl_cands:
+        rows_dedup.append(max(ctrl_cands, key=lambda r: r["dedupe_eff"]))
+    ctrl2_cands = [r for r in rows if tuple(r["path"]) == CONTROL2_PATH]
+    if ctrl2_cands:  # baseline 아님 → 없으면 조용히 생략(RuntimeError 없음)
+        rows_dedup.append(max(ctrl2_cands, key=lambda r: r["dedupe_eff"]))
+```
+
+(e) 출력 행 구성 —
+
+```python
+    extra_controls = [r for r in control_rows if tuple(r["path"]) not in top_row_paths]
+```
+→
+```python
+    control2_rows = [r for r in rows_dedup if r["is_control2"]]
+    extra_controls = [r for r in control_rows + control2_rows if tuple(r["path"]) not in top_row_paths]
+```
+
+(f) 태그·칼럼 폭 — 헤더의 `{'CTRL':>6}` → `{'CTRL':>7}`, 행의
+
+```python
+        ctrl_tag = "[CTRL]" if r["is_control"] else ""
+```
+→
+```python
+        ctrl_tag = "[CTRL]" if r["is_control"] else ("[CTRL2]" if r["is_control2"] else "")
+```
+그리고 같은 print의 `{ctrl_tag:>6}` → `{ctrl_tag:>7}`.
+
+(g) A/B 비교표 대상 — Task 3이 넣은
+
+```python
+    for cr in control_rows:
+```
+→
+```python
+    for cr in control_rows + control2_rows:
+```
+
+- [ ] **Step 4: 통과 확인**
+
+Run: `.venv/bin/python -m pytest tests/test_cogmaw_pkg_compare.py tests/test_cogmaw_ranking.py -v`
+Expected: 6 passed (신규 1 포함; 랭킹 테스트는 전수조사라 수 분).
+
+- [ ] **Step 5: CLAUDE.md** — 코그모 "전용 sim" 불릿의 A/B 비교표 문장 끝에 추가:
+
+```
+크리 레퍼런스 `[CTRL2]`=c44-pd-ldr-ie(표시 전용, baseline 아님)도 표·A/B 비교에 항상 표시.
+```
+
+- [ ] **Step 6: 커밋**
+
+```bash
+git add tests/test_cogmaw_pkg_compare.py adc_sim/simulations/cogmaw.py CLAUDE.md
+git commit -m "feat(cogmaw): [CTRL2] 크리 레퍼런스 행(c44-pd-ldr-ie) 표·A/B 비교 고정 표시
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+```
