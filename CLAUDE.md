@@ -74,6 +74,11 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 - **전용 sim**: kaisa.py 미러(4코어 전수→`rel_dpg` 5:4:3:3). 컨트롤 `guinsoo-navori-terminus-wit`(실전 메타 빌드 — RelDPG를 '메타 대비'로 측정; 풀에 존재해야 함). 풀=온힛+AP(guinsoo/kraken/nashor/terminus/bot/rfc/pd/ie/yuntal/statikk/storm + 4코어 rabadon/shadowflame; **shadowflame은 1~4코어 전부**, **void 2~4코어**, **황혼과 새벽(`dawn`)·나보리(`navori`)·마법사의최후(`wit`)·**C44(`c44`)** 1~4코어 전부**; c44는 26.13 버프(확대: 500거리부터 최대 10% 증폭, `items.py` 반영) 편입). 후보 풀은 `COGMAW_CORE_CANDIDATES` 상수로 중앙화(top1·`__main__` 공유). 랭킹 표 뒤에 **패키지 A/B(도란검+광전사+핏빛길 vs 도란활+피흡신발+민첩함) RelDPG 비교표**(상위 10+컨트롤)를 룬별로 출력. 크리 레퍼런스 `[CTRL2]`=c44-pd-ldr-ie(표시 전용, baseline 아님)도 표·A/B 비교에 항상 표시. **룬 2종 평가**: `__main__`이 `_run_cogmaw_ranking`을 **치명적속도(LethalTempo)·집중공격(PressTheAttack)** 두 keystone으로 각각 호출(룬별 표 2개; `simulate_cogmaw_core_path(keystone_cls=...)`, 보조룬 CutDown 고정). **power_compare 연동 완료**: top1=룬무관 최강(`get_cogmaw_powercompare_builds` — LT·PtA top1 중 절대 weighted-DPG 우위), basic=메타빌드(치속). skill-level 튜닝은 미완(todo).
 - **황혼과 새벽(`dawn`, 주문검)** [H-DAWN-1, 나무위키/LoL Wiki V26.09/CDragon id2510 교차검증]: 3100G·AP60/AS20%/AH20(체력300은 STAT_KEYS 미포함→DPS 미반영, 가격엔 포함). 스킬 시전 후 다음 평타에 **(기본AD75%+AP10%) 마법 버스트**(`DuskAndDawn.on_hit`, 1회 소비) + **온힛 효과 1회 추가**(`get_extra_onhit_applications`=가산 → 코그모 W 최대체력%·나셔 온힛 시너지). 쿨2s는 시전시각 기준(EssenceReaver와 동일), 회복은 DPS 모델 무시. Q/E/R/W 시전 모두 `cast_spell`→`on_spell_cast`로 arm. 테스트 `tests/test_dusk_dawn.py`.
 - **나보리(`navori`) / 마법사의최후(`wit`)** [H-NAVORI-1, LoL Wiki/CDragon 교차검증]: **navori** 2650G·AS40%/치확25%(이속4% 미모델) — 패시브 **평타마다 기본스킬 Q/W/E 남은 쿨 ×0.85**(궁 R 제외, 치명타 무관). `on_hit` 이 아니라 **엔진 평타훅 `champion.on_basic_attack(time)`**(base=no-op, `CogMaw`만 적용)에서 **평타당 1회** — 구인수 proc_count 에 안 곱해지도록. **wit** 2800G·AS50%/MR45(보존,DPS무영향)/인내20%(미모델) — 온힛 **45 마법**(`WitsEnd.on_hit`, 구인수×2·dawn 가산 적용). 테스트 `tests/test_navori_witend.py`.
+- **순차 최적 빌드 탐색**(`simulations/cogmaw_sequential.py`, 파일럿): 매 코어 시점에서 다음
+  아이템을 "미래 코어 파워의 γ-할인합(γ=0.9, 5코어 호라이즌)" 최대화로 선택하는 DP.
+  룬(치속/집공)×패키지(A/B)×지표(DPS/DPG)별 궤적 + 분기점 대안 top3 + [CTRL]/[CTRL2] 동일
+  척도 비교 출력. 기존 가중 랭킹과 병행(대체 아님). `-m adc_sim.simulations.cogmaw_sequential`
+  로 실행(표만, 헤드리스 안전 — 전체 풀 실행은 수 분). spec: 2026-07-06 설계 문서.
 
 ### Vayne (`champion.py` Vayne + `simulations/vayne.py`) [수치 3소스 교차검증·가설은 spec §9]
 - **물리 온힛/크리 하이퍼캐리**. 킷: 평타 + **W 은화살**(3번째 연속 타격마다 `max(floor, %최대체력)`

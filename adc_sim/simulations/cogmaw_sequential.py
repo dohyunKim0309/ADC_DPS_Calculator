@@ -113,3 +113,72 @@ class PowerCache:
     def dpg(self, state):
         d, g = self.dps_gold(state)
         return d / (g / 1000.0) if g > 0 else 0.0
+
+
+def run_scenario(keystone_cls, pkg, metric, candidates_map=None, gamma=GAMMA,
+                 horizon=HORIZON, cache=None):
+    """룬×패키지×지표 1조합의 최적 궤적 계산. cache 를 넘기면 시뮬 캐시 공유(지표 간)."""
+    if candidates_map is None:
+        candidates_map = default_candidates_map()
+    if cache is None:
+        cache = PowerCache(pkg, keystone_cls)
+    metric_fn = cache.dpg if metric == "dpg" else cache.dps
+    W, best = solve_sequential(metric_fn, gamma=gamma, horizon=horizon,
+                               candidates_map=candidates_map)
+    traj = extract_trajectory(best)
+    steps, alts, state = [], [], frozenset()
+    for x in traj:
+        alts.append(node_alternatives(state, W, metric_fn, gamma, candidates_map))
+        state = state | {x}
+        dps, gold = cache.dps_gold(state)
+        steps.append({"item": x, "core": len(state), "dps": dps,
+                      "dpg": dps / (gold / 1000.0) if gold > 0 else 0.0,
+                      "gold": gold, "W": W[state]})
+    return {"trajectory": traj, "steps": steps, "alternatives": alts,
+            "W0": W[frozenset()], "W": W, "cache": cache}
+
+
+def evaluate_fixed_path(path, cache, metric, W, gamma=GAMMA, candidates_map=None):
+    """고정 구매 순서(4~5아이템)의 0코어 기준 할인합. 4아이템이면 잔여 슬롯은 W로 최적 연속."""
+    if candidates_map is None:
+        candidates_map = default_candidates_map()
+    metric_fn = cache.dpg if metric == "dpg" else cache.dps
+    total, state = 0.0, frozenset()
+    for k, x in enumerate(path, start=1):
+        state = state | {x}
+        total += (gamma ** k) * metric_fn(state)
+    if len(path) < HORIZON and state in W:
+        total += (gamma ** len(path)) * W[state]
+    return total
+
+
+def print_scenario(title, out, ctrl_rows):
+    print(f"\n=== {title} (γ={GAMMA}, horizon {HORIZON}core) ===")
+    print(f"W(0core 할인합) = {out['W0']:.2f}")
+    for i, step in enumerate(out["steps"]):
+        alt_txt = " / ".join(f"{a}:{v:.1f}" for a, v in out["alternatives"][i])
+        print(f"  {step['core']}core → {step['item']:<12} | DPS {step['dps']:>7.1f} | "
+              f"DPG {step['dpg']:>7.2f} | Gold {step['gold']:>5.0f} | 대안: {alt_txt}")
+    for name, val in ctrl_rows:
+        print(f"  [{name}] 동일 척도 할인합 = {val:.2f}")
+
+
+def main(with_top1=False):
+    # with_top1: 파일럿 단계에서는 인자 파싱만 하고 동작은 미구현(후속 작업).
+    for keystone_cls, ks_label in ((LethalTempo, "치속"), (PressTheAttack, "집공")):
+        for pkg in ADC_PACKAGES:
+            cache = PowerCache(pkg, keystone_cls)
+            for metric in ("dpg", "dps"):
+                out = run_scenario(keystone_cls, pkg, metric, cache=cache)
+                ctrl_rows = []
+                for name, path in (("CTRL", CONTROL_PATH), ("CTRL2", CONTROL2_PATH)):
+                    ctrl_rows.append((name, evaluate_fixed_path(
+                        list(path), cache, metric, out["W"])))
+                print_scenario(f"{ks_label} · {pkg['label']} · {metric.upper()}",
+                               out, ctrl_rows)
+            print(f"[{ks_label}·{pkg['label']}] sim_calls={cache.sim_calls}")
+
+
+if __name__ == "__main__":
+    import sys
+    main(with_top1="--with-top1" in sys.argv)

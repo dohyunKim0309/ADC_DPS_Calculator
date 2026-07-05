@@ -82,3 +82,21 @@ def test_power_cache_passes_sorted_tuple_and_tier():
     pc = PowerCache(pkg, keystone_cls=None, sim_fn=spy)
     pc.dps(frozenset({"b", "a", "c"}))
     assert seen["path"] == ("a", "b", "c") and seen["tier"] == 3
+
+
+def test_run_scenario_reduced_pool_end_to_end():
+    """실제 시뮬로 축소풀(3슬롯) end-to-end — 궤적 합법성과 필드 형태 검증."""
+    from adc_sim.simulations.cogmaw_sequential import run_scenario
+    from adc_sim.runes import LethalTempo
+    from adc_sim.data.items_data import ADC_PACKAGES
+    small = {1: ["guinsoo", "kraken"], 2: ["guinsoo", "kraken", "nashor"],
+             3: ["nashor", "terminus", "ldr"]}
+    out = run_scenario(LethalTempo, ADC_PACKAGES[1], "dpg",
+                       candidates_map=small, horizon=3)
+    traj = out["trajectory"]
+    assert len(traj) == 3 and len(set(traj)) == 3
+    assert sum(1 for k in traj if k in {"terminus", "ldr", "mortal"}) <= 1
+    assert len(out["steps"]) == 3
+    for step in out["steps"]:
+        assert step["dps"] > 0 and step["gold"] > 0
+    assert len(out["alternatives"]) == 3
