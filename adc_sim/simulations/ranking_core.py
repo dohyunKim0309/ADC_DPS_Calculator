@@ -24,6 +24,9 @@ def rank_builds(simulate_fn, all_paths, control_path, weights_raw=None,
     weight_sum = sum(weights_raw)
     core_weights = [w / weight_sum for w in weights_raw]
     ctrl_combo = tuple(sorted(control_path))
+    # 컨트롤과 같은 집합의 pinned 는 무시 — 이미 [CTRL]로 canonical 고정되므로 중복 방지
+    pinned_paths = tuple((tag, tuple(p)) for tag, p in pinned_paths
+                         if tuple(sorted(p)) != ctrl_combo)
     pinned_combos = {tuple(sorted(p)): (tag, tuple(p)) for tag, p in pinned_paths}
 
     rows = []

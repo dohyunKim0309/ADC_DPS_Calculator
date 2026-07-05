@@ -50,3 +50,11 @@ def test_rank_builds_pinned_paths_kept_and_tagged():
                           pinned_paths=(("PIN1", ("c", "x", "y", "a")),))
     pinned = [r for r in rows if r.get("pinned_tag") == "PIN1"]
     assert len(pinned) == 1 and pinned[0]["path"] == ("c", "x", "y", "a")
+
+
+def test_rank_builds_pinned_equal_to_control_no_duplicate():
+    rows, _ = rank_builds(_sim, PATHS, ("x", "y", "a", "b"), packages=PKGS,
+                          pinned_paths=(("PIN", ("x", "y", "a", "b")),))
+    assert len(rows) == 2
+    assert sum(1 for r in rows if r["is_control"]) == 1
+    assert all(r.get("pinned_tag") is None for r in rows)
