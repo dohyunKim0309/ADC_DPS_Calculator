@@ -40,7 +40,7 @@ def get_result_export_settings():
 # 점수 방식 선택 [사용자 확정 2026-07-06]: "weighted"=고정 가중합 / "discounted"=γ-할인합.
 # 할인합은 코어별 가중 [γ^1..γ^n] 과 동치라 기존 rel-DPG 파이프라인을 그대로 쓴다.
 RANKING_SCORING = {
-    "mode": "weighted",           # Task 5 에서 "discounted" 로 전환 예정
+    "mode": "discounted",
     "fixed_raw": [4.0, 4.0, 3.0, 3.0],
     "gamma": 0.9,
 }

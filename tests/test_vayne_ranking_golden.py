@@ -17,7 +17,7 @@ GOLDEN_CTRL_WDPG = 100.143652   # 캡처 출력의 ctrl weighted_dpg
 
 
 def test_vayne_rank_rows_golden():
-    rows, ctrl = _rank_rows(PATHS)
+    rows, ctrl = _rank_rows(PATHS, weights_raw=[4.0, 4.0, 3.0, 3.0])
     assert len(rows) == GOLDEN_N_ROWS
     assert abs(ctrl["weighted_dpg"] - GOLDEN_CTRL_WDPG) < 1e-6
     for r in rows:
