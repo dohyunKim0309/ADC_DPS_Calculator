@@ -245,6 +245,43 @@ def get_cogmaw_powercompare_builds():
     return best, meta
 
 
+def _build_pkg_compare_rows(rows, target_paths, baseline_dpg_4, core_weights):
+    """상위 빌드들의 패키지 A/B rel-DPG 비교 행 구성 — print 와 분리한 순수 함수(테스트용).
+
+    rows: pre-dedup 전 행(빌드×패키지, dict 에 path/pkg_label/dpg 필요).
+    target_paths: 비교 대상 path 튜플 리스트(순서 유지). 한쪽 패키지가 없는 path 는 건너뜀.
+    반환: [{"path", "scores": {pkg_label: rel_dpg_score}, "delta_b_minus_a", "winner"}]
+    """
+    by_path = {}
+    for r in rows:
+        by_path.setdefault(tuple(r["path"]), {})[r["pkg_label"]] = r
+    labels = [p["label"] for p in ADC_PACKAGES]
+    out = []
+    for path in target_paths:
+        pkg_rows = by_path.get(tuple(path), {})
+        scores = {}
+        for label in labels:
+            r = pkg_rows.get(label)
+            if r is None:
+                continue
+            core_rel = [
+                (r["dpg"][i] / baseline_dpg_4[i] * 100.0 if baseline_dpg_4[i] > 0 else 0.0)
+                for i in range(4)
+            ]
+            scores[label] = sum(core_weights[i] * core_rel[i] for i in range(4))
+        if len(scores) < len(labels):
+            continue
+        a_label, b_label = labels[0], labels[1]
+        delta = scores[b_label] - scores[a_label]
+        out.append({
+            "path": tuple(path),
+            "scores": scores,
+            "delta_b_minus_a": delta,
+            "winner": b_label if delta > 0 else a_label,
+        })
+    return out
+
+
 def _run_cogmaw_ranking(keystone_cls, keystone_label, all_paths, item_short, ctrl_combo):
     """주어진 keystone(룬)으로 전 빌드 시뮬→dedup→1:1:1:1 rel-DPG 랭킹→표 출력. ranked 반환.
     룬-2배: __main__ 이 치명적 속도·집중공격 두 번 호출. 보조룬은 CutDown 고정(simulate 내부)."""
@@ -361,6 +398,32 @@ def _run_cogmaw_ranking(keystone_cls, keystone_label, all_paths, item_short, ctr
             f"{fmt_core_cell(y1,d1):>{col_core}} | {fmt_core_cell(y2,d2):>{col_core}} | "
             f"{fmt_core_cell(y3,d3):>{col_core}} | {fmt_core_cell(y4,d4):>{col_core}} | "
             f"{r['rel_dpg_score']:>{col_rep}.2f}"
+        )
+
+    # ── 패키지 A/B 비교표: 상위 10 + 컨트롤, 동일 baseline·재시뮬 없음 [spec 2026-07-05] ──
+    compare_targets = [tuple(r["path"]) for r in ranked[:10]]
+    for cr in control_rows:
+        if tuple(cr["path"]) not in compare_targets:
+            compare_targets.append(tuple(cr["path"]))
+    pkg_cmp = _build_pkg_compare_rows(rows, compare_targets, baseline_dpg_4, core_weights)
+    a_label, b_label = ADC_PACKAGES[0]["label"], ADC_PACKAGES[1]["label"]
+    print(
+        f"\nPackage A({a_label}=도란검+광전사+핏빛길) vs B({b_label}=도란활+피흡신발+민첩함)"
+        f" — RelDPG, top {min(10, len(ranked))} builds + control"
+    )
+    cmp_hdr = (
+        f"{'BUILD(4C)':<{col_build}} | {'A '+a_label:>12} | {'B '+b_label:>12} | "
+        f"{'Δ(B-A)':>8} | 우세"
+    )
+    print(cmp_hdr)
+    print("-" * len(cmp_hdr))
+    for row in pkg_cmp:
+        p = row["path"]
+        s = item_short
+        lbl = trim_text(f"{s.get(p[0], p[0])}-{s.get(p[1], p[1])}-{s.get(p[2], p[2])}-{s.get(p[3], p[3])}", col_build)
+        print(
+            f"{lbl:<{col_build}} | {row['scores'][a_label]:>12.2f} | {row['scores'][b_label]:>12.2f} | "
+            f"{row['delta_b_minus_a']:>+8.2f} | {row['winner']}"
         )
 
     return ranked
