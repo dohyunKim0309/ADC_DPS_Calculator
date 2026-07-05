@@ -508,3 +508,114 @@ git commit -m "feat(cogmaw): [CTRL2] 크리 레퍼런스 행(c44-pd-ldr-ie) 표�
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
+
+---
+
+### Task 6: C44 증폭 채널 확장 — 평타 패키지 전체 (사용자 정정)
+
+**Files:**
+- Modify: `adc_sim/champion.py` (`get_one_hit_damage`의 C44 적용 블록, 371~373행 부근)
+- Modify: `CLAUDE.md` (데미지 모델 3번 항목의 "C44는 별도 배수" 문구)
+- Test: `tests/test_c44_range.py` (테스트 2개 추가)
+
+**Interfaces:**
+- Consumes: `Champion.get_one_hit_damage`의 로컬 `c44_multiplier`(별도 수집), `mod_factor`, `self._last_damage_amp`(mod_factor 저장 후 시점), 채널 로컬 `phys_base/magic_base/total_phys_onhit/total_magic_onhit`; `adc_sim.items.Item` 베이스(테스트용 가짜 온힛 아이템).
+- Produces: C44 적용 시맨틱 변경 — 별도 배수 `(1+c44)`가 4개 기본/온힛 채널과 `_last_damage_amp`에 곱해짐. 스킬 경로는 이 함수 밖이라 자연 미적용.
+
+- [ ] **Step 1: 실패하는 테스트 작성** — `tests/test_c44_range.py`에 추가:
+
+```python
+from adc_sim.items import Item
+from adc_sim.champion import Champion
+from adc_sim.data.items_registry import create_item_from_key
+
+
+class _FakeMagicOnhit(Item):
+    """온힛 마법 100 고정 — C44 온힛 증폭 검증용."""
+    def __init__(self):
+        super().__init__("FakeMagicOnhit")
+
+    def on_hit(self, target, champion):
+        return 0.0, 100.0, 0.0, 0.0
+
+
+class _Dummy:
+    armor = 0.0
+    mr = 0.0
+    max_hp = 1000.0
+    current_hp = 1000.0
+
+
+def _make_champ_with_c44():
+    champ = Champion(name="T", base_ad=100, base_as=1.0, as_ratio=1.0,
+                     as_growth=0.0, base_range=550, level=1)
+    champ.add_item(create_item_from_key("c44"))
+    champ.add_item(_FakeMagicOnhit())
+    return champ
+
+
+def test_c44_amps_magic_onhit_channel():
+    champ = _make_champ_with_c44()
+    result = champ.get_one_hit_damage(_Dummy())
+    magic_onhit = result[3]
+    assert abs(magic_onhit - 100.0 * 1.10) < 1e-6
+
+
+def test_c44_multiplies_last_damage_amp_for_true_onhit():
+    champ = _make_champ_with_c44()
+    champ.get_one_hit_damage(_Dummy())
+    assert abs(champ._last_damage_amp - 1.10) < 1e-9
+```
+
+주: `Champion` 베이스 시그니처/`add_item`/`get_one_hit_damage(target)` 호출 형태·반환 6튜플의
+인덱스(3=magic_onhit)는 구현 전에 실제 코드로 확인하고, 다르면 테스트를 실제 인터페이스에
+맞춰 조정(수치 기대값 100×1.10, `_last_damage_amp`==1.10 자체는 유지). 룬 없음 → mod_factor=1.
+`Item.__init__` 시그니처가 name 외 인자를 요구하면 0 기본값으로 맞춘다.
+
+- [ ] **Step 2: 실패 확인**
+
+Run: `.venv/bin/python -m pytest tests/test_c44_range.py -v`
+Expected: 신규 2개 FAIL — 현행 코드는 C44를 phys_base에만 곱하므로 `magic_onhit == 100.0`(≠110),
+`_last_damage_amp == 1.0`(≠1.10). 기존 4개 PASS.
+
+- [ ] **Step 3: 구현** — `adc_sim/champion.py` C44 블록 교체. 기존:
+
+```python
+        # C44 증폭 적용 (기본 물리 피해에만 적용)
+        if c44_multiplier > 0:
+            phys_base *= (1.0 + c44_multiplier)
+```
+→
+```python
+        # C44 증폭 — 평타 패키지 전체(기본+온힛 물리/마법)에 별도 배수, 스킬 직격딜 제외("기본 공격 시").
+        # [H-C44-ONHIT-1] 사용자 인게임 확인(2026-07-06): 평타에 실리는 온힛(코그모 W 마법 등)까지 적용.
+        # 은화살 true 온힛은 _last_damage_amp 경유로 증폭 — H-VAYNE-W-2(LDR) 관례와 일관.
+        if c44_multiplier > 0:
+            c44_factor = 1.0 + c44_multiplier
+            phys_base *= c44_factor
+            magic_base *= c44_factor
+            total_phys_onhit *= c44_factor
+            total_magic_onhit *= c44_factor
+            self._last_damage_amp *= c44_factor
+```
+
+- [ ] **Step 4: 통과 확인 (신규 2 + 기존 4 + 전체 스위트)**
+
+Run: `.venv/bin/python -m pytest tests/test_c44_range.py -v`
+Expected: 6 passed.
+Run: `.venv/bin/python -m pytest tests/ -q`
+Expected: **85 passed** (83 + 2). 특히 `test_regression_diff` 통과(baseline 5빌드 c44 미포함) —
+실패 시 STOP, baseline 재생성 금지하고 DONE_WITH_CONCERNS 보고.
+
+- [ ] **Step 5: CLAUDE.md** — 데미지 모델 3번 항목의 문구:
+
+`**C44는 별도 배수**` → `**C44는 별도 배수(평타 기본+온힛 전 채널 ×(1+10%·거리비), 은화살 true는 stash 경유, 스킬 제외 [H-C44-ONHIT-1])**`
+
+- [ ] **Step 6: 커밋**
+
+```bash
+git add tests/test_c44_range.py adc_sim/champion.py CLAUDE.md
+git commit -m "fix(items): C44 증폭을 평타 패키지 전체(기본+온힛)로 확장 [H-C44-ONHIT-1, 사용자 확인]
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+```
