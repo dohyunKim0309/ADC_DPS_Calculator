@@ -619,3 +619,103 @@ git commit -m "fix(items): C44 증폭을 평타 패키지 전체(기본+온힛)�
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
+
+---
+
+### Task 7: C44 재정정 — 원복 + 코그모 W 전용 버그 모델 (사용자 2차 정정)
+
+**Files:**
+- Modify: `adc_sim/champion.py` (베이스 C44 블록 원복 + `CogMaw.get_champion_onhit` W 증폭 추가)
+- Modify: `CLAUDE.md` (데미지 모델 3번 항목 C44 문구)
+- Test: `tests/test_c44_range.py` (Task 6의 테스트 2개를 3개로 교체)
+
+**Interfaces:**
+- Consumes: `Champion.get_one_hit_damage`의 C44 블록(Task 6 상태), `CogMaw.get_champion_onhit`(champion.py ~1899행, `w_active`/`W_PCT`/`self.inventory`), `HextechScopeC44.get_damage_modifier(target, champion)`.
+- Produces: C44 시맨틱 = 평타 물리 기본딜만(원복) + 코그모 W 온힛 한정 `(1+modifier)` 곱(버그 태그).
+
+- [ ] **Step 1: 테스트 교체 (RED)** — `tests/test_c44_range.py`에서 Task 6의
+`test_c44_amps_magic_onhit_channel`·`test_c44_multiplies_last_damage_amp_for_true_onhit` 두 함수를 삭제하고 아래 3개로 교체 (기존 `_FakeMagicOnhit`/`_Dummy`/`_make_champ_with_c44` 헬퍼는 유지):
+
+```python
+def test_c44_does_not_amp_generic_onhit():
+    champ = _make_champ_with_c44()
+    result = champ.get_one_hit_damage(_Dummy())
+    assert abs(result[3] - 100.0) < 1e-6
+
+
+def test_c44_does_not_touch_last_damage_amp():
+    champ = _make_champ_with_c44()
+    champ.get_one_hit_damage(_Dummy())
+    assert abs(champ._last_damage_amp - 1.0) < 1e-9
+
+
+def test_c44_amps_cogmaw_w_onhit_bug():
+    from adc_sim.champion import CogMaw
+
+    def w_magic(with_c44):
+        cog = CogMaw(level=15, q_level=4, w_level=5, e_level=3, r_level=2)
+        cog.init_combat_state()
+        cog.w_active = True
+        if with_c44:
+            cog.add_item(create_item_from_key("c44"))
+        return cog.get_champion_onhit(_Dummy())[1]
+
+    base = w_magic(False)
+    amped = w_magic(True)
+    assert base > 0
+    # c44 는 AP 0 → W pct 불변, 코그모 사거리 500 → modifier 0.10 → 정확히 ×1.10
+    assert abs(amped / base - 1.10) < 1e-9
+```
+
+주: `CogMaw.__init__`/`init_combat_state`/`get_champion_onhit` 시그니처는 실제 코드로 확인 후
+필요 시 조정(assert 시맨틱 유지). `_Dummy`에 `max_hp` 있음(기존 헬퍼).
+
+- [ ] **Step 2: 실패 확인**
+
+Run: `.venv/bin/python -m pytest tests/test_c44_range.py -v`
+Expected: 신규 3개 중 `test_c44_does_not_amp_generic_onhit`(110≠100)·`test_c44_does_not_touch_last_damage_amp`(1.10≠1.0) FAIL, `test_c44_amps_cogmaw_w_onhit_bug`는 현행(전 채널 증폭)에서도 통과할 수 있음 — RED 는 앞 2개로 성립. 기존 range 4개 PASS.
+
+- [ ] **Step 3: 구현(1/2)** — `adc_sim/champion.py` 베이스 C44 블록(Task 6 버전)을 원복+주석 갱신:
+
+```python
+        # C44 증폭 — 평타 물리 기본딜에만 적용(룬·아이템 온힛/마법 미적용, 사용자 확인 2026-07-06).
+        # 예외: 코그모 W 온힛의 C44 증폭(인게임 일시적 버그)은 CogMaw.get_champion_onhit 에서 처리.
+        if c44_multiplier > 0:
+            phys_base *= (1.0 + c44_multiplier)
+```
+(`magic_base`/`total_phys_onhit`/`total_magic_onhit` 곱과 `self._last_damage_amp *= c44_factor` 줄 제거.)
+
+- [ ] **Step 4: 구현(2/2)** — `CogMaw.get_champion_onhit`의 `return 0, pct * target.max_hp`를:
+
+```python
+        w_magic = pct * target.max_hp
+        # [H-C44-KOGW-BUG-1] 인게임 일시적 버그(사용자 확인 2026-07-06): C44 '확대' 증폭이
+        # 코그모 W 온힛에만 적용됨(룬·일반 온힛 미적용). 라이엇 픽스 시 이 블록 제거.
+        for it in self.inventory:
+            if getattr(it, "name", "") == "Hextech Scope C44":
+                w_magic *= (1.0 + it.get_damage_modifier(target, self))
+        return 0, w_magic
+```
+
+- [ ] **Step 5: 통과 확인 + 전체 스위트**
+
+Run: `.venv/bin/python -m pytest tests/test_c44_range.py -v`
+Expected: 7 passed (range 4 + 신규 3).
+Run: `.venv/bin/python -m pytest tests/ -q`
+Expected: **86 passed** (85 − 2 + 3). `test_regression_diff` 통과 필수(비-c44 빌드 원복으로 무영향 유지) — 실패 시 STOP·보고.
+
+- [ ] **Step 6: CLAUDE.md** — 데미지 모델 3번 항목의 Task 6 문구
+`**C44는 별도 배수(평타 기본+온힛 전 채널 ×(1+10%·거리비), 은화살 true는 stash 경유, 스킬 제외 [H-C44-ONHIT-1])**` 를 다음으로 교체:
+
+```
+**C44는 별도 배수(평타 물리 기본딜만; 예외: 코그모 W 온힛은 인게임 일시적 버그로 증폭 적용 [H-C44-KOGW-BUG-1], 픽스 시 CogMaw.get_champion_onhit 블록 제거)**
+```
+
+- [ ] **Step 7: 커밋**
+
+```bash
+git add tests/test_c44_range.py adc_sim/champion.py CLAUDE.md
+git commit -m "fix(items,cogmaw): C44 증폭 원복(평타 물리만) + 코그모 W 전용 버그 모델 [H-C44-KOGW-BUG-1]
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+```
