@@ -368,7 +368,8 @@ class Champion:
         total_phys_onhit *= mod_factor
         total_magic_onhit *= mod_factor
         
-        # C44 증폭 적용 (기본 물리 피해에만 적용)
+        # C44 증폭 — 평타 물리 기본딜에만 적용(룬·아이템 온힛/마법 미적용, 사용자 확인 2026-07-06).
+        # 예외: 코그모 W 온힛의 C44 증폭(인게임 일시적 버그)은 CogMaw.get_champion_onhit 에서 처리.
         if c44_multiplier > 0:
             phys_base *= (1.0 + c44_multiplier)
         
@@ -1898,7 +1899,13 @@ class CogMaw(Champion):
             return 0, 0
         idx = self.w_level - 1
         pct = self.W_PCT[idx] + 0.00015 * self.total_ap   # 100AP당 +1.5%
-        return 0, pct * target.max_hp
+        w_magic = pct * target.max_hp
+        # [H-C44-KOGW-BUG-1] 인게임 일시적 버그(사용자 확인 2026-07-06): C44 '확대' 증폭이
+        # 코그모 W 온힛에만 적용됨(룬·일반 온힛 미적용). 라이엇 픽스 시 이 블록 제거.
+        for it in self.inventory:
+            if getattr(it, "name", "") == "Hextech Scope C44":
+                w_magic *= (1.0 + it.get_damage_modifier(target, self))
+        return 0, w_magic
 
     def init_combat_state(self, skill_plan=None):
         super().init_combat_state(skill_plan)   # _combat_time=0, current_mana=total_mana
