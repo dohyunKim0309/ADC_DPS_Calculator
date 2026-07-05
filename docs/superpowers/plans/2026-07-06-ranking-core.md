@@ -11,14 +11,14 @@
 ## Global Constraints
 
 - 인터프리터 `.venv/bin/python`, repo 루트 `-m` 실행. 브랜치 feat/ranking-core.
-- **태스크 순서 고정**: A(배타)→B(설정, mode="weighted" 초기값=동작보존)→C(러너)→D(베인 이관+골든)→E(discounted 전환+문서). D까지 랭킹 수치 불변이 원칙(A의 코그모 void+terminus 제거만 예외 — 의도된 규칙 수정).
+- **태스크 순서 고정**: 1(배타)→2(설정, mode="weighted" 초기값=동작보존)→3(러너)→4(베인 이관+골든)→5(discounted 전환+문서). 4까지 랭킹 수치 불변이 원칙(1의 코그모 void+terminus 제거만 예외 — 의도된 규칙 수정).
 - 외부 인터페이스 불변: `simulate_vayne_core_path`/`get_vayne_4core_top1_build`/`get_vayne_powercompare_builds`/`build_vayne_core_report_meta`(power_compare가 import), 각 시뮬의 `__main__` 출력 형식.
 - 마관 배타 정의(게임 규칙, 사용자 확정): 방관 {ldr, mortal, terminus} ≤1 **AND** 마관 {void, terminus} ≤1. ldr+void는 합법, terminus+void/terminus+ldr 불법.
 - 커밋: 한국어 conventional + 트레일러 `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
 
 ---
 
-### Task A: 관통 배타 전역화
+### Task 1: 관통 배타 전역화
 
 **Files:**
 - Modify: `adc_sim/data/items_data.py` (상수 2개+헬퍼, `DORAN_SHORT` 위쪽에)
@@ -114,7 +114,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ---
 
-### Task B: 점수 모드 설정 (파생, 초기 mode="weighted" = 동작 보존)
+### Task 2: 점수 모드 설정 (파생, 초기 mode="weighted" = 동작 보존)
 
 **Files:**
 - Modify: `adc_sim/settings.py` (`CORE_WEIGHTS_RAW` 블록 교체)
@@ -168,7 +168,7 @@ CORE_WEIGHTS_LABEL = ":".join(f"{w:g}" for w in CORE_WEIGHTS_RAW)
 # 점수 방식 선택 [사용자 확정 2026-07-06]: "weighted"=고정 가중합 / "discounted"=γ-할인합.
 # 할인합은 코어별 가중 [γ^1..γ^n] 과 동치라 기존 rel-DPG 파이프라인을 그대로 쓴다.
 RANKING_SCORING = {
-    "mode": "weighted",           # Task E 에서 "discounted" 로 전환 예정
+    "mode": "weighted",           # Task 5 에서 "discounted" 로 전환 예정
     "fixed_raw": [4.0, 4.0, 3.0, 3.0],
     "gamma": 0.9,
 }
@@ -204,7 +204,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ---
 
-### Task C: 공통 랭킹 러너 `ranking_core.py`
+### Task 3: 공통 랭킹 러너 `ranking_core.py`
 
 **Files:**
 - Create: `adc_sim/simulations/ranking_core.py`
@@ -387,14 +387,14 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ---
 
-### Task D: 베인 이관 + 골든 동작 보존 검증
+### Task 4: 베인 이관 + 골든 동작 보존 검증
 
 **Files:**
 - Modify: `adc_sim/simulations/vayne.py` (`_rank_rows` 본문 → `rank_builds` 위임)
 - Test: `tests/test_vayne_ranking_golden.py` (신규 — 이관 **전** 골든 캡처)
 
 **Interfaces:**
-- Consumes: Task C `rank_builds`. vayne 외부 인터페이스 전부 불변.
+- Consumes: Task 3 `rank_builds`. vayne 외부 인터페이스 전부 불변.
 
 - [ ] **Step 1: 골든 테스트 작성(이관 전 기준값 캡처).** 먼저 아래 캡처 스크립트를 실행해 **이관 전** `_rank_rows` 출력을 기록:
 
@@ -439,9 +439,9 @@ def test_vayne_rank_rows_golden():
         assert abs(r["weighted_dpg"] - exp_wdpg) < 1e-6
 ```
 
-주: 골든은 **weighted 모드(현재 기본)** 값 — Task E에서 기본이 discounted 로 바뀌면 이 테스트가
-깨지므로, Task E에서 이 테스트의 `_rank_rows` 호출을 `weights_raw=[4,4,3,3]` 고정으로 바꾼다
-(아래 Task D Step 3에서 `_rank_rows`가 weights_raw 인자를 받게 되므로 가능).
+주: 골든은 **weighted 모드(현재 기본)** 값 — Task 5에서 기본이 discounted 로 바뀌면 이 테스트가
+깨지므로, Task 5에서 이 테스트의 `_rank_rows` 호출을 `weights_raw=[4,4,3,3]` 고정으로 바꾼다
+(아래 Task 4 Step 3에서 `_rank_rows`가 weights_raw 인자를 받게 되므로 가능).
 
 - [ ] **Step 2: 골든 통과 확인(이관 전 코드에서)**
 
@@ -478,7 +478,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ---
 
-### Task E: 기본 discounted 전환 + 문서
+### Task 5: 기본 discounted 전환 + 문서
 
 **Files:**
 - Modify: `adc_sim/settings.py` (`"mode": "weighted"` → `"discounted"`)
