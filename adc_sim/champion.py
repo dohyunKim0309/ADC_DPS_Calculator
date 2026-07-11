@@ -646,8 +646,8 @@ class Jinx(Champion):
 
 class Yunara(Champion):
     def __init__(self, level=1, q_level=5, w_level=5, r_level=3, w_enabled=True):
-        # Base AD 55, AS 0.65, AS Ratio 0.65, AS Growth 2.75, AD Growth 2.5
-        super().__init__(name="Yunara", base_ad=55, base_as=0.650, as_ratio=0.650, as_growth=2.75, base_range=575, level=level, ad_growth=2.5)
+        # Base AD 55, AS 0.65, AS Ratio 0.65, AS Growth 2.75, AD Growth 3.0 (다음 패치 버프: 2.5→3.0)
+        super().__init__(name="Yunara", base_ad=55, base_as=0.650, as_ratio=0.650, as_growth=2.75, base_range=575, level=level, ad_growth=3.0)
 
         self.q_level = q_level
 
@@ -1285,7 +1285,7 @@ class Corki(Champion):
             as_growth=2.8,
             base_range=550,
             level=level,
-            ad_growth=2.0,
+            ad_growth=2.5,
         )
 
         # 기본 스탯 보관
