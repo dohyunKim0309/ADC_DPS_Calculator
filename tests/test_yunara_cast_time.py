@@ -15,11 +15,15 @@ from adc_sim.data.items_registry import create_item_from_key
 
 
 def _yunara(cast_base=None, cast_floor=None):
+    """cast_base/cast_floor 를 주면 기본·강화 W 시전 시간을 모두 그 값으로 덮어씀
+    (시뮬 로테이션은 Q활성=강화 W 이므로 강화값도 함께 지정해야 실효)."""
     y = Yunara(level=15, q_level=5, w_level=5, r_level=3)
     if cast_base is not None:
         y.w_cast_base = cast_base
+        y.w_ult_cast_base = cast_base
     if cast_floor is not None:
         y.w_cast_floor = cast_floor
+        y.w_ult_cast_floor = cast_floor
     y.set_rune(LethalTempo())
     y.set_sub_rune(CutDown())
     for k in ["kraken", "pd", "ie", "ldr"]:
@@ -27,16 +31,30 @@ def _yunara(cast_base=None, cast_floor=None):
     return y
 
 
-def test_w_cast_time_formula():
-    """max(0.225, 0.45/(1+추가공속)) — 추가공속에 비례 감소, 바닥 0.225."""
-    y = Yunara(level=1, q_level=1)  # 추가공속 최소
-    y.bonus_as_percent = 0.0
-    # 추가공속 0 → 0.45 / (1 + level_bonus). level=1 → 성장 0.
+def test_w_cast_time_formula_basic():
+    """기본 W(Q 비활성): max(0.225, 0.45/(1+추가공속)) — 바닥 0.225."""
+    y = Yunara(level=1, q_level=1)
+    y.q_active = False
+    y.bonus_as_percent = 0.0        # level=1 성장 0 → 0.45
     assert abs(y.w_cast_time() - 0.45) < 1e-6
-    y.bonus_as_percent = 1.0        # +100% → 0.45/2 = 0.225 (=바닥)
+    y.bonus_as_percent = 1.0        # +100% → 0.225 (=바닥)
     assert abs(y.w_cast_time() - 0.225) < 1e-6
-    y.bonus_as_percent = 3.0        # 매우 높음 → 바닥 클램프
+    y.bonus_as_percent = 3.0
     assert abs(y.w_cast_time() - 0.225) < 1e-6
+
+
+def test_w_cast_time_formula_enhanced():
+    """강화 W(파멸의 궤적, Q활성): max(0.45, 0.6/(1+추가공속)) — 기본보다 김, 바닥 0.45."""
+    y = Yunara(level=1, q_level=1)
+    y.q_active = True
+    y.bonus_as_percent = 0.0
+    assert abs(y.w_cast_time() - 0.6) < 1e-6
+    y.bonus_as_percent = 1.0        # 0.6/2 = 0.3 < 0.45 바닥 → 0.45
+    assert abs(y.w_cast_time() - 0.45) < 1e-6
+    # 강화 W 는 항상 기본 W 이상(더 긴 시전)
+    y.q_active = False; basic = y.w_cast_time()
+    y.q_active = True;  enh = y.w_cast_time()
+    assert enh >= basic
 
 
 def test_base_champion_has_no_cast_delay():
@@ -64,17 +82,27 @@ def test_real_w_cast_costs_dps():
     assert dps_real < dps_free
 
 
-def test_cast_delay_set_on_w_cast():
-    """W 본체 시전(비캔슬) 시 cast_delay_pending 에 시전 시간이 가산된다."""
+def test_cast_delay_set_on_w_cast_enhanced():
+    """강화 W(Q활성) 시전 시 cast_delay_pending 에 강화 W 시전 시간이 가산된다."""
     y = _yunara()
     y.init_combat_state()
     y.hit_count = 2                       # W 시전 조건(둘째 평타 이후)
+    y.q_active = True                     # 초월(Q활성) → 강화 W
     y.cooldowns_remaining["w"] = 0.0      # 쿨 준비 완료
     tgt = Target(hp=2500, armor=100, magic_resist=50)
     events = y.pop_due_skill_events(1.0, tgt)
     assert any(e[0] == "w" for e in events)
     assert abs(y.cast_delay_pending - y.w_cast_time()) < 1e-6
+    assert y.cast_delay_pending >= 0.45   # 강화 W 바닥
     assert y.cast_lockout_until == 0.0    # 비캔슬 → 흡수형 미사용
+
+
+def test_no_anim_cancel_clip():
+    """유나라 스킬 전부 비캔슬 → get_attack_interval 은 절대 0.33 클립 안 함."""
+    y = _yunara()
+    y.init_combat_state()
+    y.q_active = True                     # Q활성 중에도 클립 없음
+    assert abs(y.get_attack_interval() - 1.0 / y.current_attack_speed) < 1e-9
 
 
 def test_cancelable_path_absorbs_within_interval():
