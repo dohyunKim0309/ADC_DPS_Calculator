@@ -99,11 +99,11 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
   총 버스트 수는 동일하나 팬텀히트로 버스트가 프론트로드 → 타깃 HP 조기 하락 → BotRK 6%현재HP 딜 손실.
   전 크리코어 빌드는 %현재HP 아이템이 없어 영향 無. 진단·회귀는 `tests/test_vayne_silverbolts_botrk_interaction.py` 참조.
 - **Q/R 엔진 모델**: Q 는 스킬 이벤트(무직접피해)로 `q_empowered` arm + `q_reset_pending`(평타리셋
-  `ANIM_CANCEL_CLIP`) + 마나30 게이트. **강화 평타 Q 추가딜은 크리 미반영**([H-VAYNE-Q-1]) — 평타 본체
-  `p_base` 는 크리 기대값 포함이지만 Q 추가딜은 `total_ad × ratio × _last_damage_amp × _last_c44_amp`
-  로 별도 가산(대미지증가·C44 는 적용, 크리는 미적용 = 실 LoL 동작). 온힛은 미증폭(강화평타도 온힛 1회).
-  베이스에 `_last_c44_amp = 1 + c44_multiplier` stash 1줄 추가(값 저장뿐, 다른 챔프 수치 불변). R 은 t=0
-  매뉴얼 시전(마나80): `bonus_ad += R_BONUS_AD`, Q쿨 `×(1-R_Q_CDR)`, 지속 만료 시 원복(짧은 버스트라 상시).
+  `ANIM_CANCEL_CLIP`) + 마나30 게이트. **강화 평타 Q 추가딜은 크리·C44 둘 다 미반영**([H-VAYNE-Q-1],
+  사용자 확인 2026-07-14) — 평타 본체 `p_base` 는 크리 기대값·C44 증폭 포함이지만 Q 추가딜은
+  `total_ad × ratio × _last_damage_amp` 로 별도 가산(**대미지증가는 적용, 크리·C44 는 미적용 = 실 LoL 동작**).
+  온힛은 미증폭(강화평타도 온힛 1회). R 은 t=0 매뉴얼 시전(마나80): `bonus_ad += R_BONUS_AD`,
+  Q쿨 `×(1-R_Q_CDR)`, 지속 만료 시 원복(짧은 버스트라 상시).
 - **전용 sim**: cogmaw.py 단일-키스톤(LethalTempo) 미러. 온힛+크리 풀, 컨트롤 **`botrk-guinsoo-terminus-pd`**
   (탐색공간 필수·없으면 RuntimeError). 설정 파생 가중 RelDPG, ADC_PACKAGES A/B, K=2. **power_compare 통합**:
   top1=절대 DPS 최강, basic=컨트롤(실전 기준). 스킬 선마 Q→W→E, R=lvl 기반. E(콘뎀)·패시브(이속) 미모델.

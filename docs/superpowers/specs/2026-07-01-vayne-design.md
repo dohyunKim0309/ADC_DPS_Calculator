@@ -234,11 +234,11 @@ Cog'Maw 이벤트 인터페이스 미러링 + Ashe 평타-리셋 관례:
   `mod_factor`), **경감(방/마저)은 우회**. C44·Shadowflame은 제외(단순화). 베이스 `_last_damage_amp` stash 경유.
   (사용자 정정: 실게임에서 true는 증폭 O·경감 X.) 일반 엔진화(Corki/DHC true 증폭)는 후속 과제.
 - **H-VAYNE-W-3**: Q 구르기는 무피해→은화살 스택은 강화평타가 담당(실질 평타 3회마다), 콘뎀 미모델.
-- **H-VAYNE-Q-1** *(2026-07-14 정정)*: Q 강화 = 평타 본체 `p_base`(크리 기대값 포함) + Q 추가딜
-  `total_ad × ratio × _last_damage_amp × _last_c44_amp` (**크리 미반영** — 실 LoL 동작).
-  온힛 미증폭(1회), 평타 리셋=ANIM_CANCEL_CLIP. 이전 스펙은 "보너스 치명 자연반영" 로 잘못 기술 →
-  크리 코어(IE/Yun/PD/C44) Q 이득이 실측보다 크게 계산돼 랭킹을 과대평가하고 있었음.
-  베이스 stash 추가(`_last_c44_amp`) 1줄이 유일한 base 변경(값 저장뿐, 다른 챔프 수치 불변).
+- **H-VAYNE-Q-1** *(2026-07-14 정정)*: Q 강화 = 평타 본체 `p_base`(크리 기대값·C44 포함) + Q 추가딜
+  `total_ad × ratio × _last_damage_amp` (**크리·C44 둘 다 미반영** — 실 LoL 동작).
+  대미지증가(PtA/CutDown/거인학살자) 는 적용. 온힛 미증폭(1회), 평타 리셋=ANIM_CANCEL_CLIP.
+  이전 스펙은 "보너스 치명 자연반영" 로 잘못 기술 → 크리 코어(IE/Yun/PD/C44) Q 이득이 실측보다 크게
+  계산돼 랭킹을 과대평가하고 있었음. C44 %증폭은 오로지 기본 평타 AA(phys_base) 에만 적용(사용자 확인).
 - **H-VAYNE-R-1**: R t=0 시전·상시(짧은 버스트), bonus_ad 고정 가산 + Q 쿨감, 은화살 % 미증가, 스텔스/이속 미모델.
 - **H-VAYNE-SKILL-1**: 스킬 선마 Q→W→E, R=lvl 기반(코어별 표). W선마 선호 시 손쉽게 교체.
 - **H-VAYNE-DATA-1**: `ad_growth=2.35`(DDragon raw=0 버그 배제, bin+Wiki 채택).

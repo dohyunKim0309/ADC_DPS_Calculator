@@ -33,14 +33,14 @@ NEW_METHOD = Vayne.get_one_hit_damage
 
 
 def _old_silverbolts_get_one_hit_damage(self, target, time=0):
-    """은화살 픽스 이전 로직만 재구성(sb_stacks += 1 단발). Q 로직은 **현행(크리 미반영)** 유지 —
+    """은화살 픽스 이전 로직만 재구성(sb_stacks += 1 단발). Q 로직은 **현행(크리·C44 미반영)** 유지 —
     silverbolts 픽스만 격리해 비교."""
     p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit = Champion.get_one_hit_damage(
         self, target, time)
     if self.q_empowered:
         self.q_empowered = False
         ratio = self.Q_AD_RATIO[self.q_level - 1]
-        p_base += self.total_ad * ratio * self._last_damage_amp * self._last_c44_amp
+        p_base += self.total_ad * ratio * self._last_damage_amp
     self.sb_stacks += 1
     if self.sb_stacks >= 3:
         self.sb_stacks = 0
