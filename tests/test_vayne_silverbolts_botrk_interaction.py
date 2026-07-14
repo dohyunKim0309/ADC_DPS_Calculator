@@ -33,12 +33,14 @@ NEW_METHOD = Vayne.get_one_hit_damage
 
 
 def _old_silverbolts_get_one_hit_damage(self, target, time=0):
-    """픽스 이전 로직(sb_stacks += 1 단발). OLD/NEW A/B 비교용."""
+    """은화살 픽스 이전 로직만 재구성(sb_stacks += 1 단발). Q 로직은 **현행(크리 미반영)** 유지 —
+    silverbolts 픽스만 격리해 비교."""
     p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit = Champion.get_one_hit_damage(
         self, target, time)
     if self.q_empowered:
         self.q_empowered = False
-        p_base *= (1.0 + self.Q_AD_RATIO[self.q_level - 1])
+        ratio = self.Q_AD_RATIO[self.q_level - 1]
+        p_base += self.total_ad * ratio * self._last_damage_amp * self._last_c44_amp
     self.sb_stacks += 1
     if self.sb_stacks >= 3:
         self.sb_stacks = 0
@@ -79,16 +81,17 @@ def _run_ctrl_bow_glut(tier, use_new, with_cutdown=True):
 def test_ctrl_new_vs_old_snapshot_bow_glut_with_cutdown():
     """OLD vs NEW CTRL DPS 델타 스냅샷 (Bow+Glut, LT+CutDown).
 
-    실측(2026-07-14, 팬텀히트 픽스 직후):
+    실측(2026-07-14, Q 크리 미반영 픽스([H-VAYNE-Q-1]) 이후 재캡처):
       T2: OLD=774.144, NEW=766.195, Δ=-1.03%
       T3: OLD=1017.045, NEW=1011.758, Δ=-0.52%
-      T4: OLD=1299.720, NEW=1293.572, Δ=-0.47%
+      T4: OLD=1269.681, NEW=1263.533, Δ=-0.48%
     셋 모두 NEW<OLD — BotRK 6%현재HP 스케일과 은화살 프론트로드의 반작용을 검증.
+    (OLD 는 은화살 픽스만 되돌리고 Q 픽스는 유지 — silverbolts 영향만 격리.)
     """
     EXPECT = {
         2: (774.144, 766.195),
         3: (1017.045, 1011.758),
-        4: (1299.720, 1293.572),
+        4: (1269.681, 1263.533),
     }
     for tier, (exp_old, exp_new) in EXPECT.items():
         old_dps = _run_ctrl_bow_glut(tier=tier, use_new=False)

@@ -371,6 +371,7 @@ class Champion:
         
         # C44 증폭 — 평타 물리 기본딜에만 적용(룬·아이템 온힛/마법 미적용, 사용자 확인 2026-07-06).
         # 예외: 코그모 W 온힛의 C44 증폭(인게임 일시적 버그)은 CogMaw.get_champion_onhit 에서 처리.
+        self._last_c44_amp = 1.0 + c44_multiplier  # [H-VAYNE-Q-1] 값 저장(반환 불변). Vayne Q 추가딜이 크리 없는 증폭 계수로 사용.
         if c44_multiplier > 0:
             phys_base *= (1.0 + c44_multiplier)
         
@@ -2146,11 +2147,13 @@ class Vayne(Champion):
     def get_one_hit_damage(self, target, time=0):
         p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit = super().get_one_hit_damage(target, time)
 
-        # Q 강화 평타: 총AD ratio 만큼 기본 물리 증폭(p_base 는 이미 치명기대·mod_factor 반영 →
-        # 보너스도 치명·증폭 자연반영). 온힛은 미증폭(강화평타도 온힛 1회). [H-VAYNE-Q] (Task 3 에서 arm)
+        # Q 강화 평타: 다음 평타에 총AD × ratio 물리 추가. 실 LoL 은 **크리 안 터짐** — 평타 본체(p_base)
+        # 는 치명 기대값을 포함하지만, Q 추가딜은 순 AD × ratio 에 대미지증가(mod_factor·C44) 만 적용.
+        # 온힛은 미증폭(강화평타도 온힛 1회). [H-VAYNE-Q]
         if self.q_empowered:
             self.q_empowered = False
-            p_base *= (1.0 + self.Q_AD_RATIO[self.q_level - 1])
+            ratio = self.Q_AD_RATIO[self.q_level - 1]
+            p_base += self.total_ad * ratio * self._last_damage_amp * self._last_c44_amp
 
         # W 은화살: 3번째 타격마다 고정피해 = max(floor, %maxHP). 대미지증가로 증폭·경감(방/마저) 우회.
         # 스택은 이번 평타의 총 온힛 적용 횟수(_last_onhit_applications)만큼 소비 — 구인수 팬텀히트가

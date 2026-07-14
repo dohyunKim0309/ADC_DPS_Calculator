@@ -1,7 +1,7 @@
 """베인 러너 이관 동작 보존 골든 — weighted 4:4:3:3 고정.
-값 출처: 2026-07-14 팬텀히트 은화살 가속 픽스([H-VAYNE-W-GUI]) 이후 재캡처.
-비-구인수 빌드(yuntal25-c44-ie-ldr / kraken-pd-ie-ldr)의 weighted_dpg 는 픽스 전과 동일,
-rel_dpg_score 는 CTRL(구인수 보유) 의 wdpg 변동으로 재정규화되어 소폭 이동.
+값 출처: 2026-07-14 Q 추가딜 크리 미반영 픽스([H-VAYNE-Q-1]) 이후 재캡처.
+(직전 스냅샷은 팬텀히트 픽스([H-VAYNE-W-GUI]) 직후. 이번엔 크리 빌드들의 절대 DPS 가
+더 크게 하락 — Q 추가딜에서 크리 블렌드가 빠지면서 크리 코어(Yun/IE/LDR/PD/C44) 이득이 축소.)
 값 변경 = 동작 변화 신호."""
 from adc_sim.simulations.vayne import _rank_rows, CONTROL_PATH
 
@@ -10,13 +10,13 @@ PATHS = [CONTROL_PATH, ("kraken", "pd", "ie", "ldr"), ("yuntal25", "c44", "ie", 
 
 GOLDEN = {
     # (path 튜플): (rel_dpg_score, weighted_dpg)
-    ("yuntal25", "c44", "ie", "ldr"): (138.495105, 137.599482),
-    ("kraken", "pd", "ie", "ldr"): (116.995271, 116.448122),
-    ("kraken", "guinsoo", "ie", "pd"): (110.752865, 110.310670),
-    ("botrk", "guinsoo", "terminus", "pd"): (100.0, 99.638514),
+    ("yuntal25", "c44", "ie", "ldr"): (124.722663, 123.359228),
+    ("kraken", "pd", "ie", "ldr"): (110.278381, 109.287311),
+    ("kraken", "guinsoo", "ie", "pd"): (105.956339, 105.208764),
+    ("botrk", "guinsoo", "terminus", "pd"): (100.0, 99.152716),
 }
 GOLDEN_N_ROWS = 4
-GOLDEN_CTRL_WDPG = 99.638514
+GOLDEN_CTRL_WDPG = 99.152716
 
 
 def test_vayne_rank_rows_golden():

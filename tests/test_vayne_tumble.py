@@ -1,5 +1,6 @@
-"""Task 3: 베인 Q 구르기 — 강화 평타(총AD ratio·치명반영)·평타리셋·마나게이트."""
+"""Task 3: 베인 Q 구르기 — 강화 평타(총AD ratio, **크리 미반영**)·평타리셋·마나게이트."""
 from adc_sim.champion import Vayne, Target, ANIM_CANCEL_CLIP
+from adc_sim.data.items_registry import create_item_from_key
 
 
 def test_q_auto_enabled_by_default_guards_both_default_lines():
@@ -60,6 +61,44 @@ def test_q_mana_gate_blocks_when_insufficient():
     assert v._can_cast_skill("q") is False
     v.current_mana = 30.0
     assert v._can_cast_skill("q") is True
+
+
+def test_q_bonus_does_not_crit_with_crit_items():
+    """[H-VAYNE-Q] Q 추가딜은 크리 안 터짐 — 실제 LoL 동작.
+
+    100% 크리 상태에서:
+      - 평타 본체 p_base = total_ad × crit_dmg_mod (완전 크리)
+      - Q 추가딜 = total_ad × ratio (크리 미포함)
+      - 강화평타 p_base = total_ad × crit_dmg_mod + total_ad × ratio
+    """
+    v = Vayne(level=11, q_level=5, w_level=5)  # ratio=1.15
+    v.init_combat_state()
+    # 100% 크리 강제 세팅(아이템 없이 필드 직접 조작 — 순수 산술 검증)
+    v.crit_chance = 1.0
+    v.crit_damage_modifier = 2.0                # 기본 200% 크리
+    target = Target(hp=99999, armor=0, magic_resist=0, bonus_hp=0)
+
+    # 비강화 평타 물리 = total_ad × crit_dmg_mod
+    v.q_empowered = False
+    p_normal = v.get_one_hit_damage(target)[0]
+    total_ad = v.total_ad
+    assert abs(p_normal - total_ad * 2.0) < 1e-6, (
+        f"100% 크리에서 평타 p_base = total_ad × 2.0 예상, got {p_normal:.3f} (total_ad={total_ad:.3f})")
+
+    # 강화 평타 물리 = 크리 평타 + total_ad × ratio (Q 추가딜 크리 미포함)
+    v2 = Vayne(level=11, q_level=5, w_level=5)
+    v2.init_combat_state()
+    v2.crit_chance = 1.0; v2.crit_damage_modifier = 2.0
+    v2.q_empowered = True
+    p_emp = v2.get_one_hit_damage(target)[0]
+    expected = total_ad * 2.0 + total_ad * 1.15
+    assert abs(p_emp - expected) < 1e-6, (
+        f"강화평타 = crit_base + Q(no-crit), expected {expected:.3f}, got {p_emp:.3f}")
+
+    # (핵심 회귀) 옛 버그였다면 p_emp = p_normal × (1+ratio) = total_ad × 2.0 × 2.15 = total_ad × 4.3
+    # 새 로직   p_emp = total_ad × 3.15. 두 값의 격차는 total_ad × 1.15 (Q 부분의 크리 배수 손실).
+    old_incorrect = p_normal * (1.0 + 1.15)
+    assert p_emp < old_incorrect, "Q 크리 미반영이면 p_emp < 이전 (p_normal × (1+ratio)) 여야 함"
 
 
 def test_q_dps_higher_than_autos_only():
