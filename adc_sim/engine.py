@@ -109,9 +109,18 @@ def run_simulation(champion, target, verbose=True, skill_plan=None, respawn_to_f
                     target.current_hp += target.max_hp  # 오버킬 이월 + 풀피 리필
                     break  # 이번 스텝의 남은 스킬 이벤트는 다음 바로 넘김
 
+        # 시전 시간 → 평타 지연. 두 방식(챔피언이 스킬 시전 시 설정):
+        #  · 캔슬 가능(흡수형) cast_lockout_until: 이 시각까지 평타 불가. 평타 타이머는
+        #    밑에서 계속 흐르므로 시전 시간이 평타 간격 안에 들면 무손실(위빙).
+        #  · 캔슬 불가(가산형) cast_delay_pending: 시전 시간을 다음 평타 간격에 그대로
+        #    가산(두 시간의 합 = 평타간격 + 시전). 흡수 안 됨.
+        #  미설정 챔피언은 둘 다 0 이라 기존 동작 불변.
+        cast_delay = getattr(champion, "cast_delay_pending", 0.0)
+        if cast_delay > 0.0:
+            next_attack_in += cast_delay
+            champion.cast_delay_pending = 0.0
+
         # 2) 기본 공격 이벤트 처리
-        #    시전 시간(cast_lockout_until) 동안은 평타 불가 — 락아웃 종료까지 지연.
-        #    (스킬 시전이 평타 윈드업을 막는 모델; 미설정 챔피언은 0.0 이라 기존 동작 불변.)
         cast_lockout_until = getattr(champion, "cast_lockout_until", 0.0)
         if target.current_hp > 0 and next_attack_in <= eps and current_time + eps < cast_lockout_until:
             next_attack_in = cast_lockout_until - current_time

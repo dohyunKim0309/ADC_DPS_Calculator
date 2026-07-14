@@ -1,12 +1,10 @@
-"""유나라 스킬 시전 시간(auto-attack lockout) [H-YUNARA-CAST-1].
+"""유나라 스킬 시전 시간(cast time) [H-YUNARA-CAST-1].
 
-모델: W(심판/파멸의 궤적)는 스킬샷 — 시전 시간 max(0.225, 0.45/(1+추가공속)) 동안
-평타 불가(엔진 cast_lockout_until 게이트). 캔슬 가능이라 시전 후 다음 평타 0.33 클립 유지.
+모델: W(심판/파멸의 궤적)는 스킬샷, 시전 시간 max(0.225, 0.45/(1+추가공속)).
+**W 는 평타캔슬 불가(사용자 확정)** → 시전 시간이 평타 간격에 그대로 가산(두 시간의 합
+= 평타간격 + 시전). 엔진 `cast_delay_pending`(가산형) 사용, 회복 클립(0.33) 없음.
+비교로, 캔슬 가능 스킬은 `cast_lockout_until`(흡수형) — 간격 안에 들면 무손실.
 Q(정신 수양)/R(초월)=즉발 자가버프 → 시전 0, E(칸메이의 발걸음)=이동기 미모델.
-
-핵심 발견: 유나라 평타 간격(공속캡 3.0 → 바닥 0.333s, 실전 ~0.46s)이 W 시전 시간(≤0.45s,
-추가공속 높으면 0.225s)보다 항상 커서 실제 W 는 평타 손실 없이 위빙 → DPS 영향 ≈ 0.
-락아웃 기구 자체는 시전 시간이 간격을 초과하면 정상적으로 평타를 지연시킨다.
 
 Run: .venv/bin/python -m pytest tests/test_yunara_cast_time.py
 """
@@ -41,31 +39,33 @@ def test_w_cast_time_formula():
     assert abs(y.w_cast_time() - 0.225) < 1e-6
 
 
-def test_base_champion_has_no_lockout():
-    """시전 시간 미모델 챔피언은 cast_lockout_until=0 → 기존 동작 불변."""
+def test_base_champion_has_no_cast_delay():
+    """시전 시간 미모델 챔피언은 두 채널 모두 0 → 기존 동작 불변."""
     y = _yunara()
     y.init_combat_state()
     assert y.cast_lockout_until == 0.0
+    assert y.cast_delay_pending == 0.0
 
 
-def test_lockout_defers_auto_when_cast_exceeds_interval():
-    """시전 시간 > 평타 간격이면 락아웃이 평타를 지연 → DPS 감소(단조)."""
+def test_noncancel_cast_reduces_dps_monotonically():
+    """비캔슬(가산형) 시전 시간이 커질수록 DPS 단조 감소(간격에 가산)."""
     t = lambda: Target(hp=2500, armor=100, magic_resist=50)
-    _, dps_free, _ = run_simulation(_yunara(cast_base=0.0, cast_floor=0.0), t(), verbose=False)
+    _, dps0, _ = run_simulation(_yunara(cast_base=0.0, cast_floor=0.0), t(), verbose=False)
+    _, dps_small, _ = run_simulation(_yunara(cast_base=0.45, cast_floor=0.225), t(), verbose=False)
     _, dps_big, _ = run_simulation(_yunara(cast_base=2.0, cast_floor=2.0), t(), verbose=False)
-    assert dps_big < dps_free  # 큰 시전 시간은 평타를 지연시켜 DPS 하락
+    assert dps0 > dps_small > dps_big  # 가산형: 아무리 작아도 손실(흡수 안 됨)
 
 
-def test_real_w_cast_fits_in_interval_no_dps_loss():
-    """실제 W 시전(0.225~0.45s) < 평타 간격(≥0.33s) → 위빙 무손실(DPS 불변)."""
+def test_real_w_cast_costs_dps():
+    """실제 W 시전(비캔슬)은 간격에 가산 → DPS 손실 발생(무비용 아님)."""
     t = lambda: Target(hp=2500, armor=100, magic_resist=50)
     _, dps_free, _ = run_simulation(_yunara(cast_base=0.0, cast_floor=0.0), t(), verbose=False)
     _, dps_real, _ = run_simulation(_yunara(), t(), verbose=False)  # 기본 0.45/0.225
-    assert abs(dps_real - dps_free) < 1e-6
+    assert dps_real < dps_free
 
 
-def test_lockout_set_on_w_cast():
-    """W 본체 시전 시 cast_lockout_until 이 현재시각+시전시간으로 설정된다."""
+def test_cast_delay_set_on_w_cast():
+    """W 본체 시전(비캔슬) 시 cast_delay_pending 에 시전 시간이 가산된다."""
     y = _yunara()
     y.init_combat_state()
     y.hit_count = 2                       # W 시전 조건(둘째 평타 이후)
@@ -73,5 +73,16 @@ def test_lockout_set_on_w_cast():
     tgt = Target(hp=2500, armor=100, magic_resist=50)
     events = y.pop_due_skill_events(1.0, tgt)
     assert any(e[0] == "w" for e in events)
-    assert y.cast_lockout_until > 1.0
-    assert abs(y.cast_lockout_until - (1.0 + y.w_cast_time())) < 1e-6
+    assert abs(y.cast_delay_pending - y.w_cast_time()) < 1e-6
+    assert y.cast_lockout_until == 0.0    # 비캔슬 → 흡수형 미사용
+
+
+def test_cancelable_path_absorbs_within_interval():
+    """(회귀 방지) 캔슬 가능(흡수형) 경로는 시전<간격이면 무손실.
+    같은 흡수형에서 실제 시전(0.225) vs 시전 0 을 비교(둘 다 0.33 클립 동일)."""
+    t = lambda: Target(hp=2500, armor=100, magic_resist=50)
+    y0 = _yunara(cast_base=0.0, cast_floor=0.0); y0.w_cancelable = True
+    _, dps0, _ = run_simulation(y0, t(), verbose=False)
+    yr = _yunara(); yr.w_cancelable = True     # 실제 0.45/0.225, 흡수형
+    _, dpsr, _ = run_simulation(yr, t(), verbose=False)
+    assert abs(dpsr - dps0) < 1e-6             # 0.225s < 간격(≥0.33) → 흡수, 무손실

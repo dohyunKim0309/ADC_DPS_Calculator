@@ -229,9 +229,11 @@ class Champion:
     def init_combat_state(self, skill_plan=None):
         self._combat_time = 0.0
         self.current_mana = self.total_mana   # 전투 시작 시 풀충전
-        # 시전 시간 락아웃: 이 시각까지 평타 불가(스킬 시전 중). 기본 0=락아웃 없음
-        # → 시전 시간을 모델링하지 않는 챔피언은 기존 동작 불변.
+        # 시전 시간 → 평타 지연. 기본 0 → 시전 시간 미모델 챔피언은 동작 불변.
+        #  · cast_lockout_until: 캔슬 가능(흡수형) — 이 시각까지 평타 불가.
+        #  · cast_delay_pending: 캔슬 불가(가산형) — 다음 평타 간격에 가산.
         self.cast_lockout_until = 0.0
+        self.cast_delay_pending = 0.0
 
     def advance_combat_time(self, delta_time, current_time, target):
         self._combat_time = current_time
@@ -708,13 +710,14 @@ class Yunara(Champion):
         # --- 스킬 시전 시간(auto-attack lockout) [H-YUNARA-CAST-1] ---
         # [Hypothesis] LoL Wiki/나무위키: W(심판/파멸의 궤적)는 스킬샷, 시전 시간 0.45→0.225s
         #   가 추가 공격속도에 비례해 감소(스케일). 여기선 w_cast = max(0.225, 0.45/(1+추가공속))
-        #   으로 모델(추가공속 +100% 에서 0.225 바닥). 시전 중에는 평타 불가(엔진 락아웃).
-        #   W 는 캔슬 가능(시전 후 회복은 평타로 캔슬 → 기존 0.33 클리핑 유지).
+        #   으로 모델(추가공속 +100% 에서 0.225 바닥).
+        #   **W 는 평타캔슬 불가(사용자 확정)** → 시전 시간이 흡수되지 않고 평타 간격에
+        #   그대로 가산됨(두 시간의 합 = 평타간격 + 시전). 엔진 cast_delay_pending 사용.
         # Q(정신 수양)·R(초월)=즉발 자가 버프 → 시전 시간 0(캔슬 가능, 기존 0.33 클립만).
         # E(칸메이의 발걸음)=이동기, 미모델.
         self.w_cast_base = 0.45
         self.w_cast_floor = 0.225
-        self.w_cancelable = True
+        self.w_cancelable = False
 
     def get_champion_onhit(self, target):
         """유나라 Q 스킬 온힛 대미지 (구인수 적용)"""
@@ -923,11 +926,15 @@ class Yunara(Champion):
                 for k in range(1, self.base_w_dot_ticks + 1):
                     self.pending_w_dot.append((current_time + k * 1.0, dot_per_sec))
             self.cast_spell(current_time)
-            # W 시전 시간만큼 평타 락아웃(엔진이 다음 평타를 지연). [H-YUNARA-CAST-1]
-            self.cast_lockout_until = current_time + self.w_cast_time()
-            # W 는 캔슬 가능 → 시전(락아웃) 종료 후 다음 평타 0.33 클리핑(회복 캔슬).
+            # W 시전 시간을 평타 지연에 반영. [H-YUNARA-CAST-1]
             if self.w_cancelable:
+                # 캔슬 가능(흡수형): 간격 안에 들면 무손실 + 회복 캔슬(0.33 클립).
+                self.cast_lockout_until = current_time + self.w_cast_time()
                 self._clip_next_interval = True
+            else:
+                # 캔슬 불가(가산형): 시전 시간이 평타 간격에 그대로 가산(두 시간의 합).
+                # 회복 캔슬 없음 → 0.33 클립도 없음.
+                self.cast_delay_pending += self.w_cast_time()
 
         return events
 
