@@ -229,6 +229,9 @@ class Champion:
     def init_combat_state(self, skill_plan=None):
         self._combat_time = 0.0
         self.current_mana = self.total_mana   # 전투 시작 시 풀충전
+        # 시전 시간 락아웃: 이 시각까지 평타 불가(스킬 시전 중). 기본 0=락아웃 없음
+        # → 시전 시간을 모델링하지 않는 챔피언은 기존 동작 불변.
+        self.cast_lockout_until = 0.0
 
     def advance_combat_time(self, delta_time, current_time, target):
         self._combat_time = current_time
@@ -702,6 +705,17 @@ class Yunara(Champion):
         # 궁/평캔 = Q 활성 직후 다음 평타 간격(1/AS)을 ANIM_CANCEL_CLIP 로 클리핑(상한).
         self.ult_cancel_clip = ANIM_CANCEL_CLIP
 
+        # --- 스킬 시전 시간(auto-attack lockout) [H-YUNARA-CAST-1] ---
+        # [Hypothesis] LoL Wiki/나무위키: W(심판/파멸의 궤적)는 스킬샷, 시전 시간 0.45→0.225s
+        #   가 추가 공격속도에 비례해 감소(스케일). 여기선 w_cast = max(0.225, 0.45/(1+추가공속))
+        #   으로 모델(추가공속 +100% 에서 0.225 바닥). 시전 중에는 평타 불가(엔진 락아웃).
+        #   W 는 캔슬 가능(시전 후 회복은 평타로 캔슬 → 기존 0.33 클리핑 유지).
+        # Q(정신 수양)·R(초월)=즉발 자가 버프 → 시전 시간 0(캔슬 가능, 기존 0.33 클립만).
+        # E(칸메이의 발걸음)=이동기, 미모델.
+        self.w_cast_base = 0.45
+        self.w_cast_floor = 0.225
+        self.w_cancelable = True
+
     def get_champion_onhit(self, target):
         """유나라 Q 스킬 온힛 대미지 (구인수 적용)"""
         idx = self.q_level - 1
@@ -824,6 +838,12 @@ class Yunara(Champion):
             self.bonus_as_percent -= as_bonus
             self.q_as_buff_applied = False
 
+    def w_cast_time(self):
+        """W(심판/파멸의 궤적) 시전 시간(초). [H-YUNARA-CAST-1] 추가 공속에 비례 감소:
+        max(0.225, 0.45/(1+추가공속)) — 추가공속 +100% 에서 바닥 0.225."""
+        bonus_as = max(0.0, self.get_total_bonus_as_percent())
+        return max(self.w_cast_floor, self.w_cast_base / (1.0 + bonus_as))
+
     # ---- 엔진 주도 로테이션: 평타 → 궁(초월) → 평타 → 평타+W(쿨마다) ----
     def init_combat_state(self, skill_plan=None):
         """전투 상태 초기화. 첫 평타 전 Q 비활성, W는 둘째 평타 이후부터."""
@@ -903,7 +923,11 @@ class Yunara(Champion):
                 for k in range(1, self.base_w_dot_ticks + 1):
                     self.pending_w_dot.append((current_time + k * 1.0, dot_per_sec))
             self.cast_spell(current_time)
-            self._clip_next_interval = True  # W 시전도 평타캔슬 → 다음 평타 0.33 클리핑
+            # W 시전 시간만큼 평타 락아웃(엔진이 다음 평타를 지연). [H-YUNARA-CAST-1]
+            self.cast_lockout_until = current_time + self.w_cast_time()
+            # W 는 캔슬 가능 → 시전(락아웃) 종료 후 다음 평타 0.33 클리핑(회복 캔슬).
+            if self.w_cancelable:
+                self._clip_next_interval = True
 
         return events
 
