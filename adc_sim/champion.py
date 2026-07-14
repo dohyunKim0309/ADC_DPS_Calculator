@@ -324,6 +324,7 @@ class Champion:
             if hasattr(item, "get_extra_onhit_applications"):
                 extra_applications += item.get_extra_onhit_applications(self)
         total_applications = proc_count + extra_applications
+        self._last_onhit_applications = total_applications  # [H-VAYNE-W-GUI] 값 저장만(반환 불변). Vayne 은화살이 읽어 구인수 팬텀히트로 스택 가속.
 
         # 2.2 결정된 횟수만큼 온힛 루프 실행
         total_phys_onhit = 0
@@ -2151,14 +2152,18 @@ class Vayne(Champion):
             self.q_empowered = False
             p_base *= (1.0 + self.Q_AD_RATIO[self.q_level - 1])
 
-        # W 은화살: 3번째 타격마다 고정피해 = max(floor, %maxHP). proc 루프 바깥이라 구인수 2배 안 됨.
-        # 대미지증가(PtA/CutDown/LDR거인학살자=_last_damage_amp)로 증폭·경감(방/마저) 우회. [H-VAYNE-W]
-        self.sb_stacks += 1
-        if self.sb_stacks >= 3:
-            self.sb_stacks = 0
-            idx = self.w_level - 1
-            sb = max(self.W_FLOOR[idx], self.W_PCT[idx] * target.max_hp)
-            pt_onhit += sb * self._last_damage_amp
+        # W 은화살: 3번째 타격마다 고정피해 = max(floor, %maxHP). 대미지증가로 증폭·경감(방/마저) 우회.
+        # 스택은 이번 평타의 총 온힛 적용 횟수(_last_onhit_applications)만큼 소비 — 구인수 팬텀히트가
+        # 스택을 가속하지만(예: 풀스택 후 3평마다 apps=2) 버스트 자체는 stack==3 도달 시점에만 1회 발동해
+        # 3번째 히트 대미지가 구인수로 2배가 되진 않는다. 예시(풀스택 뒤 sb=0 시작):
+        # 평(1) 평(2) 평(3버스트→1) 평(2) 평(3버스트) 평(1,2) 평(3버스트→1) ... [H-VAYNE-W][H-VAYNE-W-GUI]
+        idx = self.w_level - 1
+        for _ in range(self._last_onhit_applications):
+            self.sb_stacks += 1
+            if self.sb_stacks >= 3:
+                self.sb_stacks = 0
+                sb = max(self.W_FLOOR[idx], self.W_PCT[idx] * target.max_hp)
+                pt_onhit += sb * self._last_damage_amp
 
         return p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit
 

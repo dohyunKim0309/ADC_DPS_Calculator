@@ -86,11 +86,15 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
   **고정(true)피해**; %maxHP 6/7/8/9/10, floor 50~110) + **Q 구르기**(다음 평타 **총AD** 75~115% 추가
   물리·치명·평타리셋) + **R 결전**(고정 추가AD 35/50/65 + Q쿨감 30/40/50%, 지속 8/10/12s).
   base AD 60(**+2.35**, DDragon raw=0 은 데이터버그 → bin+Wiki 채택), AS 0.658(ratio 0.658).
-- **은화살 배치(핵심)** [H-VAYNE-W]: `get_one_hit_damage` 오버라이드에서 **proc 루프 바깥** `true_onhit`
-  채널에 베인 전용 3타 카운터(`sb_stacks`)로 가산 → **구인수 2배 안 됨**. 고정피해는 **대미지증가
-  (PtA/CutDown/LDR거인학살자=`mod_factor`)로 증폭**하되 **경감(방/마저)은 우회** — 베이스가 stash 한
-  `_last_damage_amp` 를 곱해 반영. (베이스 `Champion.get_one_hit_damage` 에 `_last_damage_amp = mod_factor`
-  stash 1줄 추가 = 유일한 베이스 변경, 값 저장뿐이라 기존 챔프 수치 불변. Corki/DHC true 증폭 일반화는 후속.)
+- **은화살 배치(핵심)** [H-VAYNE-W][H-VAYNE-W-GUI]: `get_one_hit_damage` 오버라이드에서 **proc 루프 바깥** `true_onhit`
+  채널에 베인 전용 3타 카운터(`sb_stacks`)로 가산 — 스택은 **이번 평타의 총 온힛 적용 횟수만큼 소비**
+  (베이스가 stash 한 `_last_onhit_applications`; 구인수 풀스택 후 3평마다 apps=2 → 팬텀히트가 스택 가속).
+  버스트는 stack==3 도달 시점에 1회 발동해 **버스트 대미지가 구인수로 2배가 되진 않음**(가속만).
+  풀스택 뒤 sb=0 시작 시 예시: 평(1) 평(2) 평(3버스트→1) 평(2) 평(3버스트) 평(1,2) 평(3버스트→1)...
+  고정피해는 **대미지증가(PtA/CutDown/LDR거인학살자=`mod_factor`)로 증폭**하되 **경감(방/마저)은 우회** —
+  베이스가 stash 한 `_last_damage_amp` 를 곱해 반영. (베이스 `Champion.get_one_hit_damage` 에
+  `_last_damage_amp = mod_factor` 및 `_last_onhit_applications = total_applications` stash 2줄 추가 =
+  유일한 베이스 변경, 값 저장뿐이라 기존 챔프 수치 불변. Corki/DHC true 증폭 일반화는 후속.)
 - **Q/R 엔진 모델**: Q 는 스킬 이벤트(무직접피해)로 `q_empowered` arm + `q_reset_pending`(평타리셋
   `ANIM_CANCEL_CLIP`) + 마나30 게이트. 강화 평타는 `p_base×(1+ratio)`(치명·증폭 자연반영). R 은 t=0
   매뉴얼 시전(마나80): `bonus_ad += R_BONUS_AD`, Q쿨 `×(1-R_Q_CDR)`, 지속 만료 시 원복(짧은 버스트라 상시).
