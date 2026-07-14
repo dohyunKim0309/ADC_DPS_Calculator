@@ -95,6 +95,9 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
   베이스가 stash 한 `_last_damage_amp` 를 곱해 반영. (베이스 `Champion.get_one_hit_damage` 에
   `_last_damage_amp = mod_factor` 및 `_last_onhit_applications = total_applications` stash 2줄 추가 =
   유일한 베이스 변경, 값 저장뿐이라 기존 챔프 수치 불변. Corki/DHC true 증폭 일반화는 후속.)
+  ⚠️ **BotRK×은화살 반작용**: CTRL(botrk-guinsoo-...) T2~T4 는 픽스 후 오히려 소폭(-1% 내외) DPS 하락 —
+  총 버스트 수는 동일하나 팬텀히트로 버스트가 프론트로드 → 타깃 HP 조기 하락 → BotRK 6%현재HP 딜 손실.
+  전 크리코어 빌드는 %현재HP 아이템이 없어 영향 無. 진단·회귀는 `tests/test_vayne_silverbolts_botrk_interaction.py` 참조.
 - **Q/R 엔진 모델**: Q 는 스킬 이벤트(무직접피해)로 `q_empowered` arm + `q_reset_pending`(평타리셋
   `ANIM_CANCEL_CLIP`) + 마나30 게이트. 강화 평타는 `p_base×(1+ratio)`(치명·증폭 자연반영). R 은 t=0
   매뉴얼 시전(마나80): `bonus_ad += R_BONUS_AD`, Q쿨 `×(1-R_Q_CDR)`, 지속 만료 시 원복(짧은 버스트라 상시).
