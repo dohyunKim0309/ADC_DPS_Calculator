@@ -229,6 +229,11 @@ class Champion:
     def init_combat_state(self, skill_plan=None):
         self._combat_time = 0.0
         self.current_mana = self.total_mana   # 전투 시작 시 풀충전
+        # 시전 시간 → 평타 지연. 기본 0 → 시전 시간 미모델 챔피언은 동작 불변.
+        #  · cast_lockout_until: 캔슬 가능(흡수형) — 이 시각까지 평타 불가.
+        #  · cast_delay_pending: 캔슬 불가(가산형) — 다음 평타 간격에 가산.
+        self.cast_lockout_until = 0.0
+        self.cast_delay_pending = 0.0
 
     def advance_combat_time(self, delta_time, current_time, target):
         self._combat_time = current_time
@@ -648,8 +653,8 @@ class Jinx(Champion):
 
 class Yunara(Champion):
     def __init__(self, level=1, q_level=5, w_level=5, r_level=3, w_enabled=True):
-        # Base AD 55, AS 0.65, AS Ratio 0.65, AS Growth 2.75, AD Growth 2.5
-        super().__init__(name="Yunara", base_ad=55, base_as=0.650, as_ratio=0.650, as_growth=2.75, base_range=575, level=level, ad_growth=2.5)
+        # Base AD 55, AS 0.65, AS Ratio 0.65, AS Growth 2.75, AD Growth 3.0 (다음 패치 버프: 2.5→3.0)
+        super().__init__(name="Yunara", base_ad=55, base_as=0.650, as_ratio=0.650, as_growth=2.75, base_range=575, level=level, ad_growth=3.0)
 
         self.q_level = q_level
 
@@ -701,8 +706,22 @@ class Yunara(Champion):
         self.ult_w_cd = 5.0                  # 쿨다운(초)
 
         # 로테이션: 첫 평타 → 궁(초월 Q활성) → 평타 → 이후 평타+W(쿨마다).
-        # 궁/평캔 = Q 활성 직후 다음 평타 간격(1/AS)을 ANIM_CANCEL_CLIP 로 클리핑(상한).
-        self.ult_cancel_clip = ANIM_CANCEL_CLIP
+        # (유나라 스킬은 전부 평타캔슬 불가 → 0.33 클립 없음; 시전 시간만 가산형으로 반영.)
+
+        # --- 스킬 시전 시간(cast time) [H-YUNARA-CAST-1] ---
+        # [Hypothesis] LoL Wiki: 모든 유나라 스킬 평타캔슬 불가(사용자 확정) → 시전 시간이
+        #   평타 간격에 그대로 가산(두 시간의 합). 엔진 cast_delay_pending 사용, 0.33 클립 없음.
+        #  · 기본 W(심판의 궤적, Arc of Judgment): 0.45→0.225s (추가공속 비례)
+        #  · 강화 W(파멸의 궤적, Arc of Ruin, Q활성 중): 0.6→0.45s (추가공속 비례) — 기본보다 김.
+        #    시뮬 로테이션은 R 선시전으로 Q 상시 활성 → W 는 사실상 항상 강화 W.
+        #  · R(초월, Transcend One's Self): 시전 시간 없음(0).
+        #  · Q(정신 수양): 즉발 자가버프(시전 0). 활성 중 평타 윈드업 캔슬 불가 → 평캔(0.33) 없음.
+        #  · E(칸메이의 발걸음): 이동기, 미모델.
+        self.w_cast_base = 0.45          # 기본 W
+        self.w_cast_floor = 0.225
+        self.w_ult_cast_base = 0.6       # 강화 W(파멸의 궤적)
+        self.w_ult_cast_floor = 0.45
+        self.w_cancelable = False        # 평타캔슬 불가 → 가산형(cast_delay_pending)
 
     def get_champion_onhit(self, target):
         """유나라 Q 스킬 온힛 대미지 (구인수 적용)"""
@@ -795,8 +814,7 @@ class Yunara(Champion):
         # 막 +1 했으므로 hit_count==1 == 방금 첫 평타를 마친 시점.
         if getattr(self, "_ult_pending", False) and self.hit_count >= 1:
             self._ult_pending = False
-            self.activate_q(time)            # 궁극기 = 초월(Q) 활성
-            self._clip_next_interval = True  # 다음 평타 간격을 0.33s로 클리핑
+            self.activate_q(time)            # 궁극기(초월)=Q 활성. 비캔슬(시전0) → 클립 없음.
 
         return p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit
 
@@ -809,7 +827,7 @@ class Yunara(Champion):
         self.q_active = True
         self.q_start_time = time
         self.q_stacks = 0
-        self._clip_next_interval = True  # Q(평캔) 활성마다 다음 평타 간격 0.33 클리핑
+        # Q(정신 수양)=비캔슬(활성 중 평타 윈드업 캔슬 불가) → 0.33 평캔 클립 없음.
         if not self.q_as_buff_applied:
             idx = self.q_level - 1
             as_bonus = self.q_as_amounts[idx]
@@ -826,13 +844,20 @@ class Yunara(Champion):
             self.bonus_as_percent -= as_bonus
             self.q_as_buff_applied = False
 
+    def w_cast_time(self):
+        """W 시전 시간(초). [H-YUNARA-CAST-1] 추가 공속에 비례 감소. 평타캔슬 불가(가산형).
+        Q활성(초월)=강화 W(파멸의 궤적) 0.6→0.45, 비활성=기본 W(심판의 궤적) 0.45→0.225."""
+        bonus_as = max(0.0, self.get_total_bonus_as_percent())
+        if self.q_active:
+            return max(self.w_ult_cast_floor, self.w_ult_cast_base / (1.0 + bonus_as))
+        return max(self.w_cast_floor, self.w_cast_base / (1.0 + bonus_as))
+
     # ---- 엔진 주도 로테이션: 평타 → 궁(초월) → 평타 → 평타+W(쿨마다) ----
     def init_combat_state(self, skill_plan=None):
         """전투 상태 초기화. 첫 평타 전 Q 비활성, W는 둘째 평타 이후부터."""
         super().init_combat_state(skill_plan)
         self.hit_count = 0
         self._ult_pending = True       # 첫 평타 직후 궁(초월) 시전 대기
-        self._clip_next_interval = False  # 궁 캔슬로 다음 평타 간격 클리핑
         self.cooldowns_remaining = {"w": 0.0}
         self.pending_w_dot = []  # [(tick_time, magic_dmg)] 심판의 궤적 DoT 예약
 
@@ -842,12 +867,9 @@ class Yunara(Champion):
             self.cooldowns_remaining["w"] = max(0.0, self.cooldowns_remaining["w"] - delta_time)
 
     def get_attack_interval(self):
-        """평타 간격(1/AS). 궁 캔슬 직후 1회만 0.33초로 클리핑(상한)."""
-        base = super().get_attack_interval()
-        if self._clip_next_interval:
-            self._clip_next_interval = False
-            return min(base, self.ult_cancel_clip)
-        return base
+        """평타 간격(1/AS). 유나라 스킬은 전부 평타캔슬 불가(Q활성 중 평타 윈드업 캔슬
+        불가·W/R 비캔슬) → 0.33 평캔 클립 없음. 시전 시간은 cast_delay_pending(가산형)로 반영."""
+        return super().get_attack_interval()
 
     def get_time_to_next_skill_event(self, current_time):
         # W는 "평타→궁→평타" 이후(둘째 평타 완료, hit_count>=2)부터 쿨마다 시전
@@ -905,7 +927,14 @@ class Yunara(Champion):
                 for k in range(1, self.base_w_dot_ticks + 1):
                     self.pending_w_dot.append((current_time + k * 1.0, dot_per_sec))
             self.cast_spell(current_time)
-            self._clip_next_interval = True  # W 시전도 평타캔슬 → 다음 평타 0.33 클리핑
+            # W 시전 시간을 평타 지연에 반영. [H-YUNARA-CAST-1]
+            if self.w_cancelable:
+                # 캔슬 가능(흡수형): 간격 안에 들면 무손실(다른 캔슬 가능 스킬용 경로).
+                self.cast_lockout_until = current_time + self.w_cast_time()
+            else:
+                # 캔슬 불가(가산형): 시전 시간이 평타 간격에 그대로 가산(두 시간의 합).
+                # 회복 캔슬 없음 → 0.33 클립도 없음.
+                self.cast_delay_pending += self.w_cast_time()
 
         return events
 
@@ -1287,7 +1316,7 @@ class Corki(Champion):
             as_growth=2.8,
             base_range=550,
             level=level,
-            ad_growth=2.0,
+            ad_growth=2.5,
         )
 
         # 기본 스탯 보관
