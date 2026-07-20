@@ -11,7 +11,8 @@ def _true_component(champ, target, time=0.0):
 
 
 def test_pta_active_amplifies_silverbolts():
-    """PtA 3스택 활성 + CutDown 고HP → 은화살 300 * (1+0.08+0.08) = 348."""
+    """PtA 3스택 활성 + CutDown 고HP → 은화살 300 × 1.08 × 1.08 = 349.92.
+    (서로 다른 증폭 소스는 곱연산 스택 — 실 LoL 규칙, 사용자 확인 2026-07-20.)"""
     v = Vayne(level=11, w_level=5)
     v.set_rune(PressTheAttack())
     v.set_sub_rune(CutDown())
@@ -20,7 +21,7 @@ def test_pta_active_amplifies_silverbolts():
     v.rune.active = True
     target = Target(hp=3000, armor=0, magic_resist=0, bonus_hp=1500)
     v.get_one_hit_damage(target); v.get_one_hit_damage(target)  # 은화살 스택 0→1→2
-    assert abs(_true_component(v, target) - 348.0) < 1e-6
+    assert abs(_true_component(v, target) - 349.92) < 1e-6
 
 
 def test_coupdegrace_low_hp_amplifies_silverbolts():

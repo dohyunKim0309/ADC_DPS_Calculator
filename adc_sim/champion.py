@@ -347,26 +347,29 @@ class Champion:
         # ---------------------------------------------------------
         # 3. 대미지 증폭(Multiplier) 적용 (거인 학살자, 룬 등)
         # ---------------------------------------------------------
-        damage_multiplier = 0.0
-        c44_multiplier = 0.0 # C44는 별도 적용
+        # 실 LoL 규칙: 서로 다른 대미지증폭 소스는 곱연산으로 스택 = ∏(1+mod_i).
+        # 예: PtA 8% × CutDown 8% × LDR 15% → 1.08 × 1.08 × 1.15 = 1.3411 (34.11% 증폭).
+        # (이전 구현은 이들을 단순 가산 → 1 + 0.08 + 0.08 + 0.15 = 1.31 이었음 — 버그.
+        #  사용자 확인 2026-07-20: PtA/CutDown/LDR 는 인게임에서 서로 곱연산.)
+        # C44 는 원래도 별도 층(평타 물리 기본딜에만 곱연산), Shadowflame 도 별도 층(§4).
+        mod_factor = 1.0
+        c44_multiplier = 0.0  # C44는 별도 층
 
-        # 아이템 증폭
+        # 아이템 증폭 — 각자 독립 곱연산 층
         for item in self.inventory:
             if hasattr(item, 'get_damage_modifier'):
                 modifier = item.get_damage_modifier(target, self)
                 if item.name == "Hextech Scope C44":
                     c44_multiplier += modifier
                 else:
-                    damage_multiplier += modifier
-        
-        # 룬 증폭 (메인 룬 + 보조 룬)
-        if self.rune:
-            damage_multiplier += self.rune.get_damage_modifier(target, self)
-        if self.sub_rune:
-            damage_multiplier += self.sub_rune.get_damage_modifier(target, self)
+                    mod_factor *= (1.0 + modifier)
 
-        # 일반 증폭 계수 적용 (예: 1.15)
-        mod_factor = 1.0 + damage_multiplier
+        # 룬 증폭 (메인 룬 + 보조 룬) — 각자 독립 곱연산 층
+        if self.rune:
+            mod_factor *= (1.0 + self.rune.get_damage_modifier(target, self))
+        if self.sub_rune:
+            mod_factor *= (1.0 + self.sub_rune.get_damage_modifier(target, self))
+
         self._last_damage_amp = mod_factor  # [H-VAYNE-W] 값 저장만(반환 불변). Vayne 은화살이 읽어 true 증폭.
 
         phys_base *= mod_factor
