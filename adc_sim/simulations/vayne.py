@@ -125,14 +125,16 @@ def _build_all_paths():
     return all_paths
 
 
-def _rank_rows(all_paths, weights_raw=None, keystone_cls=LethalTempo):
+def _rank_rows(all_paths, weights_raw=None, keystone_cls=LethalTempo, packages=None):
     """전 (경로×패키지) 시뮬 → dedup → 컨트롤 정규화 RelDPG. (ranking_core 위임)
-    keystone_cls: 키스톤 룬 클래스. LT 가 기본(기존 골든값 보존)."""
+    keystone_cls: 키스톤 룬 클래스. LT 가 기본(기존 골든값 보존).
+    packages: None 이면 기본 ADC_PACKAGES (Bld+Zerk / Bow+Glut+민첩함) 사용."""
     def _sim(path, tier, doran_key, boots_key, rune_as_bonus):
         return simulate_vayne_core_path(path, tier, doran_key=doran_key,
                                         boots_key=boots_key, rune_as_bonus=rune_as_bonus,
                                         keystone_cls=keystone_cls)
-    return rank_builds(_sim, all_paths, CONTROL_PATH, weights_raw=weights_raw)
+    return rank_builds(_sim, all_paths, CONTROL_PATH, weights_raw=weights_raw,
+                       packages=packages)
 
 
 def get_vayne_4core_top1_build(rank_by="dpg", keystone_cls=LethalTempo):
