@@ -16,6 +16,7 @@
   - `… adc_sim.simulations.yunara` / `.kaisa` / `.corki` / `.ezreal` / `.cogmaw`
   - `… adc_sim.simulations.vayne` — 베인 4코어 랭킹(온힛+크리 풀, 컨트롤 botrk-guinsoo-terminus-pd; 치속·집공 두 룬 각각 표 출력)
   - `… adc_sim.simulations.vayne_rune_compare [top_n]` — LT vs PtA 룬 비교(top_n 기본 10 + 컨트롤, 코어 타이밍별 DPS/DPG 나열). 두 룬 전수 랭킹 소요 ≈1분.
+  - `… adc_sim.simulations.vayne_sequential_greedy` — 5코어 순차 그리디 아이템트리 선택 (각 시점 마지널 DPG 미래 호라이즌 γ=0.9 할인합 최대화). 4시나리오(LT/PtA × 핏빛길/민첩함), Bow+Glut 고정, 5코어 풀 = CORE4_CANDIDATES 재활용. 시뮬 캐시 98%+ hit → ~10초.
   - `… adc_sim.simulations.jinx` — 징크스 4코어 랭킹(미니건+W, Get Excited OFF, Ashe 크리풀·컨트롤 kraken-pd-ie-ldr 재사용)
   - `… adc_sim.simulations.power_compare` — 챔피언 간 Top1/Basic 비교
   - `… adc_sim.simulations.case_ranking ["케이스필터"]` — **애쉬 케이스 기반 빌드 랭킹**(비-방어 전 아이템 전수조사, 14케이스). 표만 출력(그래프/`plt.show()` 없음)이라 **헤드리스 안전**. 인자로 케이스명 부분일치 필터(예: `"alldps/nohc"`). 전체 ~45초.

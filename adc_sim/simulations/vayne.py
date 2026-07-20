@@ -8,14 +8,16 @@ from adc_sim.settings import CORE_WEIGHTS_LABEL
 from adc_sim.simulations.ashe import build_ashe_like_core_report_meta
 from adc_sim.simulations.ranking_core import rank_builds
 
-# 코어 단계별 고정 타겟 (Ashe/KaiSa/CogMaw 시뮬과 동일)
+# 코어 단계별 고정 타겟 (Ashe/KaiSa/CogMaw 시뮬과 동일; 5코어는 case_ranking 관례 재사용)
 CORE_TARGET_STATS = {
     1: {"hp": 1700, "armor": 50, "mr": 25},
     2: {"hp": 1900, "armor": 70, "mr": 30},
     3: {"hp": 2400, "armor": 100, "mr": 50},
     4: {"hp": 2600, "armor": 120, "mr": 70},
+    5: {"hp": 3000, "armor": 150, "mr": 90},
 }
-CORE_VAYNE_LEVELS = {1: {"level": 9}, 2: {"level": 11}, 3: {"level": 13}, 4: {"level": 15}}
+CORE_VAYNE_LEVELS = {1: {"level": 9}, 2: {"level": 11}, 3: {"level": 13},
+                     4: {"level": 15}, 5: {"level": 17}}
 
 # 룬 라벨(파워컴페어/출력용) — CogMaw 미러
 RUNE_LABELS = {LethalTempo: "LT", PressTheAttack: "PtA"}
@@ -31,23 +33,29 @@ def build_target_for_core(core_tier):
 
 def _skill_levels_for_core(core_tier):
     """스킬 선마 Q→W→E, R=lvl 기반. spec §6 포인트정합표. [H-VAYNE-SKILL]
-    core1(lvl9): q5/w3/r1 · core2(11): q5/w4/r2 · core3(13): q5/w5/r2 · core4(15): q5/w5/e3/r2.
+    core1(lvl9): q5/w3/r1 · core2(11): q5/w4/r2 · core3(13): q5/w5/r2 · core4(15): q5/w5/e3/r2 ·
+    core5(17): q5/w5/e5/r3.
     (E 는 DPS 미모델 → e_level 은 배열색인 하한 1 로 floor.)"""
     lvl = CORE_VAYNE_LEVELS[core_tier]["level"]
     q = 5
-    w = {1: 3, 2: 4, 3: 5, 4: 5}[core_tier]
-    e = {1: 1, 2: 1, 3: 1, 4: 3}[core_tier]
+    w = {1: 3, 2: 4, 3: 5, 4: 5, 5: 5}[core_tier]
+    e = {1: 1, 2: 1, 3: 1, 4: 3, 5: 5}[core_tier]
     r = 1 if lvl < 11 else (2 if lvl < 16 else 3)
     return q, w, e, r
 
 
+_SUB_RUNE_DEFAULT = CutDown
+
+
 def simulate_vayne_core_path(full_path, core_tier, doran_key="doranblade",
                              boots_key="berserker", rune_as_bonus=0.0,
-                             keystone_cls=LethalTempo):
+                             keystone_cls=LethalTempo,
+                             sub_rune_cls=_SUB_RUNE_DEFAULT):
     """Vayne DPS + total gold for a core timing. R@t=0, Q 쿨마다(마나 바운드). K=2.
 
-    full_path: 코어 키 리스트. core_tier: 1~4. doran/boots/rune_as: 패키지.
-    keystone_cls: 키스톤 룬 클래스(LethalTempo|PressTheAttack). 보조룬은 CutDown 고정.
+    full_path: 코어 키 리스트. core_tier: 1~5. doran/boots/rune_as: 패키지.
+    keystone_cls: 키스톤 룬 클래스(LethalTempo|PressTheAttack). 기본 CutDown 보조룬.
+    sub_rune_cls: 보조룬 클래스. None 이면 보조룬 없음(핏빛길·민첩함 등 amp 없는 룬 시나리오용).
     (PtA·CutDown·CoupDeGrace 의 8% 대미지증가는 `_last_damage_amp` 를 통해 은화살 고정딜에도 자동 적용.)
     반환: (dps, total_cost).
     """
@@ -56,7 +64,8 @@ def simulate_vayne_core_path(full_path, core_tier, doran_key="doranblade",
     q, w, e, r = _skill_levels_for_core(core_tier)
     vayne = Vayne(level=lvl, q_level=q, w_level=w, e_level=e, r_level=r)
     vayne.set_rune(keystone_cls())
-    vayne.set_sub_rune(CutDown())
+    if sub_rune_cls is not None:
+        vayne.set_sub_rune(sub_rune_cls())
 
     items = ([create_item_from_key(doran_key)] if doran_key else []) + [create_item_from_key(boots_key)]
     for key in full_path[:core_tier]:
