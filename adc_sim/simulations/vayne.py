@@ -1,6 +1,6 @@
 from adc_sim.champion import Vayne, Target
 import matplotlib.pyplot as plt
-from adc_sim.runes import LethalTempo, CutDown
+from adc_sim.runes import LethalTempo, PressTheAttack, CutDown
 from adc_sim.engine import run_simulation
 from adc_sim.data.items_registry import create_item_from_key
 from adc_sim.data.items_data import pen_rule_ok
@@ -16,6 +16,11 @@ CORE_TARGET_STATS = {
     4: {"hp": 2600, "armor": 120, "mr": 70},
 }
 CORE_VAYNE_LEVELS = {1: {"level": 9}, 2: {"level": 11}, 3: {"level": 13}, 4: {"level": 15}}
+
+# 룬 라벨(파워컴페어/출력용) — CogMaw 미러
+RUNE_LABELS = {LethalTempo: "LT", PressTheAttack: "PtA"}
+RUNE_LONG_LABELS = {LethalTempo: "치명적 속도 (Lethal Tempo)",
+                    PressTheAttack: "집중공격 (Press the Attack)"}
 
 
 def build_target_for_core(core_tier):
@@ -37,17 +42,20 @@ def _skill_levels_for_core(core_tier):
 
 
 def simulate_vayne_core_path(full_path, core_tier, doran_key="doranblade",
-                             boots_key="berserker", rune_as_bonus=0.0):
+                             boots_key="berserker", rune_as_bonus=0.0,
+                             keystone_cls=LethalTempo):
     """Vayne DPS + total gold for a core timing. R@t=0, Q 쿨마다(마나 바운드). K=2.
 
     full_path: 코어 키 리스트. core_tier: 1~4. doran/boots/rune_as: 패키지.
+    keystone_cls: 키스톤 룬 클래스(LethalTempo|PressTheAttack). 보조룬은 CutDown 고정.
+    (PtA·CutDown·CoupDeGrace 의 8% 대미지증가는 `_last_damage_amp` 를 통해 은화살 고정딜에도 자동 적용.)
     반환: (dps, total_cost).
     """
     target = build_target_for_core(core_tier)
     lvl = CORE_VAYNE_LEVELS[core_tier]["level"]
     q, w, e, r = _skill_levels_for_core(core_tier)
     vayne = Vayne(level=lvl, q_level=q, w_level=w, e_level=e, r_level=r)
-    vayne.set_rune(LethalTempo())
+    vayne.set_rune(keystone_cls())
     vayne.set_sub_rune(CutDown())
 
     items = ([create_item_from_key(doran_key)] if doran_key else []) + [create_item_from_key(boots_key)]
@@ -76,7 +84,7 @@ def simulate_vayne_core_path(full_path, core_tier, doran_key="doranblade",
 
 # 컨트롤(베이스라인) = 사용자 확정 실전 온힛+크리 빌드. 탐색공간에 반드시 존재해야 함.
 CONTROL_PATH = ("botrk", "guinsoo", "terminus", "pd")
-_VAYNE_TOP1_CACHE = {}
+_VAYNE_TOP1_CACHE = {}  # (keystone_cls, rank_by) → top1 dict (룬·랭킹기준별 캐시)
 
 # 베인 전용 온힛+크리 풀 (spec §6). pen 배타 {ldr, mortal, terminus}.
 CORE1_CANDIDATES = ["botrk", "guinsoo", "kraken", "terminus", "wit", "runaan", "pd",
@@ -117,17 +125,23 @@ def _build_all_paths():
     return all_paths
 
 
-def _rank_rows(all_paths, weights_raw=None):
-    """전 (경로×패키지) 시뮬 → dedup → 컨트롤 정규화 RelDPG. (ranking_core 위임)"""
-    return rank_builds(simulate_vayne_core_path, all_paths, CONTROL_PATH,
-                       weights_raw=weights_raw)
+def _rank_rows(all_paths, weights_raw=None, keystone_cls=LethalTempo):
+    """전 (경로×패키지) 시뮬 → dedup → 컨트롤 정규화 RelDPG. (ranking_core 위임)
+    keystone_cls: 키스톤 룬 클래스. LT 가 기본(기존 골든값 보존)."""
+    def _sim(path, tier, doran_key, boots_key, rune_as_bonus):
+        return simulate_vayne_core_path(path, tier, doran_key=doran_key,
+                                        boots_key=boots_key, rune_as_bonus=rune_as_bonus,
+                                        keystone_cls=keystone_cls)
+    return rank_builds(_sim, all_paths, CONTROL_PATH, weights_raw=weights_raw)
 
 
-def get_vayne_4core_top1_build(rank_by="dpg"):
-    """랭킹된 4코어 top1 빌드 + 컨트롤 메타 반환. rank_by: "dpg"(RelDPG) | "dps"(절대 가중DPS)."""
-    if rank_by in _VAYNE_TOP1_CACHE:
-        return _VAYNE_TOP1_CACHE[rank_by]
-    rows_dedup, best_control = _rank_rows(_build_all_paths())
+def get_vayne_4core_top1_build(rank_by="dpg", keystone_cls=LethalTempo):
+    """랭킹된 4코어 top1 빌드 + 컨트롤 메타 반환.
+    rank_by: "dpg"(RelDPG) | "dps"(절대 가중DPS). keystone_cls: LT|PtA."""
+    cache_key = (keystone_cls, rank_by)
+    if cache_key in _VAYNE_TOP1_CACHE:
+        return _VAYNE_TOP1_CACHE[cache_key]
+    rows_dedup, best_control = _rank_rows(_build_all_paths(), keystone_cls=keystone_cls)
     sort_key = (lambda r: r["weighted_dps"]) if rank_by == "dps" else (lambda r: r["rel_dpg_score"])
     ranked = sorted(rows_dedup, key=sort_key, reverse=True)
     top1 = ranked[0]
@@ -136,11 +150,12 @@ def get_vayne_4core_top1_build(rank_by="dpg"):
         "rune_as": top1["rune_as"], "pkg_label": top1["pkg_label"],
         "score": top1["rel_dpg_score"], "weighted_dpg": top1["weighted_dpg"],
         "weighted_dps": top1["weighted_dps"],
+        "keystone_cls": keystone_cls,
         "control_path": best_control["path"], "control_doran": best_control["doran"],
         "control_boots": best_control["boots"], "control_rune_as": best_control["rune_as"],
         "control_pkg": best_control["pkg_label"], "control_weighted_dpg": best_control["weighted_dpg"],
     }
-    _VAYNE_TOP1_CACHE[rank_by] = result
+    _VAYNE_TOP1_CACHE[cache_key] = result
     return result
 
 
@@ -151,33 +166,38 @@ def build_vayne_core_report_meta(full_path, core_tier):
 
 def get_vayne_powercompare_builds():
     """power_compare 연동용 (best, meta).
-    - best: RelDPG top1(rank_by="dpg") — power_compare 가 DPG 비교라.
-    - meta: 컨트롤(botrk-guinsoo-terminus-pd, 최적 패키지) — 실전 기준.
-    각 dict: path/doran/boots/rune_as/pkg_label/weighted_dpg.
+    - best: 룬 무관 최강(LT·PtA top1 중 절대 weighted-DPG 우위) — CogMaw 방식과 동일.
+    - meta: 컨트롤(botrk-guinsoo-terminus-pd, 최적 패키지) under 치속(LethalTempo) — 실전 기준.
+    각 dict: path/doran/boots/rune_as/pkg_label/keystone_cls/rune_label/weighted_dpg.
+    (LT·PtA 두 룬 전수 랭킹을 돌리므로 느리다 — 룬별 캐시됨.)
     """
-    best_src = get_vayne_4core_top1_build(rank_by="dpg")
+    lt = get_vayne_4core_top1_build(rank_by="dpg", keystone_cls=LethalTempo)
+    pta = get_vayne_4core_top1_build(rank_by="dpg", keystone_cls=PressTheAttack)
+    src = lt if lt["weighted_dpg"] >= pta["weighted_dpg"] else pta
     best = {
-        "path": best_src["path"], "doran": best_src["doran"], "boots": best_src["boots"],
-        "rune_as": best_src["rune_as"], "pkg_label": best_src["pkg_label"],
-        "weighted_dpg": best_src["weighted_dpg"],
+        "path": src["path"], "doran": src["doran"], "boots": src["boots"],
+        "rune_as": src["rune_as"], "pkg_label": src["pkg_label"],
+        "keystone_cls": src["keystone_cls"],
+        "rune_label": RUNE_LABELS[src["keystone_cls"]],
+        "weighted_dpg": src["weighted_dpg"],
     }
-    dpg_src = best_src  # control metadata is identical across rank_by; avoid a second ~30s ranking
-    meta = {
-        "path": dpg_src["control_path"], "doran": dpg_src["control_doran"],
-        "boots": dpg_src["control_boots"], "rune_as": dpg_src["control_rune_as"],
-        "pkg_label": dpg_src["control_pkg"], "weighted_dpg": dpg_src["control_weighted_dpg"],
+    meta = {  # LT 결과의 control = 컨트롤(최적 패키지) — CogMaw meta 관례와 동일
+        "path": lt["control_path"], "doran": lt["control_doran"],
+        "boots": lt["control_boots"], "rune_as": lt["control_rune_as"],
+        "pkg_label": lt["control_pkg"],
+        "keystone_cls": LethalTempo, "rune_label": RUNE_LABELS[LethalTempo],
+        "weighted_dpg": lt["control_weighted_dpg"],
     }
     return best, meta
 
 
-if __name__ == "__main__":
-    print("\n=== Vayne Build Path Power Spike (W/Q auto + R@0, 1->4 Core) ===")
-    all_paths = _build_all_paths()
-    print(f"Total unique paths in search space: {len(all_paths)}")
-    rows_dedup, best_control = _rank_rows(all_paths)
+def _run_vayne_ranking(keystone_cls, keystone_label, all_paths):
+    """주어진 keystone(룬)으로 랭킹 표 1장 출력. 반환: (ranked, best_control)."""
+    rows_dedup, best_control = _rank_rows(all_paths, keystone_cls=keystone_cls)
     ranked = sorted(rows_dedup, key=lambda r: r["rel_dpg_score"], reverse=True)
 
-    print(f"\nControl: {'-'.join(best_control['path'])} [{best_control['pkg_label']}] "
+    print(f"\n{'=' * 28}  RUNE: {keystone_label}  {'=' * 28}")
+    print(f"Control: {'-'.join(best_control['path'])} [{best_control['pkg_label']}] "
           f"| Weighted DPG {best_control['weighted_dpg']:.2f}")
     col_build, col_core, col_rep = 34, 18, 9
     header = (f"{'RK':>3} | {'BUILD(4C)':<{col_build}} | {'CTRL':>6} | "
@@ -201,7 +221,31 @@ if __name__ == "__main__":
         cells = " | ".join(f"{y[i]:.1f}/{d[i]:+.1f}%".rjust(col_core) for i in range(4))
         print(f"{rank:>3} | {label:<{col_build}} | {tag:>6} | {cells} | {r['rel_dpg_score']:>{col_rep}.2f}")
 
-    # 그래프: Top5 비컨트롤 + 컨트롤, 4코어 DPS 커브
+    return ranked, best_control
+
+
+if __name__ == "__main__":
+    print("\n=== Vayne Build Path Power Spike (W/Q auto + R@0, 1->4 Core) ===")
+    all_paths = _build_all_paths()
+    print(f"Total unique paths in search space: {len(all_paths)}")
+
+    # 두 키스톤(치속·집공) 각각 랭킹 표 — CogMaw 미러. 보조룬 CutDown 은 simulate 내부 고정.
+    # (PtA 8%·CutDown 8%·CoupDeGrace 8% 대미지증가는 은화살 고정딜에도 자동 적용 — _last_damage_amp 경유.)
+    keystones = [(LethalTempo, RUNE_LONG_LABELS[LethalTempo]),
+                 (PressTheAttack, RUNE_LONG_LABELS[PressTheAttack])]
+    ranked_by_rune = []
+    for _ks, _klabel in keystones:
+        ranked, _ = _run_vayne_ranking(_ks, _klabel, all_paths)
+        ranked_by_rune.append((ranked, _ks))
+
+    # 그래프는 첫 룬(치속) 기준 1장 — CogMaw 관례와 동일.
+    ranked, first_ks = ranked_by_rune[0]
+    ctrl_rows = [r for r in ranked if r["is_control"]]
+
+    def _fmt_build(r):
+        p = r["path"]
+        return f"{'-'.join(ITEM_SHORT.get(k, k) for k in p)} [{r['pkg_label']}]"
+
     top5 = [r for r in ranked if not r["is_control"]][:5]
     plt.figure(figsize=(12, 8))
     colors = ["#E4572E", "#F3A712", "#54A24B", "#4C78A8", "#B279A2"]
@@ -211,7 +255,7 @@ if __name__ == "__main__":
     for r in ctrl_rows:
         lbl = f"[CTRL] {_fmt_build(r)} (RelDPG {r['rel_dpg_score']:.2f})"
         plt.plot(r["x"], r["y"], color="#111111", linewidth=2.8, marker="o", markersize=7, linestyle="--", label=lbl)
-    plt.title("Vayne Power Spike: 4-Core Ranked Top5 + Control")
+    plt.title(f"Vayne Power Spike: 4-Core Ranked Top5 + Control ({RUNE_LABELS[first_ks]})")
     plt.xlabel("Total Gold at Core Timing"); plt.ylabel("DPS (AA + W silverbolts + Q, R@0)")
     plt.grid(True, alpha=0.3); plt.legend(loc="best", fontsize=8); plt.tight_layout()
     plt.show()

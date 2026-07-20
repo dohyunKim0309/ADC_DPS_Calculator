@@ -104,9 +104,14 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
   `total_ad × ratio × _last_damage_amp` 로 별도 가산(**대미지증가는 적용, 크리·C44 는 미적용 = 실 LoL 동작**).
   온힛은 미증폭(강화평타도 온힛 1회). R 은 t=0 매뉴얼 시전(마나80): `bonus_ad += R_BONUS_AD`,
   Q쿨 `×(1-R_Q_CDR)`, 지속 만료 시 원복(짧은 버스트라 상시).
-- **전용 sim**: cogmaw.py 단일-키스톤(LethalTempo) 미러. 온힛+크리 풀, 컨트롤 **`botrk-guinsoo-terminus-pd`**
-  (탐색공간 필수·없으면 RuntimeError). 설정 파생 가중 RelDPG, ADC_PACKAGES A/B, K=2. **power_compare 통합**:
-  top1=절대 DPS 최강, basic=컨트롤(실전 기준). 스킬 선마 Q→W→E, R=lvl 기반. E(콘뎀)·패시브(이속) 미모델.
+- **전용 sim**: cogmaw.py 이중-키스톤(치속·집공) 미러. 온힛+크리 풀, 컨트롤 **`botrk-guinsoo-terminus-pd`**
+  (탐색공간 필수·없으면 RuntimeError). 설정 파생 가중 RelDPG, ADC_PACKAGES A/B, K=2.
+  `simulate_vayne_core_path(..., keystone_cls=LethalTempo|PressTheAttack)`, 보조룬 CutDown 고정
+  (simulate 내부). `__main__` 이 두 룬 각각 랭킹 표 출력(그래프는 첫 룬 LT 기준 1장 — CogMaw 관례).
+  **은화살 대미지증폭**: PtA 8%·CutDown 8%·CoupDeGrace 8% 는 `_last_damage_amp`(mod_factor)
+  경유로 은화살 고정딜에 자동 적용(경감 우회, 증폭만). **power_compare 통합**: top1=룬 무관 최강
+  (LT·PtA 절대 weighted-DPG 우위), basic=컨트롤 under 치속(실전 기준). 스킬 선마 Q→W→E, R=lvl 기반.
+  E(콘뎀)·패시브(이속) 미모델.
 
 ### Jinx (`champion.py` Jinx + `simulations/jinx.py`) [수치 3소스 교차검증 patch16.13·가설 태그]
 - **미니건 크리 평타 캐리 + W 넛지**. Q 스위쳐루=미니건(평타 최대 3스택 +130% 공속, 2.5s 감쇠)/로켓 토글 —
