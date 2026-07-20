@@ -93,8 +93,10 @@ def _enumerate_future_combos(fixed, from_slot, horizon=HORIZON):
 
 
 def _score_combo(cache, fixed, combo, from_slot, dps_prev, gold_prev,
-                 gamma=GAMMA, horizon=HORIZON):
-    """조합의 마지널 DPG 할인합 점수."""
+                 gamma=None, horizon=HORIZON):
+    """조합의 마지널 DPG 할인합 점수. gamma=None 이면 module GAMMA 사용."""
+    if gamma is None:
+        gamma = GAMMA
     full = list(fixed) + list(combo)
     score = 0.0
     per_tier = []  # (tier, dps, gold, ddpg) — 디버그/출력용
@@ -108,10 +110,13 @@ def _score_combo(cache, fixed, combo, from_slot, dps_prev, gold_prev,
     return score, per_tier
 
 
-def solve_greedy(cache, gamma=GAMMA, horizon=HORIZON, top_alt=3):
-    """순차 그리디 5코어 확정. 반환: {'trajectory': [c1..c5], 'steps': [...], 'baseline': [...]}
-    steps[i] = {slot, item, best_score, top_alternatives, per_tier_of_winner, dps, gold, marginal_dpg}
+def solve_greedy(cache, gamma=None, horizon=HORIZON, top_alt=3):
+    """순차 그리디 5코어 확정. gamma=None 이면 module GAMMA 사용.
+    반환: {'trajectory': [c1..c5], 'steps': [...]}
+    steps[i] = {slot, item, score, dps, gold, marginal_dpg, alternatives, ...}
     """
+    if gamma is None:
+        gamma = GAMMA
     fixed = []
     # baseline: 이전 시점 (dps, gold). 0코어 = 도란+신발 만 (첫 시뮬은 tier=1 부터).
     # 마지널 계산에서 (DPS_1, Gold_1) - (0, doran+boots_gold) 로 처리하려면
@@ -129,7 +134,8 @@ def solve_greedy(cache, gamma=GAMMA, horizon=HORIZON, top_alt=3):
 
         for combo in _enumerate_future_combos(fixed, slot, horizon):
             score, per_tier = _score_combo(cache, fixed, combo, slot,
-                                           dps_prev, gold_prev)
+                                           dps_prev, gold_prev,
+                                           gamma=gamma, horizon=horizon)
             # per-item best (for top-N 대안)
             pick_item = combo[0]
             if pick_item not in alt_by_item or score > alt_by_item[pick_item]:
@@ -174,9 +180,11 @@ def _fmt_items(seq):
     return "-".join(ITEM_SHORT.get(k, k) for k in seq)
 
 
-def print_scenario(label, out, cache_stats):
+def print_scenario(label, out, cache_stats, gamma=None):
+    if gamma is None:
+        gamma = GAMMA
     print(f"\n{'=' * 26}  {label}  {'=' * 26}")
-    print(f"γ={GAMMA}, horizon={HORIZON}. 마지널 DPG 할인합 최대화 그리디.")
+    print(f"γ={gamma}, horizon={HORIZON}. 마지널 DPG 할인합 최대화 그리디.")
     lvl_note = " · ".join(f"C{t}=lvl{CORE_VAYNE_LEVELS[t]['level']}" for t in range(1, HORIZON + 1))
     print(f"레벨: {lvl_note}")
     print(f"시뮬 캐시: {cache_stats['hits']:>7} hits / {cache_stats['misses']:>6} misses "
@@ -204,7 +212,9 @@ def print_scenario(label, out, cache_stats):
               f"+ 상정 미래: {rest_str}")
 
 
-def main():
+def main(gamma=None):
+    if gamma is None:
+        gamma = GAMMA
     scenarios = [
         # (label, keystone, sub_rune_cls, rune_as_bonus)
         ("치명적속도 + 핏빛길 (Bow+Glut)", LethalTempo, None, 0.0),
@@ -216,11 +226,22 @@ def main():
         t0 = time.time()
         cache = SimCache(keystone, sub, doran_key="doranbow",
                          boots_key="glutton", rune_as_bonus=rune_as)
-        out = solve_greedy(cache)
+        out = solve_greedy(cache, gamma=gamma)
         elapsed = time.time() - t0
-        print_scenario(label, out, {"hits": cache.hits, "misses": cache.misses})
+        print_scenario(label, out, {"hits": cache.hits, "misses": cache.misses}, gamma=gamma)
         print(f"[elapsed] {elapsed:.1f}s")
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    gamma = GAMMA
+    # CLI: -m ... vayne_sequential_greedy [gamma]  (예: 0.8)
+    if len(sys.argv) > 1:
+        try:
+            gamma = float(sys.argv[1])
+            if not (0.0 < gamma <= 1.0):
+                raise ValueError
+        except ValueError:
+            print(f"[warn] gamma 인자 파싱 실패({sys.argv[1]!r}) — 기본 {GAMMA} 사용")
+            gamma = GAMMA
+    main(gamma=gamma)
