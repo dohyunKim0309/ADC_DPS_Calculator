@@ -76,9 +76,11 @@ def _simulate_compare_stat(champ_name, cfg, core_tier):
         meta = build_cogmaw_core_report_meta(cfg["path"], core_tier)
         choice = f"{cfg.get('pkg_label', 'Bow+Glut')}/{cfg.get('rune_label', 'LT')}"
     elif champ_name == "Vayne":
-        dps, gold = simulate_vayne_core_path(cfg["path"], core_tier, **pkg_kw)
+        # 베인도 룬 의존(LT/PtA) — cfg.keystone_cls 로 키스톤 지정. 보조룬 CutDown 은 simulate 내부.
+        vayne_keystone = cfg.get("keystone_cls", LethalTempo)
+        dps, gold = simulate_vayne_core_path(cfg["path"], core_tier, keystone_cls=vayne_keystone, **pkg_kw)
         meta = build_vayne_core_report_meta(cfg["path"], core_tier)
-        choice = cfg.get("pkg_label", "Bld+Zerk")
+        choice = f"{cfg.get('pkg_label', 'Bld+Zerk')}/{cfg.get('rune_label', 'LT')}"
     elif champ_name == "Jinx":
         dps, gold = simulate_jinx_core_path(cfg["path"], core_tier, **pkg_kw)
         meta = build_jinx_core_report_meta(cfg["path"], core_tier)
@@ -364,8 +366,8 @@ def compare_builds():
         f"(룬 무관 최강; LT·PtA 중 절대 weighted-DPS 우위)"
     )
     print(
-        f"- Vayne  : [{vayne_best.get('pkg_label','?')}] {'-'.join(vayne_best['path'])} / LT+CutDown "
-        f"(top1 by DPG)"
+        f"- Vayne  : [{vayne_best.get('pkg_label','?')}] {'-'.join(vayne_best['path'])} / {vayne_best['rune_label']}+CutDown "
+        f"(룬 무관 최강; LT·PtA 중 절대 weighted-DPG 우위)"
     )
     print(
         f"- Jinx   : [{jinx_best.get('pkg_label','?')}] {'-'.join(jinx_best['path'])} / LT+CutDown "
@@ -393,8 +395,9 @@ def compare_builds():
         # 코그모 = 룬 무관 최강 빌드(LT·PtA 중 우위)
         "CogMaw": {"path": cogmaw_best["path"],
                    **_pkg_cfg(cogmaw_best, {"keystone_cls": cogmaw_best["keystone_cls"], "rune_label": cogmaw_best["rune_label"]})},
-        # 베인 = 절대 weighted-DPS top1
-        "Vayne": {"path": vayne_best["path"], **_pkg_cfg(vayne_best)},
+        # 베인 = 룬 무관 최강 빌드(LT·PtA 중 우위)
+        "Vayne": {"path": vayne_best["path"],
+                  **_pkg_cfg(vayne_best, {"keystone_cls": vayne_best["keystone_cls"], "rune_label": vayne_best["rune_label"]})},
         # 징크스 = RelDPG top1(미니건+W); Get Excited OFF
         "Jinx": {"path": jinx_best["path"], **_pkg_cfg(jinx_best)},
     }
@@ -416,8 +419,9 @@ def compare_builds():
         # 코그모 = 실전 메타 빌드(guinsoo-navori-terminus-wit) under 치속(LethalTempo)
         "CogMaw": {"path": cogmaw_meta["path"],
                    **_pkg_cfg(cogmaw_meta, {"keystone_cls": cogmaw_meta["keystone_cls"], "rune_label": cogmaw_meta["rune_label"]})},
-        # 베인 = 컨트롤(botrk-guinsoo-terminus-pd, 최적 패키지)
-        "Vayne": {"path": vayne_meta["path"], **_pkg_cfg(vayne_meta)},
+        # 베인 = 컨트롤(botrk-guinsoo-terminus-pd, 최적 패키지) under 치속(LethalTempo)
+        "Vayne": {"path": vayne_meta["path"],
+                  **_pkg_cfg(vayne_meta, {"keystone_cls": vayne_meta["keystone_cls"], "rune_label": vayne_meta["rune_label"]})},
         # 징크스 = 컨트롤(kraken-pd-ie-ldr, 최적 패키지)
         "Jinx": {"path": jinx_meta["path"], **_pkg_cfg(jinx_meta)},
     }
@@ -429,7 +433,7 @@ def compare_builds():
         print(f"- {_c:<6} : [{_cfg.get('pkg_label','?')}] {'-'.join(_cfg['path'])} + {_cfg.get('boots','berserker')} / LT+CutDown{_note}")
     print(f"- Corki  : {'-'.join(corki_basic_path)} + {corki_basic_shoe} / {corki_basic_rune}+CutDown (requested base build)")
     print(f"- CogMaw : {'-'.join(cogmaw_meta['path'])} + {cogmaw_meta.get('boots','glutton')} / {cogmaw_meta['rune_label']}+CutDown (실전 메타 빌드 / 치속)")
-    print(f"- Vayne  : [{vayne_meta.get('pkg_label','?')}] {'-'.join(vayne_meta['path'])} + {vayne_meta.get('boots','berserker')} / LT+CutDown (control botrk-guinsoo-terminus-pd)")
+    print(f"- Vayne  : [{vayne_meta.get('pkg_label','?')}] {'-'.join(vayne_meta['path'])} + {vayne_meta.get('boots','berserker')} / {vayne_meta['rune_label']}+CutDown (control botrk-guinsoo-terminus-pd)")
     print(f"- Jinx   : [{jinx_meta.get('pkg_label','?')}] {'-'.join(jinx_meta['path'])} + {jinx_meta.get('boots','berserker')} / LT+CutDown (control kraken-pd-ie-ldr)")
     print()
     basic_rows = _print_compare_section("Cross-Champion Basic Build Compare (1~4 Core)", basic_configs)

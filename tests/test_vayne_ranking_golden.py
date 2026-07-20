@@ -1,7 +1,7 @@
 """베인 러너 이관 동작 보존 골든 — weighted 4:4:3:3 고정.
-값 출처: 2026-07-14 C44 %증폭 스코프 정정(W/Q 미증폭, 오직 기본 평타 AA 만) 이후 재캡처.
-직전 스냅샷 이후 변화: C44 를 포함한 빌드(yuntal25-c44-ie-ldr) 만 W/Q 증폭 손실로 소폭 하락.
-비-C44 빌드(kraken-pd-ie-ldr, kraken-guinsoo-ie-pd, CTRL) 는 완전 불변.
+값 출처: 2026-07-20 대미지증폭 곱연산 정정(PtA/CutDown/LDR 서로 곱스택) 이후 재캡처.
+직전 스냅샷 이후 변화: LDR 포함 빌드가 CutDown 과 곱스택으로 T4 소폭 상승
+(kraken-pd-ie-ldr, yuntal25-c44-ie-ldr). LDR 없는 빌드는 완전 불변.
 값 변경 = 동작 변화 신호."""
 from adc_sim.simulations.vayne import _rank_rows, CONTROL_PATH
 
@@ -10,8 +10,8 @@ PATHS = [CONTROL_PATH, ("kraken", "pd", "ie", "ldr"), ("yuntal25", "c44", "ie", 
 
 GOLDEN = {
     # (path 튜플): (rel_dpg_score, weighted_dpg)
-    ("yuntal25", "c44", "ie", "ldr"): (122.767314, 121.425689),
-    ("kraken", "pd", "ie", "ldr"): (110.278381, 109.287311),
+    ("yuntal25", "c44", "ie", "ldr"): (122.853402, 121.507784),
+    ("kraken", "pd", "ie", "ldr"): (110.346805, 109.352561),
     ("kraken", "guinsoo", "ie", "pd"): (105.956339, 105.208764),
     ("botrk", "guinsoo", "terminus", "pd"): (100.0, 99.152716),
 }
