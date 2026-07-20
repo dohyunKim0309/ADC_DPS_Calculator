@@ -110,23 +110,43 @@ def _score_combo(cache, fixed, combo, from_slot, dps_prev, gold_prev,
     return score, per_tier
 
 
-def solve_greedy(cache, gamma=None, horizon=HORIZON, top_alt=3):
+def solve_greedy(cache, gamma=None, horizon=HORIZON, top_alt=3, initial_fixed=()):
     """순차 그리디 5코어 확정. gamma=None 이면 module GAMMA 사용.
+    initial_fixed: 시작 시 이미 확정된 코어 리스트 (예: ['kraken','guinsoo']) —
+        해당 슬롯 뒤부터 그리디 탐색 시작. baseline 은 initial_fixed 완료 시점 (dps, gold).
     반환: {'trajectory': [c1..c5], 'steps': [...]}
     steps[i] = {slot, item, score, dps, gold, marginal_dpg, alternatives, ...}
     """
     if gamma is None:
         gamma = GAMMA
-    fixed = []
+    fixed = list(initial_fixed)
     # baseline: 이전 시점 (dps, gold). 0코어 = 도란+신발 만 (첫 시뮬은 tier=1 부터).
     # 마지널 계산에서 (DPS_1, Gold_1) - (0, doran+boots_gold) 로 처리하려면
     # dps_prev, gold_prev 초기값 필요. 사용자 요구는 1코어 결정 시 뺄 게 없음 → dps_prev=0, gold_prev=0
     # 이면 1코어의 마지널 DPG = DPS_1 / (Gold_1 / 1000) = 절대 DPG (도란+신발 골드 포함).
     # 이게 사용자 의도(1코어 선택 시엔 뺄 게 없음)와 정합.
-    dps_prev, gold_prev = 0.0, 0.0
+    # initial_fixed 로 시작 → baseline 도 그 시점까지의 (dps, gold)
+    if fixed:
+        dps_prev, gold_prev = cache.sim(tuple(fixed))
+    else:
+        dps_prev, gold_prev = 0.0, 0.0
     steps = []
+    # initial_fixed 로그 기록 (그리디 결정은 아니지만 궤적 완결 위해 표시)
+    for i, item in enumerate(fixed, start=1):
+        dps_i, gold_i = cache.sim(tuple(fixed[:i]))
+        prev_dps = 0.0 if i == 1 else cache.sim(tuple(fixed[:i-1]))[0]
+        prev_gold = 0.0 if i == 1 else cache.sim(tuple(fixed[:i-1]))[1]
+        d_gold = gold_i - prev_gold
+        margin = ((dps_i - prev_dps) / (d_gold / 1000.0)) if d_gold > 0 else 0.0
+        steps.append({
+            "slot": i, "item": item, "score": None,
+            "dps": dps_i, "gold": gold_i, "marginal_dpg": margin,
+            "future_path_winner": tuple(fixed[i-1:]), "alternatives": [],
+            "baseline_dps_prev": prev_dps, "baseline_gold_prev": prev_gold,
+            "fixed_by_user": True,
+        })
 
-    for slot in range(1, horizon + 1):
+    for slot in range(len(fixed) + 1, horizon + 1):
         best_score = None
         best_combo = None
         alt_by_item = {}  # item(=combo[0]) → best score with this item as slot pick
@@ -199,9 +219,13 @@ def print_scenario(label, out, cache_stats, gamma=None):
         d_gold = s["gold"] - s["baseline_gold_prev"]
         alt_txt = " / ".join(f"{ITEM_SHORT.get(a['item'], a['item'])}:{a['score']:.1f}"
                              for a in s["alternatives"])
-        print(f"{s['slot']:>4} | {ITEM_SHORT.get(s['item'], s['item']):<12} | "
+        score_str = "  fixed " if s.get("fixed_by_user") else f"{s['score']:>8.2f}"
+        pick_lbl = ITEM_SHORT.get(s['item'], s['item'])
+        if s.get("fixed_by_user"):
+            pick_lbl = f"[{pick_lbl}]"
+        print(f"{s['slot']:>4} | {pick_lbl:<12} | "
               f"{s['dps']:>9.1f} | {s['gold']:>6} | {d_dps:>9.1f} | "
-              f"{d_gold:>6} | {s['marginal_dpg']:>11.2f} | {s['score']:>8.2f} | {alt_txt}")
+              f"{d_gold:>6} | {s['marginal_dpg']:>11.2f} | {score_str} | {alt_txt}")
     # 승리 조합의 future 궤적 (각 슬롯 결정 시 상정한 미래 아이템들)
     print("\n[각 슬롯 결정 시 상정한 미래 조합 (winner)]")
     for s in out["steps"]:
