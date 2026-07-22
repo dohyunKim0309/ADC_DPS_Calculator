@@ -2136,6 +2136,10 @@ class Vayne(Champion):
     Q_AD_RATIO = [0.75, 0.85, 0.95, 1.05, 1.15]
     Q_CD = [6.0, 5.0, 4.0, 3.0, 2.0]
     Q_MANA = 30.0
+    # Q 시전 시간 [H-VAYNE-Q-CAST-1] (사용자 확정 2026-07-20):
+    # 오픈 필드(q_wall_reset=False)에서는 시전 시간 = 순수 손실 (가산형 cast_delay_pending).
+    # 벽 붙었을 때(q_wall_reset=True)는 시전 시간이 텀블 반동 캔슬로 소멸 → 미반영.
+    Q_CAST_TIME = 0.25
 
     # R 결전 [H-VAYNE-R]: 고정 추가AD·지속·Q쿨감%(랭크1~3).
     R_BONUS_AD = [35.0, 50.0, 65.0]
@@ -2321,10 +2325,14 @@ class Vayne(Champion):
         return (name, 0.0, 0.0, False)
 
     def _cast_q(self, time):
-        """Q 구르기(Task 3 에서 본체): arm 강화 + 평타리셋 + 주문검 장전. 마나는 _cast_skill 차감."""
+        """Q 구르기(Task 3 에서 본체): arm 강화 + 평타리셋(옵션) + 주문검 장전. 마나는 _cast_skill 차감.
+        오픈 필드(q_wall_reset=False)에서는 시전 시간 Q_CAST_TIME 를 다음 평타 간격에 가산."""
         self.q_empowered = True
         self.q_reset_pending = True
         self.cooldowns_remaining["q"] = self._q_cooldown()
+        if not self.q_wall_reset:
+            # 오픈 필드: Q 시전 시간이 평타 사이 순수 손실 (캔슬 불가, 가산형)
+            self.cast_delay_pending += self.Q_CAST_TIME
         self.cast_spell(time)
 
     def _cast_r(self, time):

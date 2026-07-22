@@ -10,13 +10,13 @@ PATHS = [CONTROL_PATH, ("kraken", "pd", "ie", "ldr"), ("yuntal25", "c44", "ie", 
 
 GOLDEN = {
     # (path 튜플): (rel_dpg_score, weighted_dpg)
-    ("yuntal25", "c44", "ie", "ldr"): (117.618127, 103.631528),
-    ("kraken", "pd", "ie", "ldr"): (107.820197, 94.927240),
-    ("kraken", "guinsoo", "ie", "pd"): (105.046684, 92.292420),
-    ("botrk", "guinsoo", "terminus", "pd"): (100.0, 88.020745),
+    ("yuntal25", "c44", "ie", "ldr"): (118.393087, 85.250783),
+    ("kraken", "pd", "ie", "ldr"): (109.624657, 78.904888),
+    ("kraken", "guinsoo", "ie", "pd"): (108.913132, 78.511884),
+    ("botrk", "guinsoo", "terminus", "pd"): (100.0, 72.061774),
 }
 GOLDEN_N_ROWS = 4
-GOLDEN_CTRL_WDPG = 88.020745
+GOLDEN_CTRL_WDPG = 72.061774
 
 
 def test_vayne_rank_rows_golden():

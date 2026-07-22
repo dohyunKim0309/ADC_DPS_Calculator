@@ -104,7 +104,9 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
   마나30 게이트. **Q 평타 리셋은 옵션 `q_wall_reset=False`(기본, 오픈 필드 실전)** — 실 인게임에서
   Q 는 오픈 필드에서 평타 캔슬 불가, 벽 붙어 텀블 시에만 가능(사용자 확정 2026-07-20
   [H-VAYNE-Q-WALL-1]). `Vayne(..., q_wall_reset=True)` 로 벽 시나리오 재현(다음 평타 간격
-  `ANIM_CANCEL_CLIP=0.33s` 상한 클리핑). **강화 평타 Q 추가딜은 크리·C44 둘 다 미반영**([H-VAYNE-Q-1],
+  `ANIM_CANCEL_CLIP=0.33s` 상한 클리핑). **Q 시전 시간 `Q_CAST_TIME=0.25s`** [H-VAYNE-Q-CAST-1]:
+  오픈 필드는 가산형(`cast_delay_pending`) 순수 손실, 벽 상황은 텀블 반동 캔슬로 소멸(미반영).
+  **강화 평타 Q 추가딜은 크리·C44 둘 다 미반영**([H-VAYNE-Q-1],
   사용자 확인 2026-07-14) — 평타 본체 `p_base` 는 크리 기대값·C44 증폭 포함이지만 Q 추가딜은
   `total_ad × ratio × _last_damage_amp` 로 별도 가산(**대미지증가는 적용, 크리·C44 는 미적용 = 실 LoL 동작**).
   온힛은 미증폭(강화평타도 온힛 1회). R 은 t=0 매뉴얼 시전(마나80): `bonus_ad += R_BONUS_AD`,
