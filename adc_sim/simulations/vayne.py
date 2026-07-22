@@ -99,9 +99,9 @@ _VAYNE_TOP1_CACHE = {}  # (keystone_cls, rank_by) → top1 dict (룬·랭킹기�
 CORE1_CANDIDATES = ["botrk", "guinsoo", "kraken", "terminus", "wit", "runaan", "pd",
                     "rfc", "statikk", "yuntal25", "c44", "storm", "collector"]
 CORE2_CANDIDATES = ["botrk", "guinsoo", "kraken", "terminus", "wit", "runaan", "pd",
-                    "ie", "rfc", "collector", "yuntal25", "statikk"]
-CORE3_CANDIDATES = ["ie", "ldr", "guinsoo", "terminus", "pd", "collector", "wit", "kraken"]
-CORE4_CANDIDATES = ["ie", "ldr", "pd", "runaan", "rfc", "collector", "kraken", "wit", "statikk", "terminus", "c44"]
+                    "ie", "rfc", "collector", "yuntal25", "statikk", "storm"]
+CORE3_CANDIDATES = ["ie", "ldr", "guinsoo", "terminus", "pd", "collector", "wit", "kraken", "storm"]
+CORE4_CANDIDATES = ["ie", "ldr", "pd", "runaan", "rfc", "collector", "kraken", "wit", "statikk", "terminus", "c44", "storm"]
 
 ITEM_SHORT = {
     "botrk": "BotRK", "guinsoo": "Gui", "kraken": "Krk", "terminus": "Terminus",
