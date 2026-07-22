@@ -100,8 +100,11 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
   ⚠️ **BotRK×은화살 반작용**: CTRL(botrk-guinsoo-...) T2~T4 는 픽스 후 오히려 소폭(-1% 내외) DPS 하락 —
   총 버스트 수는 동일하나 팬텀히트로 버스트가 프론트로드 → 타깃 HP 조기 하락 → BotRK 6%현재HP 딜 손실.
   전 크리코어 빌드는 %현재HP 아이템이 없어 영향 無. 진단·회귀는 `tests/test_vayne_silverbolts_botrk_interaction.py` 참조.
-- **Q/R 엔진 모델**: Q 는 스킬 이벤트(무직접피해)로 `q_empowered` arm + `q_reset_pending`(평타리셋
-  `ANIM_CANCEL_CLIP`) + 마나30 게이트. **강화 평타 Q 추가딜은 크리·C44 둘 다 미반영**([H-VAYNE-Q-1],
+- **Q/R 엔진 모델**: Q 는 스킬 이벤트(무직접피해)로 `q_empowered` arm + `q_reset_pending` +
+  마나30 게이트. **Q 평타 리셋은 옵션 `q_wall_reset=False`(기본, 오픈 필드 실전)** — 실 인게임에서
+  Q 는 오픈 필드에서 평타 캔슬 불가, 벽 붙어 텀블 시에만 가능(사용자 확정 2026-07-20
+  [H-VAYNE-Q-WALL-1]). `Vayne(..., q_wall_reset=True)` 로 벽 시나리오 재현(다음 평타 간격
+  `ANIM_CANCEL_CLIP=0.33s` 상한 클리핑). **강화 평타 Q 추가딜은 크리·C44 둘 다 미반영**([H-VAYNE-Q-1],
   사용자 확인 2026-07-14) — 평타 본체 `p_base` 는 크리 기대값·C44 증폭 포함이지만 Q 추가딜은
   `total_ad × ratio × _last_damage_amp` 로 별도 가산(**대미지증가는 적용, 크리·C44 는 미적용 = 실 LoL 동작**).
   온힛은 미증폭(강화평타도 온힛 1회). R 은 t=0 매뉴얼 시전(마나80): `bonus_ad += R_BONUS_AD`,

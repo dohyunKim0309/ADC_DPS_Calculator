@@ -6,6 +6,11 @@
 - 기대: CTRL(botrk-guinsoo-terminus-pd, Bow+Glut) DPS 는 픽스 전보다 상승할 것.
 - 관측: T2 -1.03%, T3 -0.52%, T4 -0.47% — 모두 소폭 하락(반대 방향).
 
+**시나리오 고정 (2026-07-20)**: q_wall_reset=True 로 벽 상황 재현 —
+이 반작용은 Q 평타 리셋이 있는 상황에서 프론트로드된 은화살의 BotRK 상호작용을
+관찰하는 것이 목적. 기본(오픈 필드, q_wall_reset=False)에서는 반작용 특성이 다르므로
+이 테스트는 벽 시나리오 회귀 감시용.
+
 **원인 규명 (2026-07-14 진단)**
 1. 은화살 **총 버스트 회수는 OLD·NEW 동일**(T3 예: 둘 다 12평타 4버스트, 처치 4.764s).
    버스트 타이밍만 어긋남 — OLD 2번바 버스트=A9·A12, NEW=A8·A10.
@@ -60,7 +65,7 @@ def _run_ctrl_bow_glut(tier, use_new, with_cutdown=True):
         target = build_target_for_core(tier)
         lvl = CORE_VAYNE_LEVELS[tier]["level"]
         q, w, e, r_lvl = _skill_levels_for_core(tier)
-        v = Vayne(level=lvl, q_level=q, w_level=w, e_level=e, r_level=r_lvl)
+        v = Vayne(level=lvl, q_level=q, w_level=w, e_level=e, r_level=r_lvl, q_wall_reset=True)
         v.set_rune(LethalTempo())
         if with_cutdown:
             v.set_sub_rune(CutDown())

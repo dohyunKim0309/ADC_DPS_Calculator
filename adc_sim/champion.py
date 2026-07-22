@@ -2144,7 +2144,8 @@ class Vayne(Champion):
     R_CD = [100.0, 85.0, 70.0]
     R_MANA = 80.0
 
-    def __init__(self, level=1, q_level=5, w_level=5, e_level=1, r_level=3):
+    def __init__(self, level=1, q_level=5, w_level=5, e_level=1, r_level=3,
+                 q_wall_reset=False):
         super().__init__(
             name="Vayne", base_ad=60, base_as=0.658, as_ratio=0.658,
             as_growth=3.3, base_range=550, level=level, ad_growth=2.35,
@@ -2161,6 +2162,12 @@ class Vayne(Champion):
         self.e_level = e_level; self.r_level = r_level
 
         self.mana_cost = {"q": self.Q_MANA, "r": self.R_MANA}
+
+        # Q 평타 리셋 옵션 (사용자 확정 2026-07-20 [H-VAYNE-Q-WALL-1]):
+        # 실 인게임에서 Q 는 오픈 필드에서 평타 리셋 안 됨 — 벽에 붙어 텀블(Q 후 반동 짧음)한
+        # 경우에만 평타 캔슬 가능. 기본 False (오픈 필드 = 실전 팀파이트/킬 시나리오).
+        # True 시 벽 상황 재현 — Q 시전 후 다음 평타 간격 ANIM_CANCEL_CLIP(0.33s) 상한 클리핑.
+        self.q_wall_reset = q_wall_reset
 
         # 상태 (init_combat_state 에서 리셋)
         self.sb_stacks = 0
@@ -2205,10 +2212,12 @@ class Vayne(Champion):
         return p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit
 
     def get_attack_interval(self):
-        # Q(구르기) 직후 평타 리셋 근사: 다음 평타 간격을 ANIM_CANCEL_CLIP 로 상한 클리핑. [H-VAYNE-Q]
+        # Q(구르기) 직후 평타 리셋: 벽 붙은 상황(q_wall_reset=True)에서만 적용.
+        # 기본 오픈 필드에서는 리셋 없음 (사용자 확정 2026-07-20 [H-VAYNE-Q-WALL-1]).
         if self.q_reset_pending:
             self.q_reset_pending = False
-            return min(super().get_attack_interval(), ANIM_CANCEL_CLIP)
+            if self.q_wall_reset:
+                return min(super().get_attack_interval(), ANIM_CANCEL_CLIP)
         return super().get_attack_interval()
 
     # ---- 엔진 주도 이벤트 인터페이스 (CogMaw 미러) ----
