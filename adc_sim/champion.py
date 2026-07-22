@@ -2136,6 +2136,10 @@ class Vayne(Champion):
     Q_AD_RATIO = [0.75, 0.85, 0.95, 1.05, 1.15]
     Q_CD = [6.0, 5.0, 4.0, 3.0, 2.0]
     Q_MANA = 30.0
+    # Q 시전 시간 [H-VAYNE-Q-CAST-1] (사용자 확정 2026-07-20):
+    # 오픈 필드(q_wall_reset=False)에서는 시전 시간 = 순수 손실 (가산형 cast_delay_pending).
+    # 벽 붙었을 때(q_wall_reset=True)는 시전 시간이 텀블 반동 캔슬로 소멸 → 미반영.
+    Q_CAST_TIME = 0.25
 
     # R 결전 [H-VAYNE-R]: 고정 추가AD·지속·Q쿨감%(랭크1~3).
     R_BONUS_AD = [35.0, 50.0, 65.0]
@@ -2144,7 +2148,8 @@ class Vayne(Champion):
     R_CD = [100.0, 85.0, 70.0]
     R_MANA = 80.0
 
-    def __init__(self, level=1, q_level=5, w_level=5, e_level=1, r_level=3):
+    def __init__(self, level=1, q_level=5, w_level=5, e_level=1, r_level=3,
+                 q_wall_reset=False):
         super().__init__(
             name="Vayne", base_ad=60, base_as=0.658, as_ratio=0.658,
             as_growth=3.3, base_range=550, level=level, ad_growth=2.35,
@@ -2161,6 +2166,12 @@ class Vayne(Champion):
         self.e_level = e_level; self.r_level = r_level
 
         self.mana_cost = {"q": self.Q_MANA, "r": self.R_MANA}
+
+        # Q 평타 리셋 옵션 (사용자 확정 2026-07-20 [H-VAYNE-Q-WALL-1]):
+        # 실 인게임에서 Q 는 오픈 필드에서 평타 리셋 안 됨 — 벽에 붙어 텀블(Q 후 반동 짧음)한
+        # 경우에만 평타 캔슬 가능. 기본 False (오픈 필드 = 실전 팀파이트/킬 시나리오).
+        # True 시 벽 상황 재현 — Q 시전 후 다음 평타 간격 ANIM_CANCEL_CLIP(0.33s) 상한 클리핑.
+        self.q_wall_reset = q_wall_reset
 
         # 상태 (init_combat_state 에서 리셋)
         self.sb_stacks = 0
@@ -2205,10 +2216,12 @@ class Vayne(Champion):
         return p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit
 
     def get_attack_interval(self):
-        # Q(구르기) 직후 평타 리셋 근사: 다음 평타 간격을 ANIM_CANCEL_CLIP 로 상한 클리핑. [H-VAYNE-Q]
+        # Q(구르기) 직후 평타 리셋: 벽 붙은 상황(q_wall_reset=True)에서만 적용.
+        # 기본 오픈 필드에서는 리셋 없음 (사용자 확정 2026-07-20 [H-VAYNE-Q-WALL-1]).
         if self.q_reset_pending:
             self.q_reset_pending = False
-            return min(super().get_attack_interval(), ANIM_CANCEL_CLIP)
+            if self.q_wall_reset:
+                return min(super().get_attack_interval(), ANIM_CANCEL_CLIP)
         return super().get_attack_interval()
 
     # ---- 엔진 주도 이벤트 인터페이스 (CogMaw 미러) ----
@@ -2312,10 +2325,14 @@ class Vayne(Champion):
         return (name, 0.0, 0.0, False)
 
     def _cast_q(self, time):
-        """Q 구르기(Task 3 에서 본체): arm 강화 + 평타리셋 + 주문검 장전. 마나는 _cast_skill 차감."""
+        """Q 구르기(Task 3 에서 본체): arm 강화 + 평타리셋(옵션) + 주문검 장전. 마나는 _cast_skill 차감.
+        오픈 필드(q_wall_reset=False)에서는 시전 시간 Q_CAST_TIME 를 다음 평타 간격에 가산."""
         self.q_empowered = True
         self.q_reset_pending = True
         self.cooldowns_remaining["q"] = self._q_cooldown()
+        if not self.q_wall_reset:
+            # 오픈 필드: Q 시전 시간이 평타 사이 순수 손실 (캔슬 불가, 가산형)
+            self.cast_delay_pending += self.Q_CAST_TIME
         self.cast_spell(time)
 
     def _cast_r(self, time):
