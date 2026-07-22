@@ -69,10 +69,11 @@ def simulate_vayne_core_path(full_path, core_tier, doran_key="doranblade",
 
     items = ([create_item_from_key(doran_key)] if doran_key else []) + [create_item_from_key(boots_key)]
     for key in full_path[:core_tier]:
-        # 윤탈 스택 가정: 구매 코어=10%, 다음 코어부터 25% (ashe.py 관례와 동일)
+        # 윤탈 스택 가정: 구매 코어=0%, 다음 코어부터 25% (사용자 확정 2026-07-20:
+        # 실 인게임 윤탈 구매 직후 크리 확률 0%. 이전 10% 가정은 오류).
         if key == "yuntal25":
             idx = full_path.index(key) + 1
-            yuntal_crit = 0.10 if idx == core_tier else 0.25
+            yuntal_crit = 0.0 if idx == core_tier else 0.25
             items.append(create_item_from_key(key, yuntal_crit=yuntal_crit))
         else:
             items.append(create_item_from_key(key))

@@ -10,7 +10,7 @@ PATHS = [CONTROL_PATH, ("kraken", "pd", "ie", "ldr"), ("yuntal25", "c44", "ie", 
 
 GOLDEN = {
     # (path 튜플): (rel_dpg_score, weighted_dpg)
-    ("yuntal25", "c44", "ie", "ldr"): (118.393087, 85.250783),
+    ("yuntal25", "c44", "ie", "ldr"): (117.439405, 84.571080),
     ("kraken", "pd", "ie", "ldr"): (109.624657, 78.904888),
     ("kraken", "guinsoo", "ie", "pd"): (108.913132, 78.511884),
     ("botrk", "guinsoo", "terminus", "pd"): (100.0, 72.061774),
