@@ -1058,12 +1058,12 @@ class KaiSa(Champion):
         self.plasma_state[key] = (stacks, expire_time)
 
     def _get_plasma_base_damage(self):
-        # 4 ~ 24 (레벨 선형 보간) (+0.12 AP)
-        return self._lerp_by_level(4.0, 24.0) + (0.12 * self.total_ap)
+        # 4 ~ 30 (레벨 선형 보간) (+0.12 AP)  [Patch 2026-07-26 buff: 24 → 30]
+        return self._lerp_by_level(4.0, 30.0) + (0.12 * self.total_ap)
 
     def _get_plasma_per_stack_damage(self):
-        # 1 ~ 6 (레벨 선형 보간) (+0.03 AP)
-        return self._lerp_by_level(1.0, 6.0) + (0.03 * self.total_ap)
+        # 1 ~ 8 (레벨 선형 보간) (+0.03 AP)   [Patch 2026-07-26 buff: 6 → 8]
+        return self._lerp_by_level(1.0, 8.0) + (0.03 * self.total_ap)
 
     def _get_plasma_execute_damage(self, target):
         # 잃은 체력의 15(+0.06 AP)% (마법)

@@ -755,8 +755,12 @@ class Terminus(Item):
         self.is_light_turn = True  # True면 빛, False면 어둠 차례 (보통 빛부터 시작)
 
     def on_hit(self, target, champion):
-        # 1. 적중 시 30 마법 피해 (고정)
-        magic_dmg = 30
+        # 1. 적중 시 마법 피해 [Patch 2026-07-26 buff]
+        #    30 (고정) + 10% 추가 AD(아이템+성장) + 10% AP.
+        #    "추가 AD" 정의는 사용자 정의(아이템+성장)에 맞춤 — 룬/동적 AD 제외.
+        #    (KaiSa `_get_manamune_bonus_ad_for_scaling` 등에서 이미 쓰는 정의.)
+        bonus_ad = champion.bonus_ad + champion.ad_growth * (champion.level - 1)
+        magic_dmg = 30 + 0.10 * bonus_ad + 0.10 * champion.total_ap
 
         # 2. 빛(방어/마저) 증가량 계산 (레벨 비례)
         # 구간: 1~6(+6), 7~11(+7), 12~18(+8)
