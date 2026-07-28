@@ -98,6 +98,6 @@ ITEMS = {
     "glutton":     {"name": "Gluttonous Greaves",       "cost": 1000, "behavior": "GluttonousGreaves",   "stats": {}},
     "doranblade":  {"name": "Doran's Blade",            "cost": 450,  "behavior": "Doranblade",          "stats": {"ad": 10}},
     "doranbow":    {"name": "Doran's Bow",              "cost": 400,  "behavior": "DoransBow",           "stats": {"ad": 8, "as": 0.15}},
-    "yuntal":      {"name": "Yun Tal Wildarrows",       "cost": 3000, "behavior": "YunTalWildarrows",    "stats": {"ad": 50, "as": 0.40}, "yuntal_default_crit": 0.25},  # [Patch 2026-07-26 buff: -100g]
-    "yuntal25":    {"name": "Yun Tal Wildarrows",       "cost": 3000, "behavior": "YunTalWildarrows",    "stats": {"ad": 50, "as": 0.40}, "yuntal_default_crit": 0.25},  # [Patch 2026-07-26 buff: -100g]
+    "yuntal":      {"name": "Yun Tal Wildarrows",       "cost": 3000, "behavior": "YunTalWildarrows",    "stats": {"ad": 50, "as": 0.45}, "yuntal_default_crit": 0.25},  # [Patch 2026-07-26 buff: -100g, AS 40→45%]
+    "yuntal25":    {"name": "Yun Tal Wildarrows",       "cost": 3000, "behavior": "YunTalWildarrows",    "stats": {"ad": 50, "as": 0.45}, "yuntal_default_crit": 0.25},  # [Patch 2026-07-26 buff: -100g, AS 40→45%]
 }
