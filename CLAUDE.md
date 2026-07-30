@@ -14,7 +14,9 @@
 - 시뮬은 패키지 모듈이라 **repo 루트에서 `-m`으로 실행**한다:
   - `.venv/bin/python -m adc_sim.simulations.ashe` — 애쉬 4코어 랭킹(+1~3코어 별도 랭킹 — 가중은 설정 파생 상위 3개)
   - `… adc_sim.simulations.yunara` / `.kaisa` / `.corki` / `.ezreal` / `.cogmaw`
-  - `… adc_sim.simulations.vayne` — 베인 4코어 랭킹(온힛+크리 풀, 컨트롤 botrk-guinsoo-terminus-pd)
+  - `… adc_sim.simulations.vayne` — 베인 4코어 랭킹(온힛+크리 풀, 컨트롤 botrk-guinsoo-terminus-pd; 치속·집공 두 룬 각각 표 출력)
+  - `… adc_sim.simulations.vayne_rune_compare [top_n]` — LT vs PtA 룬 비교(top_n 기본 10 + 컨트롤, 코어 타이밍별 DPS/DPG 나열). 두 룬 전수 랭킹 소요 ≈1분.
+  - `… adc_sim.simulations.vayne_sequential_greedy` — 5코어 순차 그리디 아이템트리 선택 (각 시점 마지널 DPG 미래 호라이즌 γ=0.9 할인합 최대화). 4시나리오(LT/PtA × 핏빛길/민첩함), Bow+Glut 고정, 5코어 풀 = CORE4_CANDIDATES 재활용. 시뮬 캐시 98%+ hit → ~10초.
   - `… adc_sim.simulations.jinx` — 징크스 4코어 랭킹(미니건+W, Get Excited OFF, Ashe 크리풀·컨트롤 kraken-pd-ie-ldr 재사용)
   - `… adc_sim.simulations.power_compare` — 챔피언 간 Top1/Basic 비교
   - `… adc_sim.simulations.case_ranking ["케이스필터"]` — **애쉬 케이스 기반 빌드 랭킹**(비-방어 전 아이템 전수조사, 14케이스). 표만 출력(그래프/`plt.show()` 없음)이라 **헤드리스 안전**. 인자로 케이스명 부분일치 필터(예: `"alldps/nohc"`). 전체 ~45초.
@@ -47,7 +49,7 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 **데미지 모델(`Champion.get_one_hit_damage`)** 의 적용 순서(특수 케이스 다수):
 1. 룬 `on_attack` 발동 → 기대 평타 물리 = `total_ad*(crit_dmg_mod*crit + (1-crit))`. **치명타 확률은 `add_item`에서 100% 캡(초과분 무효)** — 이 모델엔 초과 치확→AD 환산 아이템이 없으므로.
 2. 온힛 합산: 아이템 `on_hit` + 룬 `get_on_hit_damage` + 챔피언 `get_champion_onhit`. 적용 횟수 = `get_onhit_proc_count`(**구인수=2회**, max 합성) **+** `get_extra_onhit_applications`(가산). 주문검류 '온힛 1회 추가'는 가산이라 구인수와 겹쳐도 살아남음(**황혼과 새벽=+1** → 강화평타 온힛 2+1=3회). 미보유 빌드는 가산 0이라 기존 동작 불변.
-3. 증폭 합산(아이템 `get_damage_modifier` + 룬). **C44는 별도 배수(평타 물리 기본딜만; 예외: 코그모 W 온힛은 인게임 일시적 버그로 증폭 적용 [H-C44-KOGW-BUG-1], 픽스 시 CogMaw.get_champion_onhit 블록 제거)**, **Shadowflame은 타깃 HP≤40%에서만**, **Rabadon은 AP ×1.30**.
+3. 증폭 적용(아이템 `get_damage_modifier` + 룬). **서로 다른 소스는 곱연산 스택** — `mod_factor = ∏(1+mod_i)` (실 LoL 규칙, 사용자 확인 2026-07-20). 예: PtA 8% × CutDown 8% × LDR 15% = 1.3411. **C44는 별도 배수(평타 물리 기본딜만; 예외: 코그모 W 온힛은 인게임 일시적 버그로 증폭 적용 [H-C44-KOGW-BUG-1], 픽스 시 CogMaw.get_champion_onhit 블록 제거)**, **Shadowflame은 타깃 HP≤40%에서만**, **Rabadon은 AP ×1.30**.
 4. `engine.calculate_mitigation`에서 방어력/마저 + 관통 적용: `eff = stat*(1-%pen) - flat_pen`(음수 클램프), `실피해 = raw * 100/(100+eff)`. 고정(true) 피해는 경감 없이 합산.
 
 ## 핵심 지표·개념
@@ -98,15 +100,25 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
   ⚠️ **BotRK×은화살 반작용**: CTRL(botrk-guinsoo-...) T2~T4 는 픽스 후 오히려 소폭(-1% 내외) DPS 하락 —
   총 버스트 수는 동일하나 팬텀히트로 버스트가 프론트로드 → 타깃 HP 조기 하락 → BotRK 6%현재HP 딜 손실.
   전 크리코어 빌드는 %현재HP 아이템이 없어 영향 無. 진단·회귀는 `tests/test_vayne_silverbolts_botrk_interaction.py` 참조.
-- **Q/R 엔진 모델**: Q 는 스킬 이벤트(무직접피해)로 `q_empowered` arm + `q_reset_pending`(평타리셋
-  `ANIM_CANCEL_CLIP`) + 마나30 게이트. **강화 평타 Q 추가딜은 크리·C44 둘 다 미반영**([H-VAYNE-Q-1],
+- **Q/R 엔진 모델**: Q 는 스킬 이벤트(무직접피해)로 `q_empowered` arm + `q_reset_pending` +
+  마나30 게이트. **Q 평타 리셋은 옵션 `q_wall_reset=False`(기본, 오픈 필드 실전)** — 실 인게임에서
+  Q 는 오픈 필드에서 평타 캔슬 불가, 벽 붙어 텀블 시에만 가능(사용자 확정 2026-07-20
+  [H-VAYNE-Q-WALL-1]). `Vayne(..., q_wall_reset=True)` 로 벽 시나리오 재현(다음 평타 간격
+  `ANIM_CANCEL_CLIP=0.33s` 상한 클리핑). **Q 시전 시간 `Q_CAST_TIME=0.25s`** [H-VAYNE-Q-CAST-1]:
+  오픈 필드는 가산형(`cast_delay_pending`) 순수 손실, 벽 상황은 텀블 반동 캔슬로 소멸(미반영).
+  **강화 평타 Q 추가딜은 크리·C44 둘 다 미반영**([H-VAYNE-Q-1],
   사용자 확인 2026-07-14) — 평타 본체 `p_base` 는 크리 기대값·C44 증폭 포함이지만 Q 추가딜은
   `total_ad × ratio × _last_damage_amp` 로 별도 가산(**대미지증가는 적용, 크리·C44 는 미적용 = 실 LoL 동작**).
   온힛은 미증폭(강화평타도 온힛 1회). R 은 t=0 매뉴얼 시전(마나80): `bonus_ad += R_BONUS_AD`,
   Q쿨 `×(1-R_Q_CDR)`, 지속 만료 시 원복(짧은 버스트라 상시).
-- **전용 sim**: cogmaw.py 단일-키스톤(LethalTempo) 미러. 온힛+크리 풀, 컨트롤 **`botrk-guinsoo-terminus-pd`**
-  (탐색공간 필수·없으면 RuntimeError). 설정 파생 가중 RelDPG, ADC_PACKAGES A/B, K=2. **power_compare 통합**:
-  top1=절대 DPS 최강, basic=컨트롤(실전 기준). 스킬 선마 Q→W→E, R=lvl 기반. E(콘뎀)·패시브(이속) 미모델.
+- **전용 sim**: cogmaw.py 이중-키스톤(치속·집공) 미러. 온힛+크리 풀, 컨트롤 **`botrk-guinsoo-terminus-pd`**
+  (탐색공간 필수·없으면 RuntimeError). 설정 파생 가중 RelDPG, ADC_PACKAGES A/B, K=2.
+  `simulate_vayne_core_path(..., keystone_cls=LethalTempo|PressTheAttack)`, 보조룬 CutDown 고정
+  (simulate 내부). `__main__` 이 두 룬 각각 랭킹 표 출력(그래프는 첫 룬 LT 기준 1장 — CogMaw 관례).
+  **은화살 대미지증폭**: PtA 8%·CutDown 8%·CoupDeGrace 8% 는 `_last_damage_amp`(mod_factor)
+  경유로 은화살 고정딜에 자동 적용(경감 우회, 증폭만). **power_compare 통합**: top1=룬 무관 최강
+  (LT·PtA 절대 weighted-DPG 우위), basic=컨트롤 under 치속(실전 기준). 스킬 선마 Q→W→E, R=lvl 기반.
+  E(콘뎀)·패시브(이속) 미모델.
 
 ### Jinx (`champion.py` Jinx + `simulations/jinx.py`) [수치 3소스 교차검증 patch16.13·가설 태그]
 - **미니건 크리 평타 캐리 + W 넛지**. Q 스위쳐루=미니건(평타 최대 3스택 +130% 공속, 2.5s 감쇠)/로켓 토글 —

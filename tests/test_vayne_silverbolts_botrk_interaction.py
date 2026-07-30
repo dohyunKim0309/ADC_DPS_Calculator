@@ -6,6 +6,11 @@
 - 기대: CTRL(botrk-guinsoo-terminus-pd, Bow+Glut) DPS 는 픽스 전보다 상승할 것.
 - 관측: T2 -1.03%, T3 -0.52%, T4 -0.47% — 모두 소폭 하락(반대 방향).
 
+**시나리오 고정 (2026-07-20)**: q_wall_reset=True 로 벽 상황 재현 —
+이 반작용은 Q 평타 리셋이 있는 상황에서 프론트로드된 은화살의 BotRK 상호작용을
+관찰하는 것이 목적. 기본(오픈 필드, q_wall_reset=False)에서는 반작용 특성이 다르므로
+이 테스트는 벽 시나리오 회귀 감시용.
+
 **원인 규명 (2026-07-14 진단)**
 1. 은화살 **총 버스트 회수는 OLD·NEW 동일**(T3 예: 둘 다 12평타 4버스트, 처치 4.764s).
    버스트 타이밍만 어긋남 — OLD 2번바 버스트=A9·A12, NEW=A8·A10.
@@ -60,7 +65,7 @@ def _run_ctrl_bow_glut(tier, use_new, with_cutdown=True):
         target = build_target_for_core(tier)
         lvl = CORE_VAYNE_LEVELS[tier]["level"]
         q, w, e, r_lvl = _skill_levels_for_core(tier)
-        v = Vayne(level=lvl, q_level=q, w_level=w, e_level=e, r_level=r_lvl)
+        v = Vayne(level=lvl, q_level=q, w_level=w, e_level=e, r_level=r_lvl, q_wall_reset=True)
         v.set_rune(LethalTempo())
         if with_cutdown:
             v.set_sub_rune(CutDown())
@@ -81,17 +86,17 @@ def _run_ctrl_bow_glut(tier, use_new, with_cutdown=True):
 def test_ctrl_new_vs_old_snapshot_bow_glut_with_cutdown():
     """OLD vs NEW CTRL DPS 델타 스냅샷 (Bow+Glut, LT+CutDown).
 
-    실측(2026-07-14, Q 크리 미반영 픽스([H-VAYNE-Q-1]) 이후 재캡처):
-      T2: OLD=774.144, NEW=766.195, Δ=-1.03%
-      T3: OLD=1017.045, NEW=1011.758, Δ=-0.52%
-      T4: OLD=1269.681, NEW=1263.533, Δ=-0.48%
+    실측(2026-07-26 패치 재캡처 — Terminus 온힛 30 → 30+10%bAD+10%AP 로 T3/T4 상승):
+      T2: OLD=774.144, NEW=766.195, Δ=-1.03%   (Terminus 미포함 → 미변화)
+      T3: OLD=1055.021, NEW=1045.604, Δ=-0.89%
+      T4: OLD=1310.811, NEW=1304.663, Δ=-0.47%
     셋 모두 NEW<OLD — BotRK 6%현재HP 스케일과 은화살 프론트로드의 반작용을 검증.
     (OLD 는 은화살 픽스만 되돌리고 Q 픽스는 유지 — silverbolts 영향만 격리.)
     """
     EXPECT = {
         2: (774.144, 766.195),
-        3: (1017.045, 1011.758),
-        4: (1269.681, 1263.533),
+        3: (1055.021, 1045.604),
+        4: (1310.811, 1304.663),
     }
     for tier, (exp_old, exp_new) in EXPECT.items():
         old_dps = _run_ctrl_bow_glut(tier=tier, use_new=False)
@@ -105,15 +110,22 @@ def test_ctrl_new_vs_old_snapshot_bow_glut_with_cutdown():
             f"OLD={old_dps:.3f} NEW={new_dps:.3f}")
 
 
-def test_cutdown_removal_flips_t3_delta_sign():
-    """CutDown 제거 시 T3 델타 부호가 반전됨 → %증폭이 BotRK 손실을 확대함을 증명.
+def test_cutdown_removal_reduces_t3_delta_magnitude():
+    """CutDown 제거 시 T3 델타의 |크기| 감소 → %증폭이 BotRK 손실을 확대함을 증명.
 
-    실측: T3 sub_rune=None: OLD=991.652, NEW=1033.191, Δ=+4.19%
-    (CutDown 없이도 BotRK 손실은 존재하지만, 프론트로드된 은화살의 절대 이득이 순증으로 나타남).
+    실측(2026-07-26 패치 재캡처 — Terminus 버프로 baseline 상승):
+      T3 sub_rune=None: OLD=1030.686, NEW=1025.655, Δ=-0.49% (WITH CutDown 은 -0.89%)
+    직전 스냅샷(2026-07-20)까지는 sign flip(+4.19%) 관측 — Terminus 버프로 은화살 프론트로드
+    이득 여유가 감소해 부호는 안 뒤집혀도 magnitude 감소로 CutDown 증폭 상호작용은 여전.
     """
     old_dps = _run_ctrl_bow_glut(tier=3, use_new=False, with_cutdown=False)
     new_dps = _run_ctrl_bow_glut(tier=3, use_new=True, with_cutdown=False)
-    assert abs(old_dps - 991.652) < 1e-2, f"T3 no-CutDown OLD drift: {old_dps:.3f}"
-    assert abs(new_dps - 1033.191) < 1e-2, f"T3 no-CutDown NEW drift: {new_dps:.3f}"
-    assert new_dps > old_dps * 1.02, (
-        f"T3 CutDown 제거 시 NEW>OLD +2%+ 예상: OLD={old_dps:.3f} NEW={new_dps:.3f}")
+    assert abs(old_dps - 1030.686) < 1e-2, f"T3 no-CutDown OLD drift: {old_dps:.3f}"
+    assert abs(new_dps - 1025.655) < 1e-2, f"T3 no-CutDown NEW drift: {new_dps:.3f}"
+    # CutDown 제거 시 델타 크기 감소 검증 (WITH: -0.89% / WITHOUT: -0.49%)
+    ctrl_new_with = _run_ctrl_bow_glut(tier=3, use_new=True, with_cutdown=True)
+    ctrl_old_with = _run_ctrl_bow_glut(tier=3, use_new=False, with_cutdown=True)
+    delta_no_cd = abs(new_dps - old_dps)
+    delta_with_cd = abs(ctrl_new_with - ctrl_old_with)
+    assert delta_no_cd < delta_with_cd, (
+        f"CutDown 증폭 상호작용 예상: |Δ_noCD|={delta_no_cd:.3f} < |Δ_withCD|={delta_with_cd:.3f}")

@@ -347,26 +347,29 @@ class Champion:
         # ---------------------------------------------------------
         # 3. 대미지 증폭(Multiplier) 적용 (거인 학살자, 룬 등)
         # ---------------------------------------------------------
-        damage_multiplier = 0.0
-        c44_multiplier = 0.0 # C44는 별도 적용
+        # 실 LoL 규칙: 서로 다른 대미지증폭 소스는 곱연산으로 스택 = ∏(1+mod_i).
+        # 예: PtA 8% × CutDown 8% × LDR 15% → 1.08 × 1.08 × 1.15 = 1.3411 (34.11% 증폭).
+        # (이전 구현은 이들을 단순 가산 → 1 + 0.08 + 0.08 + 0.15 = 1.31 이었음 — 버그.
+        #  사용자 확인 2026-07-20: PtA/CutDown/LDR 는 인게임에서 서로 곱연산.)
+        # C44 는 원래도 별도 층(평타 물리 기본딜에만 곱연산), Shadowflame 도 별도 층(§4).
+        mod_factor = 1.0
+        c44_multiplier = 0.0  # C44는 별도 층
 
-        # 아이템 증폭
+        # 아이템 증폭 — 각자 독립 곱연산 층
         for item in self.inventory:
             if hasattr(item, 'get_damage_modifier'):
                 modifier = item.get_damage_modifier(target, self)
                 if item.name == "Hextech Scope C44":
                     c44_multiplier += modifier
                 else:
-                    damage_multiplier += modifier
-        
-        # 룬 증폭 (메인 룬 + 보조 룬)
-        if self.rune:
-            damage_multiplier += self.rune.get_damage_modifier(target, self)
-        if self.sub_rune:
-            damage_multiplier += self.sub_rune.get_damage_modifier(target, self)
+                    mod_factor *= (1.0 + modifier)
 
-        # 일반 증폭 계수 적용 (예: 1.15)
-        mod_factor = 1.0 + damage_multiplier
+        # 룬 증폭 (메인 룬 + 보조 룬) — 각자 독립 곱연산 층
+        if self.rune:
+            mod_factor *= (1.0 + self.rune.get_damage_modifier(target, self))
+        if self.sub_rune:
+            mod_factor *= (1.0 + self.sub_rune.get_damage_modifier(target, self))
+
         self._last_damage_amp = mod_factor  # [H-VAYNE-W] 값 저장만(반환 불변). Vayne 은화살이 읽어 true 증폭.
 
         phys_base *= mod_factor
@@ -2133,6 +2136,10 @@ class Vayne(Champion):
     Q_AD_RATIO = [0.75, 0.85, 0.95, 1.05, 1.15]
     Q_CD = [6.0, 5.0, 4.0, 3.0, 2.0]
     Q_MANA = 30.0
+    # Q 시전 시간 [H-VAYNE-Q-CAST-1] (사용자 확정 2026-07-20):
+    # 오픈 필드(q_wall_reset=False)에서는 시전 시간 = 순수 손실 (가산형 cast_delay_pending).
+    # 벽 붙었을 때(q_wall_reset=True)는 시전 시간이 텀블 반동 캔슬로 소멸 → 미반영.
+    Q_CAST_TIME = 0.25
 
     # R 결전 [H-VAYNE-R]: 고정 추가AD·지속·Q쿨감%(랭크1~3).
     R_BONUS_AD = [35.0, 50.0, 65.0]
@@ -2141,7 +2148,8 @@ class Vayne(Champion):
     R_CD = [100.0, 85.0, 70.0]
     R_MANA = 80.0
 
-    def __init__(self, level=1, q_level=5, w_level=5, e_level=1, r_level=3):
+    def __init__(self, level=1, q_level=5, w_level=5, e_level=1, r_level=3,
+                 q_wall_reset=False):
         super().__init__(
             name="Vayne", base_ad=60, base_as=0.658, as_ratio=0.658,
             as_growth=3.3, base_range=550, level=level, ad_growth=2.35,
@@ -2158,6 +2166,12 @@ class Vayne(Champion):
         self.e_level = e_level; self.r_level = r_level
 
         self.mana_cost = {"q": self.Q_MANA, "r": self.R_MANA}
+
+        # Q 평타 리셋 옵션 (사용자 확정 2026-07-20 [H-VAYNE-Q-WALL-1]):
+        # 실 인게임에서 Q 는 오픈 필드에서 평타 리셋 안 됨 — 벽에 붙어 텀블(Q 후 반동 짧음)한
+        # 경우에만 평타 캔슬 가능. 기본 False (오픈 필드 = 실전 팀파이트/킬 시나리오).
+        # True 시 벽 상황 재현 — Q 시전 후 다음 평타 간격 ANIM_CANCEL_CLIP(0.33s) 상한 클리핑.
+        self.q_wall_reset = q_wall_reset
 
         # 상태 (init_combat_state 에서 리셋)
         self.sb_stacks = 0
@@ -2202,10 +2216,12 @@ class Vayne(Champion):
         return p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit
 
     def get_attack_interval(self):
-        # Q(구르기) 직후 평타 리셋 근사: 다음 평타 간격을 ANIM_CANCEL_CLIP 로 상한 클리핑. [H-VAYNE-Q]
+        # Q(구르기) 직후 평타 리셋: 벽 붙은 상황(q_wall_reset=True)에서만 적용.
+        # 기본 오픈 필드에서는 리셋 없음 (사용자 확정 2026-07-20 [H-VAYNE-Q-WALL-1]).
         if self.q_reset_pending:
             self.q_reset_pending = False
-            return min(super().get_attack_interval(), ANIM_CANCEL_CLIP)
+            if self.q_wall_reset:
+                return min(super().get_attack_interval(), ANIM_CANCEL_CLIP)
         return super().get_attack_interval()
 
     # ---- 엔진 주도 이벤트 인터페이스 (CogMaw 미러) ----
@@ -2309,10 +2325,14 @@ class Vayne(Champion):
         return (name, 0.0, 0.0, False)
 
     def _cast_q(self, time):
-        """Q 구르기(Task 3 에서 본체): arm 강화 + 평타리셋 + 주문검 장전. 마나는 _cast_skill 차감."""
+        """Q 구르기(Task 3 에서 본체): arm 강화 + 평타리셋(옵션) + 주문검 장전. 마나는 _cast_skill 차감.
+        오픈 필드(q_wall_reset=False)에서는 시전 시간 Q_CAST_TIME 를 다음 평타 간격에 가산."""
         self.q_empowered = True
         self.q_reset_pending = True
         self.cooldowns_remaining["q"] = self._q_cooldown()
+        if not self.q_wall_reset:
+            # 오픈 필드: Q 시전 시간이 평타 사이 순수 손실 (캔슬 불가, 가산형)
+            self.cast_delay_pending += self.Q_CAST_TIME
         self.cast_spell(time)
 
     def _cast_r(self, time):
