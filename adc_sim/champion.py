@@ -389,17 +389,21 @@ class Champion:
         has_shadowflame = any(item.name == "Shadowflame" for item in self.inventory)
         if has_shadowflame and (target.current_hp / target.max_hp) <= 0.40:
             # 잿덩이꽃: 마법 피해 20% 증폭, 치명타 피해량에 영향 받음
-            # 기본 20% 증폭. 무대(치명피해+30%)가 있으면 20% * 1.3 = 26% 증폭
+            # 기본 20% 증폭 + 20% × bonus_crit_damage(IE +30% 등). SF 크리는 chip 이 아니라
+            # magic_base 및 total_magic_onhit(Guinsoo/Terminus/Nashor 등 아이템 AP 온힛 포함) 에 곱연산.
             bonus_crit_damage = self.crit_damage_modifier - 2.0
             shadowflame_multiplier = 1.20 + (0.20 * bonus_crit_damage)
-            
-            # 유나라 패시브 재귀 적용 (가설 2)
+
+            # 유나라 패시브 재귀 적용 — 사용자 확정 2026-08-02 (기존 [Hypothesis] 태그 제거).
+            # SF crit 이 아이템 AP 온힛에 걸리면 그 crit 이 다시 유나라 passive 를 트리거하고,
+            # 그 트리거된 passive 도 SF-with-IE multiplier 하에 부풀어 오른다.
+            # 사용자 파일 "Yunara Mechanism Test.py" 의 h2 수식(실측 788/838/947 과 ±2 이내 일치).
             recursive_multiplier = 1.0
             if self.name == "Yunara":
                 recursive_multiplier = 1.1 + (0.001 * self.total_ap)
-            
+
             final_multiplier = shadowflame_multiplier * recursive_multiplier
-            
+
             magic_base *= final_multiplier
             total_magic_onhit *= final_multiplier
 
