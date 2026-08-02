@@ -813,16 +813,30 @@ class Yunara(Champion):
             has_runaan = any(item.name == "Runaan's Hurricane" for item in self.inventory)
             if has_runaan:
                 sub_targets = min(2, self.target_count - 1)
-                
+
                 # 기본(AD) 계열 증폭: 1 + (0.55 * 0.3 * 서브타겟수)
                 ad_multiplier = 1.0 + (0.55 * 0.3 * sub_targets)
                 p_base *= ad_multiplier
                 m_base *= ad_multiplier
-                
+
                 # 온힛 계열 증폭: 1 + (1.0 * 0.3 * 서브타겟수)
                 onhit_multiplier = 1.0 + (1.0 * 0.3 * sub_targets)
                 p_onhit *= onhit_multiplier
                 m_onhit *= onhit_multiplier
+
+            # 6-3. Q 확산 → Terminus 스택 가속 [H-YUN-Q-TERMINUS-STACK] (사용자 확정 2026-08-02)
+            # 유나라 Q 확산은 각 target 별로 Terminus 온힛 발동 → 각 target 마다 dark/light 스택.
+            # 딜 자체는 side target 로 감 (primary DPS 무영향; Runaan 있으면 별도 처리 6-2 에서 완료).
+            # 여기서는 스택만 가속(리턴 딜 discard) 해 이후 평타 mitigation 계산에 영향.
+            # proc_count: super() 가 stash 한 `_last_onhit_applications`(Guinsoo 3타/풀스택 등 동적 반영)
+            # 를 그대로 사용 — Q 확산에도 동일한 온힛 적용 규칙 (사용자 확정: Guinsoo 규칙 등 동일 적용).
+            # 루난/크라켄 확산은 스택 무영향 (사용자 확정) — 순수 Q 확산만 target 명수배.
+            terminus = next((it for it in self.inventory if it.name == "Terminus"), None)
+            if terminus is not None:
+                extra_targets = self.target_count - 1
+                proc_count = getattr(self, "_last_onhit_applications", 1)
+                for _ in range(extra_targets * proc_count):
+                    terminus.on_hit(target, self)  # 스택 업데이트 side effect 만 반영
 
         # 첫 평타 직후 궁극기 시전 → 초월(Q) 활성 + 다음 평타 간격 캔슬(클리핑).
         # [Hypothesis] 사용자 지정 로테이션(평타→궁→평타→W). super()가 hit_count를
