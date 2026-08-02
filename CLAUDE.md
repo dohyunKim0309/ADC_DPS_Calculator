@@ -49,7 +49,7 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 **데미지 모델(`Champion.get_one_hit_damage`)** 의 적용 순서(특수 케이스 다수):
 1. 룬 `on_attack` 발동 → 기대 평타 물리 = `total_ad*(crit_dmg_mod*crit + (1-crit))`. **치명타 확률은 `add_item`에서 100% 캡(초과분 무효)** — 이 모델엔 초과 치확→AD 환산 아이템이 없으므로.
 2. 온힛 합산: 아이템 `on_hit` + 룬 `get_on_hit_damage` + 챔피언 `get_champion_onhit`. 적용 횟수 = `get_onhit_proc_count`(**구인수=2회**, max 합성) **+** `get_extra_onhit_applications`(가산). 주문검류 '온힛 1회 추가'는 가산이라 구인수와 겹쳐도 살아남음(**황혼과 새벽=+1** → 강화평타 온힛 2+1=3회). 미보유 빌드는 가산 0이라 기존 동작 불변.
-3. 증폭 적용(아이템 `get_damage_modifier` + 룬). **서로 다른 소스는 곱연산 스택** — `mod_factor = ∏(1+mod_i)` (실 LoL 규칙, 사용자 확인 2026-07-20). 예: PtA 8% × CutDown 8% × LDR 15% = 1.3411. **C44는 별도 배수(평타 물리 기본딜만; 예외: 코그모 W 온힛은 인게임 일시적 버그로 증폭 적용 [H-C44-KOGW-BUG-1], 픽스 시 CogMaw.get_champion_onhit 블록 제거)**, **Shadowflame은 타깃 HP≤40%에서만**, **Rabadon은 AP ×1.30**.
+3. 증폭 적용(아이템 `get_damage_modifier` + 룬). **서로 다른 소스는 곱연산 스택** — `mod_factor = ∏(1+mod_i)` (실 LoL 규칙, 사용자 확인 2026-07-20). 예: PtA 8% × CutDown 8% × LDR 15% = 1.3411. **C44는 별도 배수(평타 물리 기본딜만; 예외: 코그모 W 온힛 인게임 버그 [H-C44-KOGW-BUG-1] + 유나라 패시브(치명타 시 추가 마법) [H-C44-YUNPASSIVE-1] 사용자 확인 2026-08-02)**, **Shadowflame은 타깃 HP≤40%에서만**, **Rabadon은 AP ×1.30**.
 4. `engine.calculate_mitigation`에서 방어력/마저 + 관통 적용: `eff = stat*(1-%pen) - flat_pen`(음수 클램프), `실피해 = raw * 100/(100+eff)`. 고정(true) 피해는 경감 없이 합산.
 
 ## 핵심 지표·개념

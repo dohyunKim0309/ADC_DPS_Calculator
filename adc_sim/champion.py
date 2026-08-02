@@ -757,8 +757,16 @@ class Yunara(Champion):
         # 4. 패시브: 치명타 시 추가 마법 피해 (10% + 0.1 AP)
         # 치명타가 터졌는지 여부는 확률적으로 결정되지만, 여기서는 기댓값(평균)으로 계산
         # 치명타 확률만큼의 비율로 추가 마법 피해 적용
+        # [H-C44-YUNPASSIVE-1] C44 '확대' 증폭이 유나라 패시브 마법 피해에도 적용됨(사용자 확인 2026-08-02).
+        # 베이스 파이프라인은 C44 를 평타 물리 기본딜에만 적용하므로 여기서 별도 곱연산.
+        # (mod_factor(PtA/CutDown/LDR 등) 는 super() 에서 m_base 에만 적용되고 이 passive 가산분엔 미적용 —
+        # 별도 확인 있을 때까지 기존 동작 유지.)
         passive_dmg = (0.10 + 0.001 * self.total_ap) * self.total_ad
-        m_base += passive_dmg * self.crit_chance * self.crit_damage_modifier
+        passive_add = passive_dmg * self.crit_chance * self.crit_damage_modifier
+        c44_item = next((it for it in self.inventory if getattr(it, "name", "") == "Hextech Scope C44"), None)
+        if c44_item is not None:
+            passive_add *= (1.0 + c44_item.get_damage_modifier(target, self))
+        m_base += passive_add
 
         # 5. 스택 관리 (공격 시 2스택 증가 - 챔피언 대상)
         # Q 활성화 중에는 스택이 쌓이지 않음
