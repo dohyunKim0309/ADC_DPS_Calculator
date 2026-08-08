@@ -417,17 +417,21 @@ class Champion:
         has_shadowflame = any(item.name == "Shadowflame" for item in self.inventory)
         if has_shadowflame and (target.current_hp / target.max_hp) <= 0.40:
             # 잿덩이꽃: 마법 피해 20% 증폭, 치명타 피해량에 영향 받음
-            # 기본 20% 증폭. 무대(치명피해+30%)가 있으면 20% * 1.3 = 26% 증폭
+            # 기본 20% 증폭 + 20% × bonus_crit_damage(IE +30% 등). SF 크리는 chip 이 아니라
+            # magic_base 및 total_magic_onhit(Guinsoo/Terminus/Nashor 등 아이템 AP 온힛 포함) 에 곱연산.
             bonus_crit_damage = self.crit_damage_modifier - 2.0
             shadowflame_multiplier = 1.20 + (0.20 * bonus_crit_damage)
-            
-            # 유나라 패시브 재귀 적용 (가설 2)
+
+            # 유나라 패시브 재귀 적용 — 사용자 확정 2026-08-02 (기존 [Hypothesis] 태그 제거).
+            # SF crit 이 아이템 AP 온힛에 걸리면 그 crit 이 다시 유나라 passive 를 트리거하고,
+            # 그 트리거된 passive 도 SF-with-IE multiplier 하에 부풀어 오른다.
+            # 사용자 파일 "Yunara Mechanism Test.py" 의 h2 수식(실측 788/838/947 과 ±2 이내 일치).
             recursive_multiplier = 1.0
             if self.name == "Yunara":
                 recursive_multiplier = 1.1 + (0.001 * self.total_ap)
-            
+
             final_multiplier = shadowflame_multiplier * recursive_multiplier
-            
+
             magic_base *= final_multiplier
             total_magic_onhit *= final_multiplier
             total_botrk_magic *= final_multiplier
@@ -469,10 +473,11 @@ class Ashe(Champion):
         self.mp5_growth = 0.65
         self.q_mana_cost = 30.0  # Ranger's Focus, 확정 §3.5. [H-MANA-3]
 
-        # Q 데이터 (레벨별)
-        # 공격 속도: 20 / 30 / 40 / 50 / 60%
+        # Q 데이터 (레벨별) — 사용자 확정 2026-08-02 너프 반영
+        # 공격 속도 배수: 20 / 30 / 40 / 50 / 60%
         self.q_as_amounts = [0.20, 0.30, 0.40, 0.50, 0.60]
-        # 피해량 계수: 1.1 / 1.175 / 1.25 / 1.325 / 1.4
+        # 물리 피해 계수 (총 AD 대비): 1.1 / 1.15 / 1.2 / 1.25 / 1.3
+        # (구 값 1.1 / 1.175 / 1.25 / 1.325 / 1.4 에서 너프)
         self.q_dmg_multipliers = [1.1, 1.15, 1.20, 1.25, 1.3]
 
     def get_one_hit_damage(self, target, time=0):
@@ -791,8 +796,16 @@ class Yunara(Champion):
         # 4. 패시브: 치명타 시 추가 마법 피해 (10% + 0.1 AP)
         # 치명타가 터졌는지 여부는 확률적으로 결정되지만, 여기서는 기댓값(평균)으로 계산
         # 치명타 확률만큼의 비율로 추가 마법 피해 적용
+        # [H-C44-YUNPASSIVE-1] C44 '확대' 증폭이 유나라 패시브 마법 피해에도 적용됨(사용자 확인 2026-08-02).
+        # 베이스 파이프라인은 C44 를 평타 물리 기본딜에만 적용하므로 여기서 별도 곱연산.
+        # (mod_factor(PtA/CutDown/LDR 등) 는 super() 에서 m_base 에만 적용되고 이 passive 가산분엔 미적용 —
+        # 별도 확인 있을 때까지 기존 동작 유지.)
         passive_dmg = (0.10 + 0.001 * self.total_ap) * self.total_ad
-        m_base += passive_dmg * self.crit_chance * self.crit_damage_modifier
+        passive_add = passive_dmg * self.crit_chance * self.crit_damage_modifier
+        c44_item = next((it for it in self.inventory if getattr(it, "name", "") == "Hextech Scope C44"), None)
+        if c44_item is not None:
+            passive_add *= (1.0 + c44_item.get_damage_modifier(target, self))
+        m_base += passive_add
 
         # 5. 스택 관리 (공격 시 2스택 증가 - 챔피언 대상)
         # Q 활성화 중에는 스택이 쌓이지 않음
@@ -835,16 +848,30 @@ class Yunara(Champion):
             has_runaan = any(item.name == "Runaan's Hurricane" for item in self.inventory)
             if has_runaan:
                 sub_targets = min(2, self.target_count - 1)
-                
+
                 # 기본(AD) 계열 증폭: 1 + (0.55 * 0.3 * 서브타겟수)
                 ad_multiplier = 1.0 + (0.55 * 0.3 * sub_targets)
                 p_base *= ad_multiplier
                 m_base *= ad_multiplier
-                
+
                 # 온힛 계열 증폭: 1 + (1.0 * 0.3 * 서브타겟수)
                 onhit_multiplier = 1.0 + (1.0 * 0.3 * sub_targets)
                 p_onhit *= onhit_multiplier
                 m_onhit *= onhit_multiplier
+
+            # 6-3. Q 확산 → Terminus 스택 가속 [H-YUN-Q-TERMINUS-STACK] (사용자 확정 2026-08-02)
+            # 유나라 Q 확산은 각 target 별로 Terminus 온힛 발동 → 각 target 마다 dark/light 스택.
+            # 딜 자체는 side target 로 감 (primary DPS 무영향; Runaan 있으면 별도 처리 6-2 에서 완료).
+            # 여기서는 스택만 가속(리턴 딜 discard) 해 이후 평타 mitigation 계산에 영향.
+            # proc_count: super() 가 stash 한 `_last_onhit_applications`(Guinsoo 3타/풀스택 등 동적 반영)
+            # 를 그대로 사용 — Q 확산에도 동일한 온힛 적용 규칙 (사용자 확정: Guinsoo 규칙 등 동일 적용).
+            # 루난/크라켄 확산은 스택 무영향 (사용자 확정) — 순수 Q 확산만 target 명수배.
+            terminus = next((it for it in self.inventory if it.name == "Terminus"), None)
+            if terminus is not None:
+                extra_targets = self.target_count - 1
+                proc_count = getattr(self, "_last_onhit_applications", 1)
+                for _ in range(extra_targets * proc_count):
+                    terminus.on_hit(target, self)  # 스택 업데이트 side effect 만 반영
 
         # 첫 평타 직후 궁극기 시전 → 초월(Q) 활성 + 다음 평타 간격 캔슬(클리핑).
         # [Hypothesis] 사용자 지정 로테이션(평타→궁→평타→W). super()가 hit_count를

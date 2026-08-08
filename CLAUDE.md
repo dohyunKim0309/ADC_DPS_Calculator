@@ -50,7 +50,7 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 **데미지 모델(`Champion.get_one_hit_damage`)** 의 적용 순서(특수 케이스 다수):
 1. 룬 `on_attack` 발동 → 기대 평타 물리 = `total_ad*(crit_dmg_mod*crit + (1-crit))`. **치명타 확률은 `add_item`에서 100% 캡(초과분 무효)** — 이 모델엔 초과 치확→AD 환산 아이템이 없으므로.
 2. 온힛 합산: 아이템 `on_hit` + 룬 `get_on_hit_damage` + 챔피언 `get_champion_onhit`. 적용 횟수 = `get_onhit_proc_count`(**구인수=2회**, max 합성) **+** `get_extra_onhit_applications`(가산). 주문검류 '온힛 1회 추가'는 가산이라 구인수와 겹쳐도 살아남음(**황혼과 새벽=+1** → 강화평타 온힛 2+1=3회). 미보유 빌드는 가산 0이라 기존 동작 불변.
-3. 증폭 적용(아이템 `get_damage_modifier` + 룬). **서로 다른 소스는 곱연산 스택** — `mod_factor = ∏(1+mod_i)` (실 LoL 규칙, 사용자 확인 2026-07-20). 예: PtA 8% × CutDown 8% × LDR 15% = 1.3411. **C44는 별도 배수(평타 물리 기본딜만; 예외: 코그모 W 온힛은 인게임 일시적 버그로 증폭 적용 [H-C44-KOGW-BUG-1], 픽스 시 CogMaw.get_champion_onhit 블록 제거)**, **Shadowflame은 타깃 HP≤40%에서만**, **Rabadon은 AP ×1.30**.
+3. 증폭 적용(아이템 `get_damage_modifier` + 룬). **서로 다른 소스는 곱연산 스택** — `mod_factor = ∏(1+mod_i)` (실 LoL 규칙, 사용자 확인 2026-07-20). 예: PtA 8% × CutDown 8% × LDR 15% = 1.3411. **C44는 별도 배수(평타 물리 기본딜만; 예외: 코그모 W 온힛 인게임 버그 [H-C44-KOGW-BUG-1] + 유나라 패시브(치명타 시 추가 마법) [H-C44-YUNPASSIVE-1] 사용자 확인 2026-08-02)**, **Shadowflame은 타깃 HP≤40%에서만**, **Rabadon은 AP ×1.30**.
 4. `engine.calculate_mitigation`에서 방어력/마저 + 관통 적용: `eff = stat*(1-%pen) - flat_pen`(음수 클램프), `실피해 = raw * 100/(100+eff)`. 고정(true) 피해는 경감 없이 합산.
 
 ## 핵심 지표·개념
@@ -160,7 +160,7 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
   - **캔슬 불가(가산형) `cast_delay_pending`**: 시전 시간을 다음 평타 간격에 **그대로 가산**(두 시간의 합 = 평타간격 + 시전). 흡수 없음, 0.33 클립 없음.
   - **유나라 스킬은 전부 평타캔슬 불가(사용자 확정)** → 전부 가산형, **0.33 평캔 클립 없음**(관련 `_clip_next_interval`/`ult_cancel_clip` 로직 제거). W 시전 시 `cast_delay_pending += w_cast_time()`. `w_cast_time()`은 Q활성 여부로 분기: **강화 W(파멸의 궤적, Q활성)=max(0.45, 0.6/(1+추가공속))**, 기본 W(심판의 궤적)=max(0.225, 0.45/(1+추가공속)). 시뮬은 R 선시전으로 **Q 상시 활성 → 항상 강화 W(사실상 0.45 바닥)**. **R(초월)=시전 시간 없음(0), Q(정신 수양)=즉발(시전0)+활성 중 평타 윈드업 캔슬 불가**(→ 클립 없음의 근거), E=이동기 미모델. `w_cancelable`(기본 False; True면 흡수형 경로로 다른 캔슬 가능 스킬 재사용). **이전의 무조건 0.33 클립 + 기본 W 값 사용은 오류였음**(W는 강화형·비캔슬). Yunara DPS 약 −14~19%(kraken-pd-ie-ldr, 원본 대비; 회귀 기준선 갱신). 테스트 `tests/test_yunara_cast_time.py`. 타 챔피언 확장은 해당 스킬 시전 지점에서 두 채널 중 하나 설정.
 - **방어구 관통**은 `add_item`에서 곱연산으로 합치지만 주석상 "단순화" 영역 — 정밀화하려면 모델 가정부터 합의.
-- **가설은 가설로 표시**: 모델 안에 이미 가설 코드가 있다(예: `adc_sim/champion.py`의 유나라 패시브 재귀 증폭, Shadowflame 상호작용). 새 메커니즘은 `AGENTS.md` 4장대로 `Hypothesis/Experimental/Unsupported`로 명시하고 단정하지 말 것.
+- **가설은 가설로 표시**: 새 메커니즘은 `AGENTS.md` 4장대로 `Hypothesis/Experimental/Unsupported`로 명시하고 단정하지 말 것. (유나라 SF 재귀 증폭은 2026-08-02 사용자 확정으로 가설→확정 승격됨.)
 - **Jinx 전용 시뮬 `simulations/jinx.py` 있음**(미니건+W, §Jinx 참조). `ashe.py` 안의 옛 `simulate_jinx_reference_path`(Ashe 대비 그래프용)도 잔존하나, 랭킹/파워비교 정본은 `jinx.py`.
 - 정의돼 있는 챔피언: Ashe / Jinx / Yunara / KaiSa / Corki / Ezreal / Cog'Maw / **Vayne**. 룬: LethalTempo / PressTheAttack / CoupDeGrace / CutDown / Conqueror. **LT·PtA 온힛 보너스는 적응형**(`runes._adaptive_split`: bonus AP>bonus AD 면 마법, 아니면 물리) — AP 빌드(코그모 등)는 마법으로 들어가 마저 경감·마관(공허/그불)·Shadowflame 증폭 경로를 탄다. 물리 ADC는 그대로 물리.
 
