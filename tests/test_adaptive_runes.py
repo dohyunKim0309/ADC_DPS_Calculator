@@ -45,27 +45,40 @@ def test_presstheattack_adaptive_magic_on_ap_build():
 
 
 def test_kaisa_alacrity_attack_speed_does_not_count_for_e_evolution():
-    """Alacrity raises combat AS but must not contribute to Kai'Sa E evolution."""
+    """Alacrity raises combat AS but must not contribute to Kai'Sa E evolution.
+
+    불변식: 민첩함(룬 공속 18%)을 얹어도 `_get_evolution_bonus_as()`(아이템+레벨 성장)는
+    그대로여야 한다. 룬 공속이 새면 0.85+0.18(레벨)+0.18(룬)=1.21 로 튄다.
+
+    [2026-08-08 갱신] 기대값 0.98 → 1.03. 윤탈 공속 40→45% 버프(items_data, 커밋 eed5894)가
+    아이템 합을 0.80 → 0.85 로 올린 결과다. 그 여파로 이 빌드는 lvl11 에서 이미 진화
+    문턱 1.0 을 넘어(1.03) `has_e_evolved()` 가 True 가 되므로, 옛 `is False` 단정은
+    폐기하고 "룬이 진화 공속에 안 잡힌다"는 본래 의도를 불변식으로 직접 검증한다.
+    """
     kaisa = KaiSa(level=11, q_level=5, w_level=5, e_level=3, r_level=2)
     for key in ("doranbow", "glutton", "guinsoo", "yuntal"):
         kaisa.add_item(create_item_from_key(key))
 
     combat_as_without_rune = kaisa.current_attack_speed
+    evolution_as_without_rune = kaisa._get_evolution_bonus_as()
     kaisa.bonus_as_percent += 0.18
 
-    assert kaisa.current_attack_speed > combat_as_without_rune
-    assert abs(kaisa._get_evolution_bonus_as() - 0.98) < 1e-9
-    assert kaisa.has_e_evolved() is False
+    assert kaisa.current_attack_speed > combat_as_without_rune       # 전투 공속은 오른다
+    assert kaisa._get_evolution_bonus_as() == evolution_as_without_rune  # 진화 공속은 불변
+    assert abs(evolution_as_without_rune - 1.03) < 1e-9              # 0.85 아이템 + 0.18 레벨
 
 
 def test_kaisa_item_attack_speed_still_counts_for_e_evolution():
-    """Replacing lifesteal boots with AS boots must make the same build E-evolved."""
+    """Replacing lifesteal boots with AS boots must make the same build E-evolved.
+
+    [2026-08-08 갱신] 기대값 1.23 → 1.28 (윤탈 공속 40→45% 버프 반영).
+    """
     kaisa = KaiSa(level=11, q_level=5, w_level=5, e_level=3, r_level=2)
     for key in ("doranbow", "berserker", "guinsoo", "yuntal"):
         kaisa.add_item(create_item_from_key(key))
     kaisa.bonus_as_percent += 0.18
 
-    assert abs(kaisa._get_evolution_bonus_as() - 1.23) < 1e-9
+    assert abs(kaisa._get_evolution_bonus_as() - 1.28) < 1e-9
     assert kaisa.has_e_evolved() is True
 
 

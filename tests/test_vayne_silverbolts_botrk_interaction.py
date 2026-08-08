@@ -4,7 +4,7 @@
 - 픽스: `Vayne.get_one_hit_damage`에서 `sb_stacks += 1` 단발 → `_last_onhit_applications`
   만큼 루프로 전환. 풀스택 구인수 팬텀히트(apps=2)가 은화살 스택을 가속.
 - K=2 두 번째 체력바를 항상 풀피로 시작하는 현행 엔진에서 OLD·NEW를 비교한다.
-- 관측(2026-07-26 Q 즉시 공격 + 첫 Q 벽캔 1회): T2 -1.02%, T3 +4.04%, T4 +4.52%.
+- 관측(2026-08-08 재캡처, Q 즉시 공격 + 첫 Q 벽캔 1회): T2 -0.12%, T3 +3.35%, T4 +4.24%.
 
 **시나리오 고정 (2026-07-26)**: 기본 베인 DPS 설정과 동일하게 Q 뒤 즉시 공격하고,
 첫 Q에서만 0.33초 벽 평캔을 한 번 적용한다.
@@ -85,17 +85,19 @@ def _run_ctrl_bow_glut(tier, use_new, with_cutdown=True):
 def test_ctrl_new_vs_old_snapshot_bow_glut_with_cutdown():
     """OLD vs NEW CTRL DPS 델타 스냅샷 (Bow+Glut, LT+CutDown).
 
-    실측(2026-07-14, Q 크리 미반영 픽스([H-VAYNE-Q-1]) 이후 재캡처):
-      T2: OLD=774.144, NEW=766.195, Δ=-1.03%
-      T3: OLD=1017.045, NEW=1011.758, Δ=-0.52%
-      T4: OLD=1269.681, NEW=1263.533, Δ=-0.48%
-    셋 모두 NEW<OLD — BotRK 6%현재HP 스케일과 은화살 프론트로드의 반작용을 검증.
+    실측(2026-08-08 재캡처 — 베인 Q 첫 벽리셋 + 카이사 시전 지연 반영 확정, 사용자 확인):
+      T2: OLD=526.500, NEW=525.862, Δ=-0.12%
+      T3: OLD=780.001, NEW=806.137, Δ=+3.35%
+      T4: OLD=979.101, NEW=1020.574, Δ=+4.24%
+    T2 만 NEW<OLD(BotRK 6%현재HP 스케일과 은화살 프론트로드의 반작용), T3~T4 는 프론트로드된
+    은화살의 절대 이득이 그 손실을 넘어 NEW>OLD — 모듈 docstring "엔진 변경" 항의 서술과 일치한다.
+    (직전 스냅샷 774.144/1017.045/1269.681 은 Q 벽리셋 도입 이전 값이라 폐기.)
     (OLD 는 은화살 픽스만 되돌리고 Q 픽스는 유지 — silverbolts 영향만 격리.)
     """
     EXPECT = {
-        2: (774.144, 766.195),
-        3: (1017.045, 1011.758),
-        4: (1269.681, 1263.533),
+        2: (526.500, 525.862),
+        3: (780.001, 806.137),
+        4: (979.101, 1020.574),
     }
     for tier, (exp_old, exp_new) in EXPECT.items():
         old_dps = _run_ctrl_bow_glut(tier=tier, use_new=False)
@@ -104,21 +106,26 @@ def test_ctrl_new_vs_old_snapshot_bow_glut_with_cutdown():
             f"T{tier} OLD snapshot drift: expected {exp_old}, got {old_dps:.3f}")
         assert abs(new_dps - exp_new) < 1e-2, (
             f"T{tier} NEW snapshot drift: expected {exp_new}, got {new_dps:.3f}")
-        if tier in (2, 3):
+        if tier == 2:
             assert new_dps < old_dps
         else:
             assert new_dps > old_dps
 
 
-def test_cutdown_removal_flips_t3_delta_sign():
-    """CutDown 제거 시 T3 델타 부호가 반전됨 → %증폭이 BotRK 손실을 확대함을 증명.
+def test_t3_no_cutdown_snapshot():
+    """보조룬 없는 T3 스냅샷 — 은화살 프론트로드의 순이득을 %증폭 없이 격리 관측.
 
-    실측: T3 sub_rune=None: OLD=991.652, NEW=1033.191, Δ=+4.19%
-    (CutDown 없이도 BotRK 손실은 존재하지만, 프론트로드된 은화살의 절대 이득이 순증으로 나타남).
+    실측(2026-08-08 재캡처): T3 sub_rune=None: OLD=759.888, NEW=780.704, Δ=+2.74%
+
+    ⚠️ 옛 이름(`test_cutdown_removal_flips_t3_delta_sign`)과 "CutDown 제거 시 부호 반전"
+    주장은 폐기했다. Q 벽리셋 도입 이후 T3 는 **CutDown 유무와 무관하게** NEW>OLD 이고
+    (CutDown +3.35% vs 미장착 +2.74%), 오히려 CutDown 이 있을 때 NEW 우위가 더 크다.
+    "%증폭이 BotRK 손실을 확대한다"는 기존 해석은 현행 엔진에서 관측되지 않으므로
+    여기서는 기전을 단정하지 않고 실측 스냅샷만 회귀 검증한다(AGENTS.md 4).
     """
     old_dps = _run_ctrl_bow_glut(tier=3, use_new=False, with_cutdown=False)
     new_dps = _run_ctrl_bow_glut(tier=3, use_new=True, with_cutdown=False)
-    assert abs(old_dps - 991.652) < 1e-2, f"T3 no-CutDown OLD drift: {old_dps:.3f}"
-    assert abs(new_dps - 1033.191) < 1e-2, f"T3 no-CutDown NEW drift: {new_dps:.3f}"
+    assert abs(old_dps - 759.888) < 1e-2, f"T3 no-CutDown OLD drift: {old_dps:.3f}"
+    assert abs(new_dps - 780.704) < 1e-2, f"T3 no-CutDown NEW drift: {new_dps:.3f}"
     assert new_dps > old_dps * 1.02, (
-        f"T3 CutDown 제거 시 NEW>OLD +2%+ 예상: OLD={old_dps:.3f} NEW={new_dps:.3f}")
+        f"T3 CutDown 제거 시에도 NEW>OLD +2%+ 예상: OLD={old_dps:.3f} NEW={new_dps:.3f}")
