@@ -14,6 +14,7 @@
 - 시뮬은 패키지 모듈이라 **repo 루트에서 `-m`으로 실행**한다:
   - `.venv/bin/python -m adc_sim.simulations.ashe` — 애쉬 4코어 랭킹(+1~3코어 별도 랭킹 — 가중은 설정 파생 상위 3개)
   - `… adc_sim.simulations.yunara` / `.kaisa` / `.corki` / `.ezreal` / `.cogmaw`
+  - `… adc_sim.simulations.cogmaw_receding [gamma]` — **코그모 1~5코어 receding-horizon(= 베인과 같은 방법론)**. 룬 2종(치속/집공) × 패키지 A/B 4시나리오 + [CTRL]/[CTRL2] 동일척도 비교 + 룬별 요약. 표만 출력(헤드리스 안전), 전체 ≈1분.
   - `… adc_sim.simulations.vayne [gamma]` — **기본** 베인 1~5코어 receding-horizon 탐색(마지널 DPG 미래 할인합, γ 기본 0.8, 베인 DPS 측정 K=2). 8시나리오(치속/집공 × 핏빛길/민첩함 × 체력차 극복/최후의 일격), 도란활+탐식 고정. 출력 순서도 이 축 순서를 따른다.
   - `… adc_sim.simulations.vayne legacy-ranking` — 보존된 기존 1~4코어 전수 랭킹(온힛+크리 풀, 컨트롤 botrk-guinsoo-terminus-pd).
   - `… adc_sim.simulations.vayne pta-alacrity-subs [gamma]` — 집공·민첩함 고정 후 최후의 일격/체력차 극복 receding-horizon 비교.
@@ -28,7 +29,10 @@
 ```
 adc_sim/                  ← 소스 패키지 (코어 모듈끼리는 서로 import 안 함)
   settings.py ─ 전역 설정(그래프 스타일, export 토글/경로; PROJECT_ROOT=repo 루트) + 케이스랭킹 출력설정 `CASE_RANKING_OUTPUT`(top_n/대상케이스/prune)
-  items.py    ─ Item 베이스 + 동작 서브클래스(on_hit 등 효과 훅). 스탯/가격은 data/items_data.py 가 출처
+  item_base.py ─ Item 베이스(on_hit/get_damage_modifier 등 효과 훅 인터페이스). 스탯/가격은 data/items_data.py 가 출처
+  core_items.py ─ 전설급(코어) 아이템 동작 클래스
+  component_items.py ─ 하위(조합용) 재료 동작 클래스   utility_items.py ─ 시작 아이템·장화 동작 클래스
+    ※ 구 `items.py` 는 위 4개로 분할됨. 동작 클래스 탐색은 items_registry 가 세 모듈을 훑어 `behavior` 문자열로 해석
   runes.py    ─ Rune 베이스 + 룬 서브클래스(효과 훅)
   champion.py ─ Target(더미), Champion 베이스(데미지 모델·스탯·이벤트 인터페이스) + 챔피언 서브클래스
   engine.py   ─ run_simulation(): 이벤트 루프 / calculate_mitigation(): 방저·관통 적용
@@ -38,6 +42,8 @@ adc_sim/                  ← 소스 패키지 (코어 모듈끼리는 서로 im
     sim_settings.py ─ 케이스랭킹 '모델' 설정 데이터(가중 프로파일/축/제약/풀 제외세트/컨트롤 오프닝). 순수 설정·헬퍼(코어 import 안 함)
     case_ranking.py ─ 케이스 기반 빌드 랭킹 엔진(집합 메모이즈 시뮬 + 14케이스 전수). 현재 Ashe 전용(레벨표/타깃은 ashe.py 재사용)
     ranking_core.py ─ 공통 랭킹 러너(rank_builds; Phase1 vayne 이관, cogmaw/jinx 예정)
+    receding_core.py ─ 공통 receding-horizon 러너(마지널 DPG γ-할인합; vayne 구현과 동치 — tests/test_receding_core.py)
+    cogmaw_receding.py ─ 코그모 1~5코어 receding-horizon(= 베인과 같은 방법론). cogmaw.py/cogmaw_sequential.py 는 그대로 병존
   data/
     items_data.py ─ 아이템 스탯/가격 데이터(숫자의 단일 출처)   ← 패치마다 가장 자주 바뀜
     items_registry.py ─ 키→인스턴스 통합 create_item_from_key(데이터 주입; 시뮬별 복제 제거)
@@ -75,7 +81,7 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 
 ### Cog'Maw (`champion.py` CogMaw + `simulations/cogmaw.py`) [수치 4소스 교차검증·가설은 spec 참조]
 - **W 바이오아케인**(쿨관리 버프 8s/17s/마나40): 활성 중 평타가 **대상 최대체력 `[3,3.75,4.5,5.25,6]%` + 0.00015·AP 마법 온힛**(`get_champion_onhit`→구인수 2배·증폭·Shadowflame 적용). **Q 패시브**=공속 상수, **Q 액티브**=마법넛지+방/마저 %셔레드(Corki E식), **E**=마법넛지, **R**=`(base+0.75추가AD+apMin·AP)×잃은체력배율`(≤40%HP ×2) + 마나램프(40→400)로 자연 스로틀. ad_growth=3.11.
-- **전용 sim**: kaisa.py 미러(4코어 전수→`rel_dpg`(설정 파생 가중)). 컨트롤 `guinsoo-navori-terminus-wit`(실전 메타 빌드 — RelDPG를 '메타 대비'로 측정; 풀에 존재해야 함). 풀=온힛+AP(guinsoo/kraken/nashor/terminus/bot/rfc/pd/ie/yuntal/statikk/storm + 4코어 rabadon/shadowflame; **shadowflame은 1~4코어 전부**, **void 2~4코어**, **황혼과 새벽(`dawn`)·나보리(`navori`)·마법사의최후(`wit`)·**C44(`c44`)** 1~4코어 전부**; c44는 26.13 버프(확대: 500거리부터 최대 10% 증폭, `items.py` 반영) 편입). 후보 풀은 `COGMAW_CORE_CANDIDATES` 상수로 중앙화(top1·`__main__` 공유). 랭킹 표 뒤에 **패키지 A/B(도란검+광전사+핏빛길 vs 도란활+피흡신발+민첩함) RelDPG 비교표**(상위 10+컨트롤)를 룬별로 출력. 크리 레퍼런스 `[CTRL2]`=c44-pd-ldr-ie(표시 전용, baseline 아님)도 표·A/B 비교에 항상 표시. **룬 2종 평가**: `__main__`이 `_run_cogmaw_ranking`을 **치명적속도(LethalTempo)·집중공격(PressTheAttack)** 두 keystone으로 각각 호출(룬별 표 2개; `simulate_cogmaw_core_path(keystone_cls=...)`, 보조룬 CutDown 고정). **power_compare 연동 완료**: top1=룬무관 최강(`get_cogmaw_powercompare_builds` — LT·PtA top1 중 절대 weighted-DPG 우위), basic=메타빌드(치속). skill-level 튜닝은 미완(todo).
+- **전용 sim**: kaisa.py 미러(4코어 전수→`rel_dpg`(설정 파생 가중)). 컨트롤 `guinsoo-navori-terminus-wit`(실전 메타 빌드 — RelDPG를 '메타 대비'로 측정; 풀에 존재해야 함). 풀=온힛+AP(guinsoo/kraken/nashor/terminus/bot/rfc/pd/ie/yuntal/statikk/storm + 4코어 rabadon/shadowflame; **shadowflame은 1~4코어 전부**, **void 2~4코어**, **황혼과 새벽(`dawn`)·나보리(`navori`)·마법사의최후(`wit`)·**C44(`c44`)** 1~4코어 전부**; c44는 26.13 버프(확대: 500거리부터 최대 10% 증폭, `core_items.py` 반영) 편입). 후보 풀은 `COGMAW_CORE_CANDIDATES` 상수로 중앙화(top1·`__main__` 공유). 랭킹 표 뒤에 **패키지 A/B(도란검+광전사+핏빛길 vs 도란활+피흡신발+민첩함) RelDPG 비교표**(상위 10+컨트롤)를 룬별로 출력. 크리 레퍼런스 `[CTRL2]`=c44-pd-ldr-ie(표시 전용, baseline 아님)도 표·A/B 비교에 항상 표시. **룬 2종 평가**: `__main__`이 `_run_cogmaw_ranking`을 **치명적속도(LethalTempo)·집중공격(PressTheAttack)** 두 keystone으로 각각 호출(룬별 표 2개; `simulate_cogmaw_core_path(keystone_cls=...)`, 보조룬 CutDown 고정). **power_compare 연동 완료**: top1=룬무관 최강(`get_cogmaw_powercompare_builds` — LT·PtA top1 중 절대 weighted-DPG 우위), basic=메타빌드(치속). skill-level 튜닝은 미완(todo).
 - **황혼과 새벽(`dawn`, 주문검)** [H-DAWN-1, 나무위키/LoL Wiki V26.09/CDragon id2510 교차검증]: 3100G·AP60/AS20%/AH20(체력300은 STAT_KEYS 미포함→DPS 미반영, 가격엔 포함). 스킬 시전 후 다음 평타에 **(기본AD75%+AP10%) 마법 버스트**(`DuskAndDawn.on_hit`, 1회 소비) + **온힛 효과 1회 추가**(`get_extra_onhit_applications`=가산 → 코그모 W 최대체력%·나셔 온힛 시너지). 쿨2s는 시전시각 기준(EssenceReaver와 동일), 회복은 DPS 모델 무시. Q/E/R/W 시전 모두 `cast_spell`→`on_spell_cast`로 arm. 테스트 `tests/test_dusk_dawn.py`.
 - **나보리(`navori`) / 마법사의최후(`wit`)** [H-NAVORI-1, LoL Wiki/CDragon 교차검증]: **navori** 2650G·AS40%/치확25%(이속4% 미모델) — 패시브 **평타마다 기본스킬 Q/W/E 남은 쿨 ×0.85**(궁 R 제외, 치명타 무관). `on_hit` 이 아니라 **엔진 평타훅 `champion.on_basic_attack(time)`**(base=no-op, `CogMaw`만 적용)에서 **평타당 1회** — 구인수 proc_count 에 안 곱해지도록. **wit** 2800G·AS50%/MR45(보존,DPS무영향)/인내20%(미모델) — 온힛 **45 마법**(`WitsEnd.on_hit`, 구인수×2·dawn 가산 적용). 테스트 `tests/test_navori_witend.py`.
 - **순차 최적 빌드 탐색**(`simulations/cogmaw_sequential.py`, 파일럿): 매 코어 시점에서 다음
@@ -83,6 +89,12 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
   룬(치속/집공)×패키지(A/B)×지표(DPS/DPG)별 궤적 + 분기점 대안 top3 + [CTRL]/[CTRL2] 동일
   척도 비교 출력. 기존 가중 랭킹과 병행(대체 아님). `-m adc_sim.simulations.cogmaw_sequential`
   로 실행(표만, 헤드리스 안전 — 전체 풀 실행은 수 분). spec: 2026-07-06 설계 문서.
+- **1~5코어 receding-horizon**(`simulations/cogmaw_receding.py`, 사용자 요청 2026-08-08 "코그모도
+  베인과 같은 방식"): 공통 러너 `receding_core.py` 사용. cogmaw_sequential 과의 차이는 **평가 척도** —
+  sequential 은 각 집합의 **절대 DPS/DPG(레벨)**, 이쪽은 **마지널 DPG = ΔDPS/(Δ골드/1000)(증분)** 로
+  베인과 동일하다. 5코어 후보 = 4코어 후보 재사용(vayne.CORE5_CANDIDATES 관례; 빠지는 건 초반 전용
+  rfc/statikk/storm/yuntal 뿐). 레퍼런스 [CTRL]/[CTRL2]는 4코어를 고정하고 5코어째만 같은 방법론으로
+  붙여 동일 척도 비교. 테스트 `tests/test_cogmaw_receding.py`·`tests/test_receding_core.py`.
 
 ### Vayne (`champion.py` Vayne + `simulations/vayne.py`) [수치 3소스 교차검증·가설은 spec §9]
 - **물리 온힛/크리 하이퍼캐리**. 킷: 평타 + **W 은화살**(3번째 연속 타격마다 `max(floor, %최대체력)`
@@ -124,6 +136,12 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
   (LT·PtA 절대 weighted-DPG 우위), basic=컨트롤 under 치속(실전 기준). 스킬 선마 Q→W→E, R=lvl 기반
   (코어 1~5: Q/W/E/R = 5/2/1/1, 5/3/1/2, 5/5/1/2, 5/5/3/2, 5/5/4/3).
   E(콘뎀)·패시브(이속) 미모델.
+- **그림자 검(`umbral`)** [H-UMBRAL-1, 나무위키 교차검증]: 2800G·AD60/물리관통18/AH15. **밤의 추적자** =
+  1초 동안 비노출이면 다음 평타에 `50 + 물리관통력 150%` **고정(true) 피해** 1회(`UmbralGlaive.on_hit`
+  → true_onhit 채널). 비노출 판정은 `champion.unseen_since` — **베인 R 중 Q(구르기)** 만 이 상태를
+  만들고(`Q_STEALTH_ATTACK_DELAY=1.0`), 평타 시 해제된다. 다른 챔피언은 항상 None 이라 순수 스탯
+  아이템으로 동작(기존 수치 불변). 암전(와드 감지)은 전투 무관 → 미모델. 테스트
+  `tests/test_vayne_tumble.py::test_umbral_nightstalker_procs_once_after_r_q_stealth`.
 
 ### Jinx (`champion.py` Jinx + `simulations/jinx.py`) [수치 3소스 교차검증 patch16.13·가설 태그]
 - **미니건 크리 평타 캐리 + W 넛지**. Q 스위쳐루=미니건(평타 최대 3스택 +130% 공속, 2.5s 감쇠)/로켓 토글 —
@@ -139,7 +157,7 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 ## 패치마다 갱신 (이 프로젝트의 일상)
 새 패치가 나오면 보통 아래를 손본 뒤 시뮬을 다시 돌려 랭킹을 갱신한다. **변경 전 `AGENTS.md`의 승인 절차를 따른다.**
 1. **아이템 스탯/가격 변경** → `adc_sim/data/items_data.py`의 `ITEMS[key]`(`stats`/`cost`). 숫자의 단일 출처.
-2. **신규 아이템** → `adc_sim/data/items_data.py`의 `ITEMS`에 키 추가(name/cost/stats/behavior). 특수 메커니즘이 있을 때만 `adc_sim/items.py`에 동작 클래스를 추가해 `behavior`로 지정. 생성은 **통합 `create_item_from_key`**(`adc_sim/data/items_registry.py`) 하나가 처리 — 시뮬별 복제 없음(윤탈 crit 은 런타임 파라미터 `yuntal_crit`).
+2. **신규 아이템** → `adc_sim/data/items_data.py`의 `ITEMS`에 키 추가(name/cost/stats/behavior). 특수 메커니즘이 있을 때만 역할별 동작 모듈(`core_items.py`/`component_items.py`/`utility_items.py`)에 클래스를 추가해 `behavior`로 지정. 생성은 **통합 `create_item_from_key`**(`adc_sim/data/items_registry.py`) 하나가 처리 — 시뮬별 복제 없음(윤탈 crit 은 런타임 파라미터 `yuntal_crit`).
    - 새 키를 **탐색 후보 풀**에 넣어야 실제 랭킹에 등장한다. **유나라는 자체 풀 `_build_yunara_4core_all_paths`(yunara.py, AP 아이템 포함)**, 애쉬는 `ashe.py`의 `_build_ashe_4core_all_paths`, kaisa/corki는 대응 풀. **pen 배타(챔피언 무관 필수)**: 방관 `{ldr, mortal, terminus}` 한 빌드 1개 + 마관 `{void, terminus}` 한 빌드 1개(terminus는 양쪽 겸비 → 공허와도 공존 불가). 구현은 items_data.pen_rule_ok(방관≤1 AND 마관≤1) 중앙화 — 시뮬별 로컬 상수 금지.
    - **%마법관통** 스탯은 `magic_pen_percent`(STAT_KEYS 포함, `add_item`에서 곱연산). 예: 공허의 지팡이(`void`, AP95/마관40%).
 3. **챔피언 기본 스탯/스킬 계수 변경** → `adc_sim/champion.py`의 해당 서브클래스. 코어별 레벨표(`CORE_*_LEVELS`)·타깃 스탯(`CORE_TARGET_STATS`)도 패치 메타에 맞게 점검.
@@ -149,7 +167,7 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 
 ## 시뮬레이션 함정·규칙 (수정 시 주의)
 - **반환 튜플 모양을 정확히 맞출 것**: 아이템 `on_hit` → `(phys, magic, true_base, true_onhit)` 4-튜플 / 챔피언·룬 온힛 → `(phys, magic)` 2-튜플 / 스킬 `on_skill_hit` → `(phys, magic, true)` 3-튜플 / `get_one_hit_damage` → `(phys_base, magic_base, phys_onhit, magic_onhit, true_base, true_onhit)` 6-튜플.
-- **아이템 스탯의 단일 출처는 `adc_sim/data/items_data.py`**. items.py 동작 클래스에 남은 레거시 스탯 리터럴은 런타임에 데이터가 덮어쓴다(2b에서 제거 예정) — 스탯 수정은 반드시 items_data.py 에서.
+- **아이템 스탯의 단일 출처는 `adc_sim/data/items_data.py`**. 동작 클래스(core/component/utility_items.py)에 남은 레거시 스탯 리터럴은 런타임에 데이터가 덮어쓴다(2b에서 제거 예정) — 스탯 수정은 반드시 items_data.py 에서.
 - **윤탈 치명타 가정**: 구매 코어/다음 코어 여부에 따라 0%/12%/5%/25%로 분기(`simulate_*_core_path` 내부). 가정이지 실측이 아님.
 - **유나라 시뮬 코드는 `adc_sim/simulations/yunara.py`에 자체 보관**(타깃 스탯/레벨표/`simulate_yunara_*` 모두). 애쉬 파일에 두지 말 것. 공유 인프라(`_build_ashe_4core_all_paths`/`build_ashe_like_core_report_meta`)만 ashe.py에서 import. 레벨표(`CORE_YUNARA_LEVELS`)는 Ashe 참조 없이 독립.
 - **유나라 로테이션**(`adc_sim/champion.py` Yunara): 첫 평타(궁 전이라 Q 비활성) → 직후 궁=초월(Q 활성) → 둘째 평타 이후 평타 지속 + W는 쿨마다. 평타 윈드업은 모델 없음(첫 평타 t=0 즉시). **유나라 스킬은 전부 평타캔슬 불가 → 0.33 클립 없음**(시전 시간만 가산형으로 반영, 아래 시전 시간 항목 참조). (구 가정 `activate_q(0.0)` 강제활성, 및 궁/Q/W 후 0.33 클립은 폐기)
