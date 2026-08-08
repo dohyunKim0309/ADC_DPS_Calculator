@@ -14,9 +14,10 @@
 - 시뮬은 패키지 모듈이라 **repo 루트에서 `-m`으로 실행**한다:
   - `.venv/bin/python -m adc_sim.simulations.ashe` — 애쉬 4코어 랭킹(+1~3코어 별도 랭킹 — 가중은 설정 파생 상위 3개)
   - `… adc_sim.simulations.yunara` / `.kaisa` / `.corki` / `.ezreal` / `.cogmaw`
-  - `… adc_sim.simulations.vayne` — 베인 4코어 랭킹(온힛+크리 풀, 컨트롤 botrk-guinsoo-terminus-pd; 치속·집공 두 룬 각각 표 출력)
+  - `… adc_sim.simulations.vayne [gamma]` — **기본** 베인 1~5코어 receding-horizon 탐색(마지널 DPG 미래 할인합, γ 기본 0.8, 베인 DPS 측정 K=2). 8시나리오(치속/집공 × 핏빛길/민첩함 × 체력차 극복/최후의 일격), 도란활+탐식 고정. 출력 순서도 이 축 순서를 따른다.
+  - `… adc_sim.simulations.vayne legacy-ranking` — 보존된 기존 1~4코어 전수 랭킹(온힛+크리 풀, 컨트롤 botrk-guinsoo-terminus-pd).
+  - `… adc_sim.simulations.vayne pta-alacrity-subs [gamma]` — 집공·민첩함 고정 후 최후의 일격/체력차 극복 receding-horizon 비교.
   - `… adc_sim.simulations.vayne_rune_compare [top_n]` — LT vs PtA 룬 비교(top_n 기본 10 + 컨트롤, 코어 타이밍별 DPS/DPG 나열). 두 룬 전수 랭킹 소요 ≈1분.
-  - `… adc_sim.simulations.vayne_sequential_greedy` — 5코어 순차 그리디 아이템트리 선택 (각 시점 마지널 DPG 미래 호라이즌 γ=0.9 할인합 최대화). 4시나리오(LT/PtA × 핏빛길/민첩함), Bow+Glut 고정, 5코어 풀 = CORE4_CANDIDATES 재활용. 시뮬 캐시 98%+ hit → ~10초.
   - `… adc_sim.simulations.jinx` — 징크스 4코어 랭킹(미니건+W, Get Excited OFF, Ashe 크리풀·컨트롤 kraken-pd-ie-ldr 재사용)
   - `… adc_sim.simulations.power_compare` — 챔피언 간 Top1/Basic 비교
   - `… adc_sim.simulations.case_ranking ["케이스필터"]` — **애쉬 케이스 기반 빌드 랭킹**(비-방어 전 아이템 전수조사, 14케이스). 표만 출력(그래프/`plt.show()` 없음)이라 **헤드리스 안전**. 인자로 케이스명 부분일치 필터(예: `"alldps/nohc"`). 전체 ~45초.
@@ -53,9 +54,9 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 4. `engine.calculate_mitigation`에서 방어력/마저 + 관통 적용: `eff = stat*(1-%pen) - flat_pen`(음수 클램프), `실피해 = raw * 100/(100+eff)`. 고정(true) 피해는 경감 없이 합산.
 
 ## 핵심 지표·개념
-- **DPS** = 누적 피해 / 처치 시간. (엔진 `run_simulation(respawn_to_full_kills=K)`: 처치 시 오버킬 이월+풀피 리필로 K개 체력바를 처치하는 지속딜 측정 — 시작 버스트(W/궁캔슬) 분산, 바 크기 유지로 몰왕검(현재체력%) 과대평가 방지. **기본 K=2(리스폰 1회)가 프로젝트 표준**; `respawn_to_full_kills=1`로 단일 처치 복원.)
+- **DPS** = 누적 피해 / 처치 시간. (엔진 `run_simulation(respawn_to_full_kills=K)`: 처치 시 오버킬을 다음 바에 이월하지 않고 풀피로 리필해 K개 체력바를 처치하는 지속딜 측정 — 시작 버스트(W/궁캔슬) 분산, 바 크기 유지로 몰왕검(현재체력%) 과대평가 방지. 피해 누적에는 처치타의 오버킬이 포함된다. **기본 K=2(리스폰 1회)가 프로젝트 표준**; `respawn_to_full_kills=1`로 단일 처치 복원.)
 - **DPG** = `DPS / (gold/1000)` — 1000골드당 DPS, 즉 골드 효율.
-- **rel_dpg_score**(주 랭킹 지표) = 각 코어 구간의 `row_DPG / control_DPG` 비율을 **`settings.RANKING_SCORING`에서 파생된 코어 가중**(기본 discounted γ=0.9 → [0.9, 0.81, 0.729, 0.6561]; "weighted" 모드 시 fixed_raw)으로 가중합 ×100. 즉 **컨트롤 빌드 대비 상대 골드효율**. 가중은 settings.RANKING_SCORING("weighted" 고정벡터 | "discounted" γ-할인, **기본 discounted γ=0.9**)에서 파생 — CORE_WEIGHTS_RAW 소비처는 자동 반영.
+- **rel_dpg_score**(주 랭킹 지표) = 각 코어 구간의 `row_DPG / control_DPG` 비율을 **`settings.RANKING_SCORING`에서 파생된 코어 가중**(기본 discounted γ=0.8 → [0.8, 0.64, 0.512, 0.4096]; "weighted" 모드 시 fixed_raw)으로 가중합 ×100. 즉 **컨트롤 빌드 대비 상대 골드효율**. 가중은 settings.RANKING_SCORING("weighted" 고정벡터 | "discounted" γ-할인, **기본 discounted γ=0.8**)에서 파생 — CORE_WEIGHTS_RAW 소비처는 자동 반영.
 - **Control(기준) 빌드** = `kraken-pd-ie-ldr` 로 하드코딩. 탐색 경로 안에 반드시 존재해야 하며 없으면 `RuntimeError`. 후보 풀이나 키 이름을 바꿀 때 이 빌드가 빠지지 않게 할 것.
 - **코어 티어 1~4** = 아이템 1/2/3/4개 시점의 파워 스파이크. 티어마다 타깃 스탯(`CORE_TARGET_STATS`)과 챔피언 레벨/스킬 레벨(`CORE_<CHAMP>_LEVELS`)이 고정. (케이스 랭킹은 티어 1~5 사용 — `CORE_ASHE_LEVELS[5]`/`CORE_TARGET_STATS[5]`.)
 - 같은 4개 아이템 "집합"은 순서 후보 중 **최고 점수 하나로 dedup**(`combo_best`).
@@ -78,7 +79,7 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 - **황혼과 새벽(`dawn`, 주문검)** [H-DAWN-1, 나무위키/LoL Wiki V26.09/CDragon id2510 교차검증]: 3100G·AP60/AS20%/AH20(체력300은 STAT_KEYS 미포함→DPS 미반영, 가격엔 포함). 스킬 시전 후 다음 평타에 **(기본AD75%+AP10%) 마법 버스트**(`DuskAndDawn.on_hit`, 1회 소비) + **온힛 효과 1회 추가**(`get_extra_onhit_applications`=가산 → 코그모 W 최대체력%·나셔 온힛 시너지). 쿨2s는 시전시각 기준(EssenceReaver와 동일), 회복은 DPS 모델 무시. Q/E/R/W 시전 모두 `cast_spell`→`on_spell_cast`로 arm. 테스트 `tests/test_dusk_dawn.py`.
 - **나보리(`navori`) / 마법사의최후(`wit`)** [H-NAVORI-1, LoL Wiki/CDragon 교차검증]: **navori** 2650G·AS40%/치확25%(이속4% 미모델) — 패시브 **평타마다 기본스킬 Q/W/E 남은 쿨 ×0.85**(궁 R 제외, 치명타 무관). `on_hit` 이 아니라 **엔진 평타훅 `champion.on_basic_attack(time)`**(base=no-op, `CogMaw`만 적용)에서 **평타당 1회** — 구인수 proc_count 에 안 곱해지도록. **wit** 2800G·AS50%/MR45(보존,DPS무영향)/인내20%(미모델) — 온힛 **45 마법**(`WitsEnd.on_hit`, 구인수×2·dawn 가산 적용). 테스트 `tests/test_navori_witend.py`.
 - **순차 최적 빌드 탐색**(`simulations/cogmaw_sequential.py`, 파일럿): 매 코어 시점에서 다음
-  아이템을 "미래 코어 파워의 γ-할인합(γ=0.9, 5코어 호라이즌)" 최대화로 선택하는 DP.
+  아이템을 "미래 코어 파워의 γ-할인합(γ=0.8, 5코어 호라이즌)" 최대화로 선택하는 DP.
   룬(치속/집공)×패키지(A/B)×지표(DPS/DPG)별 궤적 + 분기점 대안 top3 + [CTRL]/[CTRL2] 동일
   척도 비교 출력. 기존 가중 랭킹과 병행(대체 아님). `-m adc_sim.simulations.cogmaw_sequential`
   로 실행(표만, 헤드리스 안전 — 전체 풀 실행은 수 분). spec: 2026-07-06 설계 문서.
@@ -101,11 +102,14 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
   총 버스트 수는 동일하나 팬텀히트로 버스트가 프론트로드 → 타깃 HP 조기 하락 → BotRK 6%현재HP 딜 손실.
   전 크리코어 빌드는 %현재HP 아이템이 없어 영향 無. 진단·회귀는 `tests/test_vayne_silverbolts_botrk_interaction.py` 참조.
 - **Q/R 엔진 모델**: Q 는 스킬 이벤트(무직접피해)로 `q_empowered` arm + `q_reset_pending` +
-  마나30 게이트. **Q 평타 리셋은 옵션 `q_wall_reset=False`(기본, 오픈 필드 실전)** — 실 인게임에서
+  마나30 게이트. **베인 DPS 기본 설정은 첫 Q에서만 벽 평캔 `ANIM_CANCEL_CLIP=0.33s`를 1회 적용한다.
+  이후 Q 쿨 완료 시 직전 평타가 0.1초 이내면 즉시 Q, 아니면 다음 일반 평타 직후 Q를 사용하며,
+  Q는 시전 시간 `Q_CAST_TIME=0.25s` 뒤 새 평타 타이머를 시작**(`q_first_wall_reset_only=True`, 사용자 확정 2026-07-28).
+  저수준 호환 옵션 `q_wall_reset=False`는 기본 오픈 필드를 재현하며, 실 인게임에서
   Q 는 오픈 필드에서 평타 캔슬 불가, 벽 붙어 텀블 시에만 가능(사용자 확정 2026-07-20
   [H-VAYNE-Q-WALL-1]). `Vayne(..., q_wall_reset=True)` 로 벽 시나리오 재현(다음 평타 간격
   `ANIM_CANCEL_CLIP=0.33s` 상한 클리핑). **Q 시전 시간 `Q_CAST_TIME=0.25s`** [H-VAYNE-Q-CAST-1]:
-  오픈 필드는 가산형(`cast_delay_pending`) 순수 손실, 벽 상황은 텀블 반동 캔슬로 소멸(미반영).
+  저수준 오픈 필드는 가산형(`cast_delay_pending`) 순수 손실, 벽 상황과 DPS 기본 설정에서는 소멸(미반영).
   **강화 평타 Q 추가딜은 크리·C44 둘 다 미반영**([H-VAYNE-Q-1],
   사용자 확인 2026-07-14) — 평타 본체 `p_base` 는 크리 기대값·C44 증폭 포함이지만 Q 추가딜은
   `total_ad × ratio × _last_damage_amp` 로 별도 가산(**대미지증가는 적용, 크리·C44 는 미적용 = 실 LoL 동작**).
@@ -117,7 +121,8 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
   (simulate 내부). `__main__` 이 두 룬 각각 랭킹 표 출력(그래프는 첫 룬 LT 기준 1장 — CogMaw 관례).
   **은화살 대미지증폭**: PtA 8%·CutDown 8%·CoupDeGrace 8% 는 `_last_damage_amp`(mod_factor)
   경유로 은화살 고정딜에 자동 적용(경감 우회, 증폭만). **power_compare 통합**: top1=룬 무관 최강
-  (LT·PtA 절대 weighted-DPG 우위), basic=컨트롤 under 치속(실전 기준). 스킬 선마 Q→W→E, R=lvl 기반.
+  (LT·PtA 절대 weighted-DPG 우위), basic=컨트롤 under 치속(실전 기준). 스킬 선마 Q→W→E, R=lvl 기반
+  (코어 1~5: Q/W/E/R = 5/2/1/1, 5/3/1/2, 5/5/1/2, 5/5/3/2, 5/5/4/3).
   E(콘뎀)·패시브(이속) 미모델.
 
 ### Jinx (`champion.py` Jinx + `simulations/jinx.py`) [수치 3소스 교차검증 patch16.13·가설 태그]

@@ -54,6 +54,8 @@ class Champion:
         self.magic_pen_flat = 0 # 마법 관통력 (고정)
         self.ability_haste = 0.0 # 스킬 가속
         self._combat_time = 0.0
+        self.unseen_since = None  # 비노출 시작 시각. 기본 챔피언은 비노출 상태를 만들지 않는다.
+        self.attack_timer_override_pending = None  # 스킬이 다음 평타 타이머를 직접 지정할 때 사용.
         self._last_damage_amp = 1.0  # [H-VAYNE-W] 직전 평타의 일반 대미지증폭(mod_factor). 은화살 true 증폭용 stash.
 
         # 마나 자원 (Phase 0). total_mana = 풀; current_mana = 전투 중 현재값.
@@ -205,6 +207,10 @@ class Champion:
         if current_as <= 0: return 9999
         return 1.0 / current_as
 
+    def get_attack_delay_extension(self, skill_name):
+        """Return cast time added to the pending basic-attack delay for a skill."""
+        return 0.0
+
     @property
     def cooldown_multiplier(self):
         # 스킬가속(AH): 최종 쿨타임 = 기본쿨 * (100 / (100 + AH))
@@ -228,6 +234,8 @@ class Champion:
     # 엔진 주도 이벤트 인터페이스 (기본: 스킬 이벤트 없음)
     def init_combat_state(self, skill_plan=None):
         self._combat_time = 0.0
+        self.unseen_since = None
+        self.attack_timer_override_pending = None
         self.current_mana = self.total_mana   # 전투 시작 시 풀충전
         # 시전 시간 → 평타 지연. 기본 0 → 시전 시간 미모델 챔피언은 동작 불변.
         #  · cast_lockout_until: 캔슬 가능(흡수형) — 이 시각까지 평타 불가.
@@ -264,6 +272,7 @@ class Champion:
     # [핵심] 챔피언별로 오버라이딩 할 메서드
     # 반환값: (물리_기본, 마법_기본, 물리_온힛, 마법_온힛, 물리_고정_기본, 물리_고정_온힛)
     def get_one_hit_damage(self, target, time=0):
+        """Return one attack's damage split and retain BotRK provenance for sustain metrics."""
         self._combat_time = time
         # ---------------------------------------------------------
         # 0. 룬 효과 발동 (공격 시)
@@ -290,6 +299,9 @@ class Champion:
         def get_all_onhit():
             p_sum = 0
             m_sum = 0
+            botrk_p_sum = 0
+            botrk_m_sum = 0
+            botrk_true_sum = 0
             pt_base_sum = 0 # 평타 고정 피해 합산
             pt_onhit_sum = 0 # 온힛 고정 피해 합산
             
@@ -298,6 +310,10 @@ class Champion:
                 p, m, pt_b, pt_o = item.on_hit(target, self) # 4개 반환
                 p_sum += p
                 m_sum += m
+                if item.name == "Blade of the Ruined King":
+                    botrk_p_sum += p
+                    botrk_m_sum += m
+                    botrk_true_sum += pt_b + pt_o
                 pt_base_sum += pt_b
                 pt_onhit_sum += pt_o
             
@@ -312,7 +328,10 @@ class Champion:
             p_sum += cp
             m_sum += cm
 
-            return p_sum, m_sum, pt_base_sum, pt_onhit_sum
+            return (
+                p_sum, m_sum, pt_base_sum, pt_onhit_sum,
+                botrk_p_sum, botrk_m_sum, botrk_true_sum,
+            )
 
         # 2.1 실행 횟수(proc_count) 결정
         # 아이템이 온힛 처리 횟수를 확장할 수 있도록 훅 제공 (예: 구인수 = max 2회)
@@ -336,13 +355,19 @@ class Champion:
         total_magic_onhit = 0
         total_true_base = 0
         total_true_onhit = 0
+        total_botrk_phys = 0
+        total_botrk_magic = 0
+        total_botrk_true = 0
 
         for _ in range(total_applications):
-            p, m, pt_b, pt_o = get_all_onhit()
+            p, m, pt_b, pt_o, botrk_p, botrk_m, botrk_true = get_all_onhit()
             total_phys_onhit += p
             total_magic_onhit += m
             total_true_base += pt_b
             total_true_onhit += pt_o
+            total_botrk_phys += botrk_p
+            total_botrk_magic += botrk_m
+            total_botrk_true += botrk_true
 
         # ---------------------------------------------------------
         # 3. 대미지 증폭(Multiplier) 적용 (거인 학살자, 룬 등)
@@ -376,6 +401,9 @@ class Champion:
         magic_base *= mod_factor
         total_phys_onhit *= mod_factor
         total_magic_onhit *= mod_factor
+        total_botrk_phys *= mod_factor
+        total_botrk_magic *= mod_factor
+        total_botrk_true *= mod_factor
         
         # C44 증폭 — 평타 물리 기본딜에만 적용(룬·아이템 온힛/마법 미적용, 사용자 확인 2026-07-06).
         # 베인 W 은화살·Q 추가딜에도 미적용(사용자 확인 2026-07-14) — 순수 기본 AA 물리만.
@@ -402,9 +430,15 @@ class Champion:
             
             magic_base *= final_multiplier
             total_magic_onhit *= final_multiplier
+            total_botrk_magic *= final_multiplier
 
         # 5. 평타 횟수 증가
         self.hit_count += 1
+
+        # 피흡 집계가 몰왕 추가 피해만 식별하도록 기존 6튜플 반환 밖에 출처를 보존한다.
+        self._last_botrk_onhit_raw = (
+            total_botrk_phys, total_botrk_magic, total_botrk_true,
+        )
         
         # 6. 최종 반환
         return phys_base, magic_base, total_phys_onhit, total_magic_onhit, phys_true_base, total_true_onhit
@@ -1007,6 +1041,7 @@ class KaiSa(Champion):
         self.auto_cast_r = False
         self.q_cast_count = 0
         self.w_cast_count = 0
+        self.e_cast_count = 0
 
         # 패시브(플라즈마) 및 스킬 스케줄 상태
         self.plasma_state = {}
@@ -1032,8 +1067,10 @@ class KaiSa(Champion):
         return self.bonus_ad + (self.ad_growth * (self.level - 1))
 
     def _get_evolution_bonus_as(self):
-        # 진화 조건은 레벨/아이템 기반 추가 공속만 사용 (룬/버프 제외)
-        return self.bonus_as_percent + (self.as_growth * (self.level - 1) / 100.0)
+        """Return E-evolution attack speed from items and level growth only."""
+        item_bonus_as = sum(item.stats.get("as", 0.0) for item in self.inventory)
+        level_bonus_as = self.as_growth * (self.level - 1) / 100.0
+        return item_bonus_as + level_bonus_as
 
     def has_q_evolved(self):
         if self.q_evolved_override is not None:
@@ -1124,6 +1161,7 @@ class KaiSa(Champion):
         self.plasma_state = {}
         self.q_cast_count = 0
         self.w_cast_count = 0
+        self.e_cast_count = 0
 
         plan = skill_plan or {}
         auto_cfg = plan.get("auto_cast", {})
@@ -1171,6 +1209,24 @@ class KaiSa(Champion):
         if not self.can_afford(self.mana_cost.get(skill_name, 0.0)):
             return False
         return True
+
+    def get_attack_delay_extension(self, skill_name):
+        """Return Kai'Sa W/E cast time that postpones her next basic attack.
+
+        The pre-combat W/E casts resolved at t=0 are exempt. Later E casts use
+        the bonus attack speed present before Supercharge grants its own buff:
+        1.2 / (1 + bonus AS), with the in-game 0.6 second floor.
+        """
+        if skill_name == "w":
+            return 0.0 if self.w_cast_count <= 1 and self._combat_time <= 1e-9 else 0.4
+        if skill_name == "e":
+            if self.e_cast_count <= 1 and self._combat_time <= 1e-9:
+                return 0.0
+            bonus_as = self.get_total_bonus_as_percent()
+            if self.e_buff_applied:
+                bonus_as -= self.e_as_bonus[self.e_level - 1]
+            return max(0.6, 1.2 / (1.0 + max(0.0, bonus_as)))
+        return 0.0
 
     def _cast_skill(self, skill_name, target, time):
         self.spend_mana(self.mana_cost.get(skill_name, 0.0))
@@ -1229,6 +1285,7 @@ class KaiSa(Champion):
     def _cast_e(self, time):
         idx = self.e_level - 1
         self.cooldowns_remaining["e"] = self.apply_haste_to_cooldown(self.e_cd[idx])
+        self.e_cast_count += 1
         self.e_active = True
         self.e_end_time = time + 4.0
 
@@ -2140,6 +2197,9 @@ class Vayne(Champion):
     # 오픈 필드(q_wall_reset=False)에서는 시전 시간 = 순수 손실 (가산형 cast_delay_pending).
     # 벽 붙었을 때(q_wall_reset=True)는 시전 시간이 텀블 반동 캔슬로 소멸 → 미반영.
     Q_CAST_TIME = 0.25
+    Q_RECENT_ATTACK_WINDOW = 0.10
+    # R 중 Q 은신을 끝까지 유지한 뒤 공격하는 DPS 시나리오(사용자 확정 2026-07-25).
+    Q_STEALTH_ATTACK_DELAY = 1.0
 
     # R 결전 [H-VAYNE-R]: 고정 추가AD·지속·Q쿨감%(랭크1~3).
     R_BONUS_AD = [35.0, 50.0, 65.0]
@@ -2149,7 +2209,7 @@ class Vayne(Champion):
     R_MANA = 80.0
 
     def __init__(self, level=1, q_level=5, w_level=5, e_level=1, r_level=3,
-                 q_wall_reset=False):
+                 q_wall_reset=False, q_first_wall_reset_only=False):
         super().__init__(
             name="Vayne", base_ad=60, base_as=0.658, as_ratio=0.658,
             as_growth=3.3, base_range=550, level=level, ad_growth=2.35,
@@ -2172,6 +2232,9 @@ class Vayne(Champion):
         # 경우에만 평타 캔슬 가능. 기본 False (오픈 필드 = 실전 팀파이트/킬 시나리오).
         # True 시 벽 상황 재현 — Q 시전 후 다음 평타 간격 ANIM_CANCEL_CLIP(0.33s) 상한 클리핑.
         self.q_wall_reset = q_wall_reset
+        # DPS 기본 시나리오: 첫 Q에서만 벽 평캔 0.33초 1회.
+        self.q_first_wall_reset_only = q_first_wall_reset_only
+        self.q_first_wall_reset_consumed = False
 
         # 상태 (init_combat_state 에서 리셋)
         self.sb_stacks = 0
@@ -2185,6 +2248,9 @@ class Vayne(Champion):
         self.manual_skill_index = 0
         self.auto_skill_enabled = {"q": True, "r": False}
         self.auto_skill_order = ["q"]
+        self.last_basic_attack_time = None
+        self.q_wait_for_basic_attack = False
+        self.q_cast_after_basic_attack = False
 
     # ---- W 은화살 (+ Q 강화 훅): get_one_hit_damage 오버라이드 ----
     def get_one_hit_damage(self, target, time=0):
@@ -2213,11 +2279,14 @@ class Vayne(Champion):
                 sb = max(self.W_FLOOR[idx], self.W_PCT[idx] * target.max_hp)
                 pt_onhit += sb * self._last_damage_amp
 
+        # 기본 공격은 은신을 해제한다. 아이템 온힛은 super() 안에서 이 값을 먼저 읽어
+        # 밤의 추적자를 판정하므로, 현재 공격까지는 직전 R+Q 비노출 시간이 유효하다.
+        self.unseen_since = None
         return p_base, m_base, p_onhit, m_onhit, pt_base, pt_onhit
 
     def get_attack_interval(self):
-        # Q(구르기) 직후 평타 리셋: 벽 붙은 상황(q_wall_reset=True)에서만 적용.
-        # 기본 오픈 필드에서는 리셋 없음 (사용자 확정 2026-07-20 [H-VAYNE-Q-WALL-1]).
+        # q_wall_reset=True의 기존 매 Q 벽캔 재현 옵션. DPS 기본 시나리오는
+        # _cast_q에서 엔진의 현재 평타 타이머를 직접 덮어쓰므로 이 경로를 사용하지 않는다.
         if self.q_reset_pending:
             self.q_reset_pending = False
             if self.q_wall_reset:
@@ -2230,6 +2299,10 @@ class Vayne(Champion):
         self.sb_stacks = 0
         self.q_empowered = False
         self.q_reset_pending = False
+        self.q_first_wall_reset_consumed = False
+        self.last_basic_attack_time = None
+        self.q_wait_for_basic_attack = False
+        self.q_cast_after_basic_attack = False
         # R 버프 리셋(이전 전투 잔여 bonus_ad 원복)
         if self._r_bonus_applied:
             self.bonus_ad -= self._r_bonus_applied
@@ -2276,6 +2349,11 @@ class Vayne(Champion):
         eps = 1e-9
         if self.cooldowns_remaining.get(name, float("inf")) > eps:
             return False
+        # Q 강화 평타를 아직 소비하지 않았다면 재시전하지 않는다. 기본 DPS 모드의
+        # "Q 시전 → 0.25초 → 새 평타 타이머"에서 Q 쿨이 먼저 돌아와 타이머를
+        # 무한 초기화하는 것을 막고, Q 1회당 강화 평타 1회를 보장한다.
+        if name == "q" and self.q_empowered:
+            return False
         if name == "r" and self.r_active:
             return False
         if not self.can_afford(self._cost(name)):
@@ -2290,6 +2368,12 @@ class Vayne(Champion):
             cands.append(max(0.0, t - current_time))
         for name, enabled in self.auto_skill_enabled.items():
             if not enabled:
+                continue
+            # 강화 평타가 장전된 Q는 소비 전까지 다음 자동 시전 이벤트 후보에서 제외한다.
+            # 그렇지 않으면 쿨다운 0인 Q가 빈 이벤트를 계속 만들어 평타 타이머가 진행하지 않는다.
+            if name == "q" and self.q_empowered:
+                continue
+            if name == "q" and self.q_wait_for_basic_attack:
                 continue
             if name == "r" and self.r_active:
                 continue
@@ -2309,9 +2393,29 @@ class Vayne(Champion):
             if self._can_cast_skill(name):
                 events.append(self._cast_skill(name, target, current_time))
         for name in self.auto_skill_order:
-            if self.auto_skill_enabled.get(name, False) and self._can_cast_skill(name):
-                events.append(self._cast_skill(name, target, current_time))
+            if not self.auto_skill_enabled.get(name, False) or not self._can_cast_skill(name):
+                continue
+            if name == "q" and not self.q_cast_after_basic_attack:
+                elapsed = (
+                    None if self.last_basic_attack_time is None
+                    else current_time - self.last_basic_attack_time
+                )
+                # 첫 Q는 즉시 사용한다. 이후에는 쿨이 돌아온 시점이 직전 평타 0.1초
+                # 이내일 때만 즉시 사용하고, 아니면 다음 일반 평타 직후로 미룬다.
+                if elapsed is not None and elapsed > self.Q_RECENT_ATTACK_WINDOW:
+                    self.q_wait_for_basic_attack = True
+                    continue
+            self.q_cast_after_basic_attack = False
+            events.append(self._cast_skill(name, target, current_time))
         return events
+
+    def on_basic_attack(self, time):
+        """평타 시각을 기록하고, 대기 중인 자동 Q를 해당 평타 직후에 예약한다."""
+        super().on_basic_attack(time)
+        self.last_basic_attack_time = time
+        if self.q_wait_for_basic_attack:
+            self.q_wait_for_basic_attack = False
+            self.q_cast_after_basic_attack = True
 
     def _cast_skill(self, name, target, time):
         self._combat_time = time
@@ -2325,12 +2429,31 @@ class Vayne(Champion):
         return (name, 0.0, 0.0, False)
 
     def _cast_q(self, time):
-        """Q 구르기(Task 3 에서 본체): arm 강화 + 평타리셋(옵션) + 주문검 장전. 마나는 _cast_skill 차감.
-        오픈 필드(q_wall_reset=False)에서는 시전 시간 Q_CAST_TIME 를 다음 평타 간격에 가산."""
+        """Q 강화/리셋을 장전하고 R 중에는 다음 평타까지 은신 1초를 보장한다.
+
+        R 밖 오픈 필드는 기존 Q_CAST_TIME을 가산하며, 마나는 _cast_skill에서 차감한다.
+        """
         self.q_empowered = True
         self.q_reset_pending = True
         self.cooldowns_remaining["q"] = self._q_cooldown()
-        if not self.q_wall_reset:
+        if self.q_first_wall_reset_only:
+            # DPS 기본 시나리오: 첫 Q만 벽 평캔 0.33초다. 이후 Q는 0.25초 시전이
+            # 끝난 뒤 새 평타 타이머를 시작하므로, 시전 딜레이와 평타 간격을 모두 대기한다.
+            delay = (
+                ANIM_CANCEL_CLIP
+                if not self.q_first_wall_reset_consumed
+                else self.Q_CAST_TIME + super().get_attack_interval()
+            )
+            self.q_first_wall_reset_consumed = True
+            self.attack_timer_override_pending = delay
+            self.q_reset_pending = False
+            # R 중이면 비노출 시작은 기록하지만 최대 0.33초라 밤의 추적자 1초 조건은 미충족.
+            if self.r_active:
+                self.unseen_since = time
+        elif self.r_active:
+            self.unseen_since = time
+            self.cast_lockout_until = max(self.cast_lockout_until, time + self.Q_STEALTH_ATTACK_DELAY)
+        elif not self.q_wall_reset:
             # 오픈 필드: Q 시전 시간이 평타 사이 순수 손실 (캔슬 불가, 가산형)
             self.cast_delay_pending += self.Q_CAST_TIME
         self.cast_spell(time)

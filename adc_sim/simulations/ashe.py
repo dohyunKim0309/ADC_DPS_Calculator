@@ -3,14 +3,16 @@ import matplotlib.pyplot as plt
 # import os # JSON 저장 제거
 # from datetime import datetime # JSON 저장 제거
 from adc_sim.champion import Ashe, Jinx, Target
-from adc_sim.items import (
-    KrakenSlayer, InfinityEdge, BerserkerGreaves, BladeOfRuinedKing,
+from adc_sim.core_items import (
+    KrakenSlayer, InfinityEdge, BladeOfRuinedKing,
     TheCollector, YunTalWildarrows, PhantomDancer, HextechScopeC44, Stormrazor, RunaansHurricane, StatikkShiv,
-    GuinsoosRageblade, Terminus, MortalReminder, Bloodthirster, LordDominiksRegards, SerpentsFang, Item, GuardianAngel, MercurialScimitar,
-    Pickaxe, BFSword, ScoutingsSlingshot, LongSword, RecurveBow, Noonquiver, VampiricScepter, HearthboundAxe, Dagger, CloakofAgility,
+    GuinsoosRageblade, Bloodthirster, LordDominiksRegards,
     EssenceReaver, DemonHunterCrossbow
 )
-from adc_sim.settings import SIMULATION_SETTINGS, CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL
+from adc_sim.utility_items import BerserkerGreaves
+from adc_sim.settings import (
+    SIMULATION_SETTINGS, CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL, DEFAULT_DISCOUNT_GAMMA,
+)
 from adc_sim.runes import LethalTempo, CutDown
 from adc_sim.engine import run_simulation
 
@@ -602,8 +604,179 @@ def get_5core_item_set(set_name):
     return []
 
 
-# --- 메인 실행부 ---
-if __name__ == "__main__":
+GAMMA = DEFAULT_DISCOUNT_GAMMA
+HORIZON = 5
+CORE1_CANDIDATES = ["kraken", "yuntal25", "storm", "c44", "bot", "guinsoo", "terminus"]
+CORE2_CANDIDATES = [
+    "kraken", "yuntal25", "storm", "c44", "bot", "pd", "runaan", "terminus", "guinsoo",
+]
+CORE3_CANDIDATES = ["ie", "ldr", "guinsoo", "terminus"]
+CORE4_CANDIDATES = [
+    "ie", "ldr", "storm", "c44", "pd", "runaan", "kraken", "statikk", "guinsoo", "terminus",
+]
+CORE5_CANDIDATES = ["bt", "bot", "c44", "kraken", "pd", "ga", "mercurial"]
+CANDIDATES_BY_SLOT = {
+    1: CORE1_CANDIDATES,
+    2: CORE2_CANDIDATES,
+    3: CORE3_CANDIDATES,
+    4: CORE4_CANDIDATES,
+    5: CORE5_CANDIDATES,
+}
+ITEM_SHORT = {
+    "kraken": "Krk", "yuntal25": "Yun", "storm": "Storm", "c44": "C44",
+    "bot": "Bot", "guinsoo": "Gui", "terminus": "Terminus", "pd": "PD",
+    "runaan": "Runaan", "ie": "IE", "ldr": "LDR", "statikk": "Statikk",
+    "bt": "BT", "ga": "GA", "mercurial": "Mercurial",
+}
+
+
+class SimCache:
+    """아이템 집합과 윤탈 구매 시점을 키로 애쉬 DPS·골드를 메모이즈한다."""
+
+    def __init__(self, doran_key, boots_key, rune_as_bonus):
+        """시작 패키지를 고정한 애쉬 receding-horizon 캐시를 초기화한다."""
+        self.kw = {
+            "doran_key": doran_key,
+            "boots_key": boots_key,
+            "rune_as_bonus": rune_as_bonus,
+        }
+        self.cache = {}
+        self.hits = 0
+        self.misses = 0
+
+    def _key(self, items_tuple):
+        """순서 무관 아이템 집합과 윤탈이 현재 구매 슬롯인지 여부를 반환한다."""
+        sorted_items = tuple(sorted(items_tuple))
+        yuntal_last = bool(items_tuple) and "yuntal25" in sorted_items and items_tuple[-1] == "yuntal25"
+        return sorted_items, yuntal_last
+
+    def sim(self, items_tuple):
+        """완성 코어 경로의 현재 티어 DPS와 총 골드를 반환한다."""
+        key = self._key(items_tuple)
+        if key in self.cache:
+            self.hits += 1
+            return self.cache[key]
+        self.misses += 1
+        result = simulate_ashe_core_path(list(items_tuple), len(items_tuple), **self.kw)
+        self.cache[key] = result
+        return result
+
+
+def _enumerate_future_combos(fixed, from_slot, horizon=HORIZON):
+    """확정 코어 뒤에서 중복·관통 제약을 만족하는 애쉬 미래 조합을 생성한다."""
+    remaining = list(range(from_slot, horizon + 1))
+
+    def rec(index, current):
+        """현재 슬롯 이후의 합법적인 아이템 조합을 재귀 생성한다."""
+        if index == len(remaining):
+            yield tuple(current)
+            return
+        slot = remaining[index]
+        for item_key in CANDIDATES_BY_SLOT[slot]:
+            if item_key in fixed or item_key in current:
+                continue
+            candidate = tuple(fixed) + tuple(current) + (item_key,)
+            if not pen_rule_ok(candidate):
+                continue
+            current.append(item_key)
+            yield from rec(index + 1, current)
+            current.pop()
+
+    yield from rec(0, [])
+
+
+def _score_combo(cache, fixed, combo, from_slot, dps_prev, gold_prev, gamma, horizon):
+    """미래 코어별 마지널 DPG 할인합을 계산해 조합 점수로 반환한다."""
+    full_path = list(fixed) + list(combo)
+    score = 0.0
+    for offset, tier in enumerate(range(from_slot, horizon + 1)):
+        dps, gold = cache.sim(tuple(full_path[:tier]))
+        delta_gold = gold - gold_prev
+        marginal_dpg = (dps - dps_prev) / (delta_gold / 1000.0) if delta_gold > 0 else 0.0
+        score += (gamma ** offset) * marginal_dpg
+    return score
+
+
+def solve_greedy(cache, gamma=None, horizon=HORIZON, top_alt=3):
+    """매 슬롯에서 미래 할인 마지널 DPG를 재탐색해 애쉬 1~5코어 궤적을 반환한다."""
+    if gamma is None:
+        gamma = GAMMA
+    fixed = []
+    steps = []
+    dps_prev, gold_prev = 0.0, 0.0
+    for slot in range(1, horizon + 1):
+        best_score = None
+        best_combo = None
+        alternatives_by_item = {}
+        alternatives_path = {}
+        for combo in _enumerate_future_combos(fixed, slot, horizon):
+            score = _score_combo(cache, fixed, combo, slot, dps_prev, gold_prev, gamma, horizon)
+            item_key = combo[0]
+            if item_key not in alternatives_by_item or score > alternatives_by_item[item_key]:
+                alternatives_by_item[item_key] = score
+                alternatives_path[item_key] = combo
+            if best_score is None or score > best_score:
+                best_score, best_combo = score, combo
+        if best_combo is None:
+            break
+        fixed.append(best_combo[0])
+        dps_now, gold_now = cache.sim(tuple(fixed))
+        delta_gold = gold_now - gold_prev
+        marginal_dpg = (
+            (dps_now - dps_prev) / (delta_gold / 1000.0) if delta_gold > 0 else 0.0
+        )
+        ranked = sorted(alternatives_by_item.items(), key=lambda pair: pair[1], reverse=True)[:top_alt]
+        steps.append({
+            "slot": slot,
+            "item": best_combo[0],
+            "score": best_score,
+            "dps": dps_now,
+            "gold": gold_now,
+            "marginal_dpg": marginal_dpg,
+            "future_path_winner": best_combo,
+            "alternatives": [
+                {"item": key, "score": score, "future_path": alternatives_path[key]}
+                for key, score in ranked
+            ],
+            "baseline_dps_prev": dps_prev,
+            "baseline_gold_prev": gold_prev,
+        })
+        dps_prev, gold_prev = dps_now, gold_now
+    return {"trajectory": fixed, "steps": steps}
+
+
+def print_scenario(label, out, cache, gamma=None):
+    """애쉬 receding-horizon 최종 궤적과 슬롯별 선택·대안을 출력한다."""
+    if gamma is None:
+        gamma = GAMMA
+    print(f"\n{'=' * 24}  Ashe · {label}  {'=' * 24}")
+    print(f"γ={gamma}, horizon={HORIZON} | 최종 궤적: "
+          f"{' → '.join(ITEM_SHORT.get(key, key) for key in out['trajectory'])}")
+    print(f"시뮬 캐시: {cache.hits} hits / {cache.misses} misses")
+    for step in out["steps"]:
+        alternatives = " / ".join(
+            f"{ITEM_SHORT.get(alt['item'], alt['item'])}:{alt['score']:.1f}"
+            for alt in step["alternatives"]
+        )
+        print(
+            f"  {step['slot']}C → {ITEM_SHORT.get(step['item'], step['item']):<10} | "
+            f"DPS {step['dps']:>7.1f} | Gold {step['gold']:>5.0f} | "
+            f"MarginalDPG {step['marginal_dpg']:>7.2f} | Score {step['score']:>7.2f} | {alternatives}"
+        )
+
+
+def main(gamma=None):
+    """애쉬의 두 ADC 패키지를 베인식 receding-horizon으로 탐색한다."""
+    if gamma is None:
+        gamma = GAMMA
+    for package in ADC_PACKAGES:
+        cache = SimCache(package["doran"], package["boots"], package["rune_as"])
+        print_scenario(package["label"], solve_greedy(cache, gamma=gamma), cache, gamma=gamma)
+
+
+# --- 교체 전 메인 실행부(호환 모드) ---
+def main_legacy_ranking():
+    """교체 전 애쉬 4코어 전수 랭킹·5코어 확장 그래프를 실행한다."""
     # 기존 1/2/3코어 단순 DPS 비교 시뮬레이션/그래프는 비활성화
     # (필요 시 이전 버전에서 복원 가능)
     if False:
@@ -1115,7 +1288,6 @@ if __name__ == "__main__":
     plt.legend(loc="best", fontsize=9)
     plt.tight_layout()
     plt.show()
-
     # 2번 그래프: 징크스 기준 빌드 vs 애쉬 Top1 vs 애쉬 대조군
     ashe_top1 = ranked_by_dpg[0]
     plt.figure(figsize=(11, 7))
@@ -1165,3 +1337,27 @@ if __name__ == "__main__":
     plt.legend(loc="best", fontsize=9)
     plt.tight_layout()
     plt.show()
+
+
+def run_cli(args=None):
+    """기본 receding-horizon 또는 `legacy-ranking` 호환 모드로 애쉬 CLI를 실행한다."""
+    import sys
+
+    cli_args = list(sys.argv[1:] if args is None else args)
+    if cli_args and cli_args[0] == "legacy-ranking":
+        main_legacy_ranking()
+        return
+    gamma = GAMMA
+    if cli_args:
+        try:
+            gamma = float(cli_args[0])
+            if not 0.0 < gamma <= 1.0:
+                raise ValueError
+        except ValueError:
+            print(f"[warn] gamma 인자 파싱 실패({cli_args[0]!r}) — 기본 {GAMMA} 사용")
+            gamma = GAMMA
+    main(gamma=gamma)
+
+
+if __name__ == "__main__":
+    run_cli()

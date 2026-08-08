@@ -4,6 +4,9 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent  # repo root (adc_sim/settings.py 기준 두 단계 상위)
 
+# 프로젝트 전체 할인 탐색·랭킹의 기본 감마(사용자 확정 2026-07-27).
+DEFAULT_DISCOUNT_GAMMA = 0.8
+
 # 시뮬레이션 설정
 SIMULATION_SETTINGS = {
     # 그래프 스타일 설정
@@ -42,7 +45,7 @@ def get_result_export_settings():
 RANKING_SCORING = {
     "mode": "discounted",
     "fixed_raw": [4.0, 4.0, 3.0, 3.0],
-    "gamma": 0.9,
+    "gamma": DEFAULT_DISCOUNT_GAMMA,
 }
 
 

@@ -22,8 +22,35 @@ def calculate_mitigation(raw_phys, raw_magic, target, champion):
     return actual_phys, actual_magic
 
 
+def _get_sustain_rates(champion):
+    """Return total lifesteal and omnivamp rates from inventory and the selected rune."""
+    lifesteal = sum(item.stats.get("lifesteal", 0.0) for item in champion.inventory)
+    lifesteal += float(getattr(champion, "rune_lifesteal", 0.0))
+    omnivamp = sum(item.stats.get("omnivamp", 0.0) for item in champion.inventory)
+    return lifesteal, omnivamp
+
+
+def _build_sustain_metrics(champion, kill_time, total_damage, lifesteal_damage, botrk_damage):
+    """Return potential healing totals without changing combat health or DPS behavior."""
+    lifesteal_rate, omnivamp_rate = _get_sustain_rates(champion)
+    lifesteal_healing = lifesteal_damage * lifesteal_rate
+    omnivamp_healing = total_damage * omnivamp_rate
+    total_healing = lifesteal_healing + omnivamp_healing
+    return {
+        "lifesteal_rate": lifesteal_rate,
+        "omnivamp_rate": omnivamp_rate,
+        "lifesteal_eligible_damage": lifesteal_damage,
+        "omnivamp_eligible_damage": total_damage,
+        "botrk_lifesteal_damage": botrk_damage,
+        "lifesteal_healing": lifesteal_healing,
+        "omnivamp_healing": omnivamp_healing,
+        "total_healing": total_healing,
+        "healing_per_second": total_healing / kill_time if kill_time > 0 else total_healing,
+    }
+
+
 def run_simulation(champion, target, verbose=True, skill_plan=None, respawn_to_full_kills=2):
-    """이벤트 루프. 처치 시 오버킬을 이월한 채 타깃을 풀피로 리필해
+    """이벤트 루프. 처치 시 오버킬을 다음 체력바에 이월하지 않고 타깃을 풀피로 리필해
     respawn_to_full_kills 회만큼 처치할 때까지 지속(지속딜 측정).
 
     같은 크기의 체력바를 여러 번 처치 → 시작 버스트(W/궁캔슬)가 여러 바에 분산되어
@@ -38,6 +65,8 @@ def run_simulation(champion, target, verbose=True, skill_plan=None, respawn_to_f
     history = [(0.0, target.current_hp)]
     attack_count = 0
     total_damage_dealt = 0.0
+    lifesteal_eligible_damage = 0.0
+    botrk_lifesteal_damage = 0.0
     kills_done = 0
 
     champion.init_combat_state(skill_plan)
@@ -68,6 +97,10 @@ def run_simulation(champion, target, verbose=True, skill_plan=None, respawn_to_f
             skill_events = champion.pop_due_skill_events(current_time, target)
             for skill_name, s_phys, s_magic, is_skill_hit in skill_events:
                 setattr(champion, "_combat_time", current_time)
+
+                # 시전이 중인 동안은 평타 딜레이가 소비되지 않으므로,
+                # 남은 평타 딜레이 앞에 해당 스킬의 시전시간을 더한다.
+                next_attack_in += max(0.0, champion.get_attack_delay_extension(skill_name))
 
                 skill_dmg = 0.0
                 if is_skill_hit:
@@ -106,8 +139,15 @@ def run_simulation(champion, target, verbose=True, skill_plan=None, respawn_to_f
                     kills_done += 1
                     if kills_done >= respawn_to_full_kills:
                         break
-                    target.current_hp += target.max_hp  # 오버킬 이월 + 풀피 리필
+                    target.current_hp = target.max_hp  # 다음 체력바는 오버킬 차감 없이 풀피 시작
                     break  # 이번 스텝의 남은 스킬 이벤트는 다음 바로 넘김
+
+        # 스킬이 다음 평타 타이머를 직접 지정하는 선택적 훅.
+        # 기본 None이라 기존 챔피언은 불변이며, 베인 DPS 모드가 첫 Q=0.33초/이후 Q=즉시로 사용한다.
+        attack_timer_override = getattr(champion, "attack_timer_override_pending", None)
+        if attack_timer_override is not None:
+            next_attack_in = max(0.0, attack_timer_override)
+            champion.attack_timer_override_pending = None
 
         # 시전 시간 → 평타 지연. 두 방식(챔피언이 스킬 시전 시 설정):
         #  · 캔슬 가능(흡수형) cast_lockout_until: 이 시각까지 평타 불가. 평타 타이머는
@@ -131,6 +171,22 @@ def run_simulation(champion, target, verbose=True, skill_plan=None, respawn_to_f
 
             actual_phys, actual_magic = calculate_mitigation(raw_phys, raw_magic, target, champion)
             total_damage = actual_phys + actual_magic + phys_true_base + phys_true_onhit
+
+            # 생명력 흡수 대상은 평타 본체와 몰왕 추가 피해만 분리한다.
+            actual_base_phys, actual_base_magic = calculate_mitigation(
+                p_base, m_base, target, champion,
+            )
+            botrk_raw_phys, botrk_raw_magic, botrk_true = getattr(
+                champion, "_last_botrk_onhit_raw", (0.0, 0.0, 0.0),
+            )
+            actual_botrk_phys, actual_botrk_magic = calculate_mitigation(
+                botrk_raw_phys, botrk_raw_magic, target, champion,
+            )
+            actual_botrk = actual_botrk_phys + actual_botrk_magic + botrk_true
+            lifesteal_eligible_damage += (
+                actual_base_phys + actual_base_magic + phys_true_base + actual_botrk
+            )
+            botrk_lifesteal_damage += actual_botrk
             if champion.rune and hasattr(champion.rune, "on_damage_dealt"):
                 champion.rune.on_damage_dealt(champion, total_damage)
             if champion.sub_rune and hasattr(champion.sub_rune, "on_damage_dealt"):
@@ -158,7 +214,7 @@ def run_simulation(champion, target, verbose=True, skill_plan=None, respawn_to_f
                 kills_done += 1
                 if kills_done >= respawn_to_full_kills:
                     break
-                target.current_hp += target.max_hp  # 오버킬 이월 + 풀피 리필
+                target.current_hp = target.max_hp  # 다음 체력바는 오버킬 차감 없이 풀피 시작
 
             next_attack_in = champion.get_attack_interval()
 
@@ -177,5 +233,13 @@ def run_simulation(champion, target, verbose=True, skill_plan=None, respawn_to_f
 
     if verbose:
         print(f"--- Killed in {kill_time:.3f}s | DPS: {dps:.2f} ---")
+
+    champion.sustain_metrics = _build_sustain_metrics(
+        champion,
+        kill_time,
+        total_damage_dealt,
+        lifesteal_eligible_damage,
+        botrk_lifesteal_damage,
+    )
 
     return history, dps, kill_time

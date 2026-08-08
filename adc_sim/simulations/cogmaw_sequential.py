@@ -1,4 +1,4 @@
-"""코그모 순차 최적 빌드 탐색 — 미래 할인 DP (γ=0.9).
+"""코그모 순차 최적 빌드 탐색 — 미래 할인 DP (프로젝트 기본 γ=0.8).
 
 기존 랭킹(완성 경로 일괄 가중)과 달리, j코어 상태에서 "다음 아이템"을
 j+1~5코어 파워의 γ-할인합 최대화로 선택한다(사용자 제안 방법론).
@@ -10,10 +10,11 @@ from adc_sim.simulations.cogmaw import (
 )
 from adc_sim.data.items_data import ADC_PACKAGES, pen_rule_ok, ARMOR_PEN_EXCLUSIVE as PEN_EXCLUSIVE
 from adc_sim.runes import LethalTempo, PressTheAttack
+from adc_sim.settings import DEFAULT_DISCOUNT_GAMMA
 
 # PEN_EXCLUSIVE: 하위호환 재노출(tests/test_cogmaw_sequential.py 임포트용, 미사용).
 # 실제 판정은 legal_next_items 가 공유 pen_rule_ok 로 수행한다.
-GAMMA = 0.9
+GAMMA = DEFAULT_DISCOUNT_GAMMA
 HORIZON = 5
 # 슬롯5 전용 후보 리스트가 없어 1~4티어 합집합 사용(스펙 승인, 추후 조정 지점).
 SLOT5_CANDIDATES = sorted(set().union(*COGMAW_CORE_CANDIDATES.values()))

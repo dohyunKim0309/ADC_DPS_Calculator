@@ -1,5 +1,6 @@
 """C44(Hextech Scope C44) 확대 증폭 — 26.13 버프: 500 거리일 때 최대 10%."""
-from adc_sim.items import HextechScopeC44, Item
+from adc_sim.core_items import HextechScopeC44
+from adc_sim.item_base import Item
 from adc_sim.champion import Champion
 from adc_sim.data.items_registry import create_item_from_key
 

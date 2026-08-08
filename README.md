@@ -72,14 +72,17 @@ Full ranking runs take a few minutes. Case-filter tokens map to the case axes: `
 adc_sim/
   engine.py        # event loop + mitigation
   champion.py      # damage model, champion kits (event-driven skills, mana)
-  items.py         # item behavior classes (on-hit, spellblade, amp hooks)
+  item_base.py     # shared item interface and static runtime state
+  core_items.py    # legendary item behaviors
+  component_items.py # basic/epic component behaviors
+  utility_items.py # starter, boots, and consumable behaviors
   runes.py         # keystones + secondaries (adaptive on-hit split)
   data/
     items_data.py      # item stats/prices — single source of truth
     items_registry.py  # key → configured item instance
     cdragon.py         # Community Dragon connector (patch diffing aid)
   simulations/     # per-champion build search + ranking + reports
-tests/             # 70+ unit & regression tests
+tests/             # 120+ unit & regression tests
 ```
 
 ## Per-patch workflow

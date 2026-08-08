@@ -16,6 +16,7 @@ GOLDEN = {
 }
 GOLDEN_N_ROWS = 4
 GOLDEN_CTRL_WDPG = 74.545329
+GOLDEN_CTRL_WDPG = 97.938660
 
 
 def test_vayne_rank_rows_golden():

@@ -1,10 +1,11 @@
 from adc_sim.champion import Vayne, Target
 import matplotlib.pyplot as plt
-from adc_sim.runes import LethalTempo, PressTheAttack, CutDown
+import time
+from adc_sim.runes import CoupDeGrace, LethalTempo, PressTheAttack, CutDown
 from adc_sim.engine import run_simulation
 from adc_sim.data.items_registry import create_item_from_key
 from adc_sim.data.items_data import pen_rule_ok
-from adc_sim.settings import CORE_WEIGHTS_LABEL
+from adc_sim.settings import CORE_WEIGHTS_LABEL, DEFAULT_DISCOUNT_GAMMA
 from adc_sim.simulations.ashe import build_ashe_like_core_report_meta
 from adc_sim.simulations.ranking_core import rank_builds
 
@@ -33,18 +34,21 @@ def build_target_for_core(core_tier):
 
 def _skill_levels_for_core(core_tier):
     """스킬 선마 Q→W→E, R=lvl 기반. spec §6 포인트정합표. [H-VAYNE-SKILL]
-    core1(lvl9): q5/w3/r1 · core2(11): q5/w4/r2 · core3(13): q5/w5/r2 · core4(15): q5/w5/e3/r2 ·
-    core5(17): q5/w5/e5/r3.
+    core1(lvl9): q5/w2/e1/r1 · core2(11): q5/w3/e1/r2 · core3(13): q5/w5/e1/r2 ·
+    core4(15): q5/w5/e3/r2 · core5(17): q5/w5/e4/r3.
+    각 코어에서 q+w+e+r 합계는 챔피언 레벨과 같다.
     (E 는 DPS 미모델 → e_level 은 배열색인 하한 1 로 floor.)"""
     lvl = CORE_VAYNE_LEVELS[core_tier]["level"]
     q = 5
-    w = {1: 3, 2: 4, 3: 5, 4: 5, 5: 5}[core_tier]
-    e = {1: 1, 2: 1, 3: 1, 4: 3, 5: 5}[core_tier]
+    w = {1: 2, 2: 3, 3: 5, 4: 5, 5: 5}[core_tier]
+    e = {1: 1, 2: 1, 3: 1, 4: 3, 5: 4}[core_tier]
     r = 1 if lvl < 11 else (2 if lvl < 16 else 3)
+    assert q + w + e + r == lvl, "Vayne core skill points must match champion level"
     return q, w, e, r
 
 
 _SUB_RUNE_DEFAULT = CutDown
+VAYNE_RESPAWN_TO_FULL_KILLS = 2
 
 
 def simulate_vayne_core_path(full_path, core_tier, doran_key="doranblade",
@@ -62,7 +66,10 @@ def simulate_vayne_core_path(full_path, core_tier, doran_key="doranblade",
     target = build_target_for_core(core_tier)
     lvl = CORE_VAYNE_LEVELS[core_tier]["level"]
     q, w, e, r = _skill_levels_for_core(core_tier)
-    vayne = Vayne(level=lvl, q_level=q, w_level=w, e_level=e, r_level=r)
+    vayne = Vayne(
+        level=lvl, q_level=q, w_level=w, e_level=e, r_level=r,
+        q_first_wall_reset_only=True,
+    )
     vayne.set_rune(keystone_cls())
     if sub_rune_cls is not None:
         vayne.set_sub_rune(sub_rune_cls())
@@ -88,7 +95,10 @@ def simulate_vayne_core_path(full_path, core_tier, doran_key="doranblade",
         "auto_cast": {"q": True, "r": False},  # Q 쿨마다
         "auto_order": ["q"],
     }
-    _, dps, _ = run_simulation(vayne, target, verbose=False, skill_plan=skill_plan, respawn_to_full_kills=2)
+    _, dps, _ = run_simulation(
+        vayne, target, verbose=False, skill_plan=skill_plan,
+        respawn_to_full_kills=VAYNE_RESPAWN_TO_FULL_KILLS,
+    )
     return dps, total_cost
 
 
@@ -98,18 +108,327 @@ _VAYNE_TOP1_CACHE = {}  # (keystone_cls, rank_by) → top1 dict (룬·랭킹기�
 
 # 베인 전용 온힛+크리 풀 (spec §6). pen 배타 {ldr, mortal, terminus}.
 CORE1_CANDIDATES = ["botrk", "guinsoo", "kraken", "terminus", "wit", "runaan", "pd",
-                    "rfc", "statikk", "yuntal25", "c44", "storm", "collector"]
+                    "rfc", "statikk", "yuntal25", "c44", "storm", "collector", "umbral", "essence"]
 CORE2_CANDIDATES = ["botrk", "guinsoo", "kraken", "terminus", "wit", "runaan", "pd",
-                    "ie", "rfc", "collector", "yuntal25", "statikk", "storm"]
-CORE3_CANDIDATES = ["ie", "ldr", "guinsoo", "terminus", "pd", "collector", "wit", "kraken", "storm"]
-CORE4_CANDIDATES = ["ie", "ldr", "pd", "runaan", "rfc", "collector", "kraken", "wit", "statikk", "terminus", "c44", "storm"]
+                    "ie", "rfc", "collector", "yuntal25", "statikk", "storm", "umbral", "essence"]
+CORE3_CANDIDATES = ["ie", "ldr", "guinsoo", "terminus", "pd", "collector", "wit", "kraken", "storm", "umbral", "essence"]
+CORE4_CANDIDATES = ["ie", "ldr", "pd", "runaan", "rfc", "collector", "kraken", "wit", "statikk", "terminus", "c44", "storm", "umbral", "essence"]
 
 ITEM_SHORT = {
     "botrk": "BotRK", "guinsoo": "Gui", "kraken": "Krk", "terminus": "Terminus",
     "wit": "Wit's", "runaan": "Runaan", "pd": "PD", "ie": "IE", "ldr": "LDR",
     "rfc": "RFC", "statikk": "Statikk", "yuntal25": "Yun", "c44": "C44",
     "storm": "Storm", "collector": "Collector",
+    "umbral": "Umbral",
+    "essence": "ER",
 }
+
+# 기본 빌드 탐색 정책: 1~5코어 receding-horizon 마지널 DPG 할인합 최대화.
+GAMMA = DEFAULT_DISCOUNT_GAMMA
+HORIZON = 5
+CORE5_CANDIDATES = list(CORE4_CANDIDATES)
+CANDIDATES_BY_SLOT = {
+    1: list(CORE1_CANDIDATES),
+    2: list(CORE2_CANDIDATES),
+    3: list(CORE3_CANDIDATES),
+    4: list(CORE4_CANDIDATES),
+    5: CORE5_CANDIDATES,
+}
+
+PTA_ALACRITY_SUB_RUNE_SCENARIOS = (
+    ("집중공격 + 민첩함 + 체력차 극복 (Bow+Glut)", PressTheAttack, CutDown, 0.18),
+    ("집중공격 + 민첩함 + 최후의 일격 (Bow+Glut)", PressTheAttack, CoupDeGrace, 0.18),
+)
+
+
+class SimCache:
+    """아이템 집합과 윤탈 구매 시점을 키로 베인 DPS·골드를 메모이즈한다."""
+
+    def __init__(self, keystone_cls, sub_rune_cls, doran_key, boots_key, rune_as_bonus):
+        """룬·시작 패키지를 고정한 독립 시뮬레이션 캐시를 초기화한다."""
+        self.kw = dict(
+            doran_key=doran_key,
+            boots_key=boots_key,
+            rune_as_bonus=rune_as_bonus,
+            keystone_cls=keystone_cls,
+            sub_rune_cls=sub_rune_cls,
+        )
+        self.cache = {}
+        self.hits = 0
+        self.misses = 0
+
+    def _key(self, items_tuple):
+        """순서 무관 아이템 집합과 윤탈이 현재 구매 슬롯인지 여부를 캐시 키로 반환한다."""
+        sorted_items = tuple(sorted(items_tuple))
+        yun_last = ("yuntal25" in sorted_items) and items_tuple[-1] == "yuntal25"
+        return sorted_items, yun_last
+
+    def sim(self, items_tuple):
+        """주어진 순서의 완성 코어들을 장착한 DPS와 총 골드를 반환한다."""
+        key = self._key(items_tuple)
+        if key in self.cache:
+            self.hits += 1
+            return self.cache[key]
+        self.misses += 1
+        tier = len(items_tuple)
+        result = simulate_vayne_core_path(list(items_tuple), tier, **self.kw)
+        self.cache[key] = result
+        return result
+
+
+def _enumerate_future_combos(fixed, from_slot, horizon=HORIZON):
+    """확정 코어 뒤의 중복·관통 제약을 만족하는 미래 아이템 조합을 생성한다."""
+    remaining = list(range(from_slot, horizon + 1))
+
+    def rec(idx, cur):
+        """현재 슬롯부터 가능한 미래 조합을 재귀적으로 생성한다."""
+        if idx == len(remaining):
+            yield tuple(cur)
+            return
+        slot = remaining[idx]
+        for item_key in CANDIDATES_BY_SLOT[slot]:
+            if item_key in cur or item_key in fixed:
+                continue
+            if not pen_rule_ok(tuple(fixed) + tuple(cur) + (item_key,)):
+                continue
+            cur.append(item_key)
+            yield from rec(idx + 1, cur)
+            cur.pop()
+
+    yield from rec(0, [])
+
+
+def _score_combo(cache, fixed, combo, from_slot, dps_prev, gold_prev,
+                 gamma=None, horizon=HORIZON):
+    """미래 조합의 코어별 마지널 DPG를 할인해 합산한 점수와 상세값을 반환한다."""
+    if gamma is None:
+        gamma = GAMMA
+    full = list(fixed) + list(combo)
+    score = 0.0
+    per_tier = []
+    for offset, tier in enumerate(range(from_slot, horizon + 1)):
+        dps, gold = cache.sim(tuple(full[:tier]))
+        delta_dps = dps - dps_prev
+        delta_gold = gold - gold_prev
+        marginal_dpg = delta_dps / (delta_gold / 1000.0) if delta_gold > 0 else 0.0
+        per_tier.append((tier, dps, gold, marginal_dpg))
+        score += (gamma ** offset) * marginal_dpg
+    return score, per_tier
+
+
+def solve_greedy(cache, gamma=None, horizon=HORIZON, top_alt=3, initial_fixed=(),
+                 first_step_horizon=None, second_step_horizon=None):
+    """각 코어에서 미래 할인합을 다시 계산해 1~5코어 궤적과 선택 상세를 반환한다.
+
+    first_step_horizon/second_step_horizon: 각각 1·2코어 선택에만 사용할 lookahead 끝
+    코어. None이면 전체 horizon을 사용한다. 이후 코어는 항상 전체 horizon까지 재탐색한다.
+    """
+    if gamma is None:
+        gamma = GAMMA
+    if first_step_horizon is None:
+        first_step_horizon = horizon
+    if second_step_horizon is None:
+        second_step_horizon = horizon
+    if not 1 <= first_step_horizon <= horizon:
+        raise ValueError("first_step_horizon must be within 1..horizon")
+    if not 2 <= second_step_horizon <= horizon:
+        raise ValueError("second_step_horizon must be within 2..horizon")
+    fixed = list(initial_fixed)
+    if fixed:
+        dps_prev, gold_prev = cache.sim(tuple(fixed))
+    else:
+        dps_prev, gold_prev = 0.0, 0.0
+    steps = []
+
+    for index, item_key in enumerate(fixed, start=1):
+        dps_now, gold_now = cache.sim(tuple(fixed[:index]))
+        if index == 1:
+            previous_dps, previous_gold = 0.0, 0.0
+        else:
+            previous_dps, previous_gold = cache.sim(tuple(fixed[:index - 1]))
+        delta_gold = gold_now - previous_gold
+        marginal_dpg = (
+            (dps_now - previous_dps) / (delta_gold / 1000.0)
+            if delta_gold > 0 else 0.0
+        )
+        steps.append({
+            "slot": index,
+            "item": item_key,
+            "score": None,
+            "dps": dps_now,
+            "gold": gold_now,
+            "marginal_dpg": marginal_dpg,
+            "future_path_winner": tuple(fixed[index - 1:]),
+            "alternatives": [],
+            "baseline_dps_prev": previous_dps,
+            "baseline_gold_prev": previous_gold,
+            "fixed_by_user": True,
+        })
+
+    for slot in range(len(fixed) + 1, horizon + 1):
+        if slot == 1:
+            lookahead_horizon = first_step_horizon
+        elif slot == 2:
+            lookahead_horizon = second_step_horizon
+        else:
+            lookahead_horizon = horizon
+        best_score = None
+        best_combo = None
+        alternatives_by_item = {}
+        alternative_details = {}
+
+        for combo in _enumerate_future_combos(fixed, slot, lookahead_horizon):
+            score, per_tier = _score_combo(
+                cache, fixed, combo, slot, dps_prev, gold_prev,
+                gamma=gamma, horizon=lookahead_horizon,
+            )
+            pick_item = combo[0]
+            if pick_item not in alternatives_by_item or score > alternatives_by_item[pick_item]:
+                alternatives_by_item[pick_item] = score
+                alternative_details[pick_item] = (combo, per_tier)
+            if best_score is None or score > best_score:
+                best_score = score
+                best_combo = combo
+
+        if best_combo is None:
+            break
+
+        picked = best_combo[0]
+        fixed.append(picked)
+        dps_now, gold_now = cache.sim(tuple(fixed))
+        delta_gold = gold_now - gold_prev
+        marginal_dpg = (
+            (dps_now - dps_prev) / (delta_gold / 1000.0)
+            if delta_gold > 0 else 0.0
+        )
+        ranked_alternatives = sorted(
+            alternatives_by_item.items(), key=lambda pair: pair[1], reverse=True,
+        )[:top_alt]
+        alternatives = []
+        for item_key, score in ranked_alternatives:
+            future_path, _ = alternative_details[item_key]
+            alternatives.append({
+                "item": item_key,
+                "score": score,
+                "future_path": future_path,
+            })
+        steps.append({
+            "slot": slot,
+            "item": picked,
+            "score": best_score,
+            "dps": dps_now,
+            "gold": gold_now,
+            "marginal_dpg": marginal_dpg,
+            "future_path_winner": best_combo,
+            "alternatives": alternatives,
+            "baseline_dps_prev": dps_prev,
+            "baseline_gold_prev": gold_prev,
+        })
+        dps_prev, gold_prev = dps_now, gold_now
+
+    return {"trajectory": fixed[:horizon], "steps": steps}
+
+
+def _fmt_items(seq):
+    """내부 아이템 키 시퀀스를 출력용 약칭 문자열로 변환한다."""
+    return "-".join(ITEM_SHORT.get(key, key) for key in seq)
+
+
+def print_scenario(label, out, cache_stats, gamma=None):
+    """한 receding-horizon 시나리오의 궤적·코어별 선택·대안을 표로 출력한다."""
+    if gamma is None:
+        gamma = GAMMA
+    print(f"\n{'=' * 26}  {label}  {'=' * 26}")
+    print(f"γ={gamma}, horizon={HORIZON}. 마지널 DPG 할인합 최대화 그리디.")
+    lvl_note = " · ".join(
+        f"C{tier}=lvl{CORE_VAYNE_LEVELS[tier]['level']}"
+        for tier in range(1, HORIZON + 1)
+    )
+    print(f"레벨: {lvl_note}")
+    total_cache = cache_stats["hits"] + cache_stats["misses"]
+    hit_rate = cache_stats["hits"] / total_cache * 100.0 if total_cache else 0.0
+    print(
+        f"시뮬 캐시: {cache_stats['hits']:>7} hits / {cache_stats['misses']:>6} misses "
+        f"({hit_rate:.1f}% hit)"
+    )
+    print(f"\n최종 궤적: {' → '.join(ITEM_SHORT.get(key, key) for key in out['trajectory'])}")
+    print()
+    print(
+        f"{'Slot':>4} | {'Pick':<12} | {'DPS':>9} | {'Gold':>6} | {'ΔDPS':>9} | "
+        f"{'ΔGold':>6} | {'MarginalDPG':>11} | {'Score':>8} | 대안(top3)"
+    )
+    print("-" * 130)
+    for step in out["steps"]:
+        delta_dps = step["dps"] - step["baseline_dps_prev"]
+        delta_gold = step["gold"] - step["baseline_gold_prev"]
+        alternatives = " / ".join(
+            f"{ITEM_SHORT.get(alt['item'], alt['item'])}:{alt['score']:.1f}"
+            for alt in step["alternatives"]
+        )
+        score_text = "  fixed " if step.get("fixed_by_user") else f"{step['score']:>8.2f}"
+        pick_label = ITEM_SHORT.get(step["item"], step["item"])
+        if step.get("fixed_by_user"):
+            pick_label = f"[{pick_label}]"
+        print(
+            f"{step['slot']:>4} | {pick_label:<12} | {step['dps']:>9.1f} | "
+            f"{step['gold']:>6} | {delta_dps:>9.1f} | {delta_gold:>6} | "
+            f"{step['marginal_dpg']:>11.2f} | {score_text} | {alternatives}"
+        )
+    print("\n[각 슬롯 결정 시 상정한 미래 조합 (winner)]")
+    for step in out["steps"]:
+        future = step["future_path_winner"]
+        rest = future[1:] if len(future) > 1 else ()
+        rest_text = "-".join(ITEM_SHORT.get(key, key) for key in rest) if rest else "(none)"
+        print(
+            f"  Slot {step['slot']} → {ITEM_SHORT.get(step['item'], step['item'])} "
+            f"+ 상정 미래: {rest_text}"
+        )
+
+
+def _run_scenarios(scenarios, gamma):
+    """룬·패키지 시나리오들을 receding-horizon으로 탐색해 결과 표를 출력한다."""
+    for label, keystone, sub_rune, rune_as in scenarios:
+        started_at = time.time()
+        cache = SimCache(
+            keystone, sub_rune, doran_key="doranbow",
+            boots_key="glutton", rune_as_bonus=rune_as,
+        )
+        out = solve_greedy(cache, gamma=gamma)
+        elapsed = time.time() - started_at
+        print_scenario(
+            label, out, {"hits": cache.hits, "misses": cache.misses}, gamma=gamma,
+        )
+        print(f"[elapsed] {elapsed:.1f}s")
+
+
+def main(gamma=None):
+    """8개 기본 케이스를 지정 순서로 실행한다.
+
+    순서는 치속/집공 → 핏빛길/민첩함 → 체력차 극복/최후의 일격이며,
+    모든 케이스에서 도란의 활·탐식의 장화를 고정한다.
+    """
+    if gamma is None:
+        gamma = GAMMA
+    scenarios = [
+        # 출력 정책: 치속 → 집공, 각 룬에서 핏빛길 → 민첩함,
+        # 각 패키지에서 체력차 극복 → 최후의 일격.
+        ("치명적속도 + 핏빛길 + 체력차 극복 (Bow+Glut)", LethalTempo, CutDown, 0.0),
+        ("치명적속도 + 핏빛길 + 최후의 일격 (Bow+Glut)", LethalTempo, CoupDeGrace, 0.0),
+        ("치명적속도 + 민첩함 + 체력차 극복 (Bow+Glut)", LethalTempo, CutDown, 0.18),
+        ("치명적속도 + 민첩함 + 최후의 일격 (Bow+Glut)", LethalTempo, CoupDeGrace, 0.18),
+        ("집중공격 + 핏빛길 + 체력차 극복 (Bow+Glut)", PressTheAttack, CutDown, 0.0),
+        ("집중공격 + 핏빛길 + 최후의 일격 (Bow+Glut)", PressTheAttack, CoupDeGrace, 0.0),
+        ("집중공격 + 민첩함 + 체력차 극복 (Bow+Glut)", PressTheAttack, CutDown, 0.18),
+        ("집중공격 + 민첩함 + 최후의 일격 (Bow+Glut)", PressTheAttack, CoupDeGrace, 0.18),
+    ]
+    _run_scenarios(scenarios, gamma)
+
+
+def main_pta_alacrity_sub_runes(gamma=None):
+    """집공·민첩함 고정 후 최후의 일격과 체력차 극복 시나리오를 각각 탐색한다."""
+    if gamma is None:
+        gamma = GAMMA
+    _run_scenarios(PTA_ALACRITY_SUB_RUNE_SCENARIOS, gamma)
 
 
 def _build_all_paths():
@@ -236,7 +555,8 @@ def _run_vayne_ranking(keystone_cls, keystone_label, all_paths):
     return ranked, best_control
 
 
-if __name__ == "__main__":
+def main_legacy_ranking():
+    """보존된 기존 1~4코어 전수 랭킹 표와 치속 기준 그래프를 실행한다."""
     print("\n=== Vayne Build Path Power Spike (W/Q auto + R@0, 1->4 Core) ===")
     all_paths = _build_all_paths()
     print(f"Total unique paths in search space: {len(all_paths)}")
@@ -271,3 +591,38 @@ if __name__ == "__main__":
     plt.xlabel("Total Gold at Core Timing"); plt.ylabel("DPS (AA + W silverbolts + Q, R@0)")
     plt.grid(True, alpha=0.3); plt.legend(loc="best", fontsize=8); plt.tight_layout()
     plt.show()
+
+
+def run_cli(args=None):
+    """베인 CLI를 실행한다.
+
+    기본은 1~5코어 receding-horizon이며, `legacy-ranking`은 기존 1~4코어 전수 랭킹,
+    `pta-alacrity-subs`는 집공·민첩함 보조룬 비교를 실행한다.
+    """
+    import sys
+
+    cli_args = list(sys.argv[1:] if args is None else args)
+    mode = "default"
+    if cli_args and cli_args[0] in {"legacy-ranking", "pta-alacrity-subs"}:
+        mode = cli_args.pop(0)
+    if mode == "legacy-ranking":
+        main_legacy_ranking()
+        return
+
+    gamma = GAMMA
+    if cli_args:
+        try:
+            gamma = float(cli_args[0])
+            if not (0.0 < gamma <= 1.0):
+                raise ValueError
+        except ValueError:
+            print(f"[warn] gamma 인자 파싱 실패({cli_args[0]!r}) — 기본 {GAMMA} 사용")
+            gamma = GAMMA
+    if mode == "pta-alacrity-subs":
+        main_pta_alacrity_sub_runes(gamma=gamma)
+    else:
+        main(gamma=gamma)
+
+
+if __name__ == "__main__":
+    run_cli()

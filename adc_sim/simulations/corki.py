@@ -1,30 +1,7 @@
 from adc_sim.champion import Corki, Target
-from adc_sim.items import (
-    Manamune,
-    TrinityForce,
-    StatikkShiv,
-    KrakenSlayer,
-    GuinsoosRageblade,
-    Stormrazor,
-    EssenceReaver,
-    InfinityEdge,
-    TheCollector,
-    YunTalWildarrows,
-    BladeOfRuinedKing,
-    Bloodthirster,
-    Terminus,
-    LordDominiksRegards,
-    MortalReminder,
-    PhantomDancer,
-    RunaansHurricane,
-    ImmortalShieldbow,
-    RapidFirecannon,
-    Plated_Steelcaps,
-    BerserkerGreaves,
-)
 from adc_sim.engine import run_simulation
 from adc_sim.runes import Conqueror, LethalTempo, CutDown
-from adc_sim.settings import CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL
+from adc_sim.settings import CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL, DEFAULT_DISCOUNT_GAMMA
 import matplotlib.pyplot as plt
 import random
 
@@ -69,7 +46,13 @@ def build_target_for_core(core_tier):
 # 윤탈 기본 crit: 과거 corki 는 0.05 였으나, 데미지 경로는 항상 명시적 crit 을 전달하므로
 # 통합 기본값(0.25)으로 합쳐도 결과 불변(검증됨).
 from adc_sim.data.items_registry import create_item_from_key
-from adc_sim.data.items_data import DORAN_OPTIONS, DORAN_SHORT, pen_rule_ok
+from adc_sim.data.items_data import BLOODLINE_LIFESTEAL, DORAN_OPTIONS, DORAN_SHORT, pen_rule_ok
+
+
+# 코르키 전용 랭킹 조건: 닌자의 신발(Plated Steelcaps) + 전설: 핏빛 길 고정.
+# 핏빛 길은 DPS를 올리지 않지만 sustain 지표가 룬 선택을 정확히 반영하도록 피흡률을 기록한다.
+CORKI_FORCED_SHOE = "plated"
+CORKI_FORCED_LEGEND_RUNE = "bloodline"
 
 
 def short_name(item_key):
@@ -116,7 +99,11 @@ def rune_short(rune_key):
 
 
 def simulate_corki_core_path(full_path, shoe_key, rune_key, core_tier, include_w=True, doran_key=None):
-    """Simulate Corki DPS and total gold for the configured shoe/rune/path."""
+    """Simulate Corki DPS and gold with the forced Bloodline legend rune.
+
+    ``shoe_key`` remains explicit so existing callers can run comparison experiments, while
+    Corki's dedicated ranking passes ``CORKI_FORCED_SHOE`` exclusively.
+    """
     target = build_target_for_core(core_tier)
     level_cfg = CORE_LEVELS[core_tier]
     skill_cfg = CORKI_SKILL_LEVELS[core_tier]
@@ -129,6 +116,7 @@ def simulate_corki_core_path(full_path, shoe_key, rune_key, core_tier, include_w
     )
     corki.set_rune(create_rune_from_key(rune_key))
     corki.set_sub_rune(CutDown())
+    corki.rune_lifesteal = BLOODLINE_LIFESTEAL
 
     doran_items = [create_item_from_key(doran_key)] if doran_key else []
     items = doran_items + [create_item_from_key(shoe_key)]
@@ -177,11 +165,12 @@ def build_corki_core_report_meta(full_path, shoe_key, rune_key, core_tier):
         "active_build": "-".join(active_path),
         "shoe": shoe_key,
         "rune": rune_key,
+        "legend_rune": CORKI_FORCED_LEGEND_RUNE,
     }
 
 
 def get_corki_4core_top1_build(rank_by="dpg"):
-    """현재 simulation_corki 랭킹 기준(4코어, 1:1:1:1) top1 빌드 반환.
+    """닌탑+핏빛길 고정 Corki 랭킹 기준(4코어, 1:1:1:1) top1 빌드 반환.
 
     rank_by="dpg"(기본)=컨트롤 대비 상대 DPG 가중합 1위, "dps"=원시 DPS 가중합 1위.
     """
@@ -195,11 +184,11 @@ def get_corki_4core_top1_build(rank_by="dpg"):
         "collector", "rfc", "storm", "yuntal",
     ]
     core4_candidates = ["ie", "ldr", "botrk", "bt", "kraken", "yuntal", "storm", "essence", "trinity", "statikk"]
-    shoe_candidates = ["plated", "berserker"]
+    shoe_candidates = [CORKI_FORCED_SHOE]
     rune_candidates = ["conq", "lt"]
 
     control_path = ("trinity", "muramana", "collector", "ldr")
-    control_shoe = "plated"
+    control_shoe = CORKI_FORCED_SHOE
     control_rune = "conq"
 
     results = []
@@ -277,8 +266,176 @@ def get_corki_4core_top1_build(rank_by="dpg"):
     return ranked[0]
 
 
-if __name__ == "__main__":
-    print(f"\n=== Corki 4-Core Efficiency (DPG vs Control, {CORE_WEIGHTS_LABEL}) ===")
+GAMMA = DEFAULT_DISCOUNT_GAMMA
+HORIZON = 5
+CORE12_CANDIDATES = [
+    "muramana", "trinity", "statikk", "kraken", "guinsoo", "storm",
+    "essence", "ie", "collector", "yuntal", "botrk", "terminus",
+]
+CORE3_CANDIDATES = [
+    "ldr", "ie", "mortal", "statikk", "pd", "runaan", "guinsoo", "terminus",
+    "botrk", "essence", "trinity", "muramana", "kraken", "shieldbow",
+    "collector", "rfc", "storm", "yuntal",
+]
+CORE4_CANDIDATES = [
+    "ie", "ldr", "botrk", "bt", "kraken", "yuntal", "storm", "essence",
+    "trinity", "statikk",
+]
+# [Hypothesis] 코르키 전용 5코어 풀이 없으므로 기존 4코어 후보를 재사용한다.
+CORE5_CANDIDATES = list(CORE4_CANDIDATES)
+CANDIDATES_BY_SLOT = {
+    1: CORE12_CANDIDATES,
+    2: CORE12_CANDIDATES,
+    3: CORE3_CANDIDATES,
+    4: CORE4_CANDIDATES,
+    5: CORE5_CANDIDATES,
+}
+
+
+class SimCache:
+    """아이템 집합과 윤탈 구매 시점을 키로 코르키 DPS·골드를 메모이즈한다."""
+
+    def __init__(self, doran_key, rune_key, shoe_key=CORKI_FORCED_SHOE):
+        """도란·키스톤·강제 신발을 고정한 코르키 탐색 캐시를 초기화한다."""
+        self.doran_key = doran_key
+        self.rune_key = rune_key
+        self.shoe_key = shoe_key
+        self.cache = {}
+        self.hits = 0
+        self.misses = 0
+
+    def _key(self, items_tuple):
+        """순서 무관 집합과 윤탈이 현재 구매 슬롯인지 여부를 캐시 키로 반환한다."""
+        sorted_items = tuple(sorted(items_tuple))
+        yuntal_last = bool(items_tuple) and "yuntal" in sorted_items and items_tuple[-1] == "yuntal"
+        return sorted_items, yuntal_last
+
+    def sim(self, items_tuple):
+        """W를 제외한 전용 랭킹 조건에서 현재 티어 DPS와 총 골드를 반환한다."""
+        key = self._key(items_tuple)
+        if key in self.cache:
+            self.hits += 1
+            return self.cache[key]
+        self.misses += 1
+        result = simulate_corki_core_path(
+            list(items_tuple), self.shoe_key, self.rune_key, len(items_tuple),
+            include_w=False, doran_key=self.doran_key,
+        )
+        self.cache[key] = result
+        return result
+
+
+def _corki_path_ok(item_keys):
+    """중복 외 코르키 고유 주문검 배타와 공용 관통 제약 충족 여부를 반환한다."""
+    return not ({"trinity", "essence"} <= set(item_keys)) and pen_rule_ok(item_keys)
+
+
+def _enumerate_future_combos(fixed, from_slot, horizon=HORIZON):
+    """확정 코어 뒤에서 코르키 고유 제약을 만족하는 미래 조합을 생성한다."""
+    remaining = list(range(from_slot, horizon + 1))
+
+    def rec(index, current):
+        """현재 슬롯 이후의 합법적인 아이템 조합을 재귀 생성한다."""
+        if index == len(remaining):
+            yield tuple(current)
+            return
+        for item_key in CANDIDATES_BY_SLOT[remaining[index]]:
+            if item_key in fixed or item_key in current:
+                continue
+            candidate = tuple(fixed) + tuple(current) + (item_key,)
+            if not _corki_path_ok(candidate):
+                continue
+            current.append(item_key)
+            yield from rec(index + 1, current)
+            current.pop()
+
+    yield from rec(0, [])
+
+
+def _score_combo(cache, fixed, combo, from_slot, dps_prev, gold_prev, gamma, horizon):
+    """미래 코어별 마지널 DPG 할인합을 계산해 조합 점수로 반환한다."""
+    full_path = list(fixed) + list(combo)
+    score = 0.0
+    for offset, tier in enumerate(range(from_slot, horizon + 1)):
+        dps, gold = cache.sim(tuple(full_path[:tier]))
+        delta_gold = gold - gold_prev
+        marginal_dpg = (dps - dps_prev) / (delta_gold / 1000.0) if delta_gold > 0 else 0.0
+        score += (gamma ** offset) * marginal_dpg
+    return score
+
+
+def solve_greedy(cache, gamma=None, horizon=HORIZON, top_alt=3):
+    """매 슬롯에서 미래 할인 마지널 DPG를 재탐색해 코르키 1~5코어 궤적을 반환한다."""
+    if gamma is None:
+        gamma = GAMMA
+    fixed, steps = [], []
+    dps_prev, gold_prev = 0.0, 0.0
+    for slot in range(1, horizon + 1):
+        best_score, best_combo = None, None
+        alternatives_by_item, alternatives_path = {}, {}
+        for combo in _enumerate_future_combos(fixed, slot, horizon):
+            score = _score_combo(cache, fixed, combo, slot, dps_prev, gold_prev, gamma, horizon)
+            item_key = combo[0]
+            if item_key not in alternatives_by_item or score > alternatives_by_item[item_key]:
+                alternatives_by_item[item_key], alternatives_path[item_key] = score, combo
+            if best_score is None or score > best_score:
+                best_score, best_combo = score, combo
+        if best_combo is None:
+            break
+        fixed.append(best_combo[0])
+        dps_now, gold_now = cache.sim(tuple(fixed))
+        delta_gold = gold_now - gold_prev
+        marginal_dpg = (dps_now - dps_prev) / (delta_gold / 1000.0) if delta_gold > 0 else 0.0
+        ranked = sorted(alternatives_by_item.items(), key=lambda pair: pair[1], reverse=True)[:top_alt]
+        steps.append({
+            "slot": slot, "item": best_combo[0], "score": best_score,
+            "dps": dps_now, "gold": gold_now, "marginal_dpg": marginal_dpg,
+            "future_path_winner": best_combo,
+            "alternatives": [
+                {"item": key, "score": score, "future_path": alternatives_path[key]}
+                for key, score in ranked
+            ],
+        })
+        dps_prev, gold_prev = dps_now, gold_now
+    return {"trajectory": fixed, "steps": steps}
+
+
+def print_scenario(label, out, cache, gamma=None):
+    """코르키 receding-horizon 최종 궤적과 슬롯별 선택·대안을 출력한다."""
+    if gamma is None:
+        gamma = GAMMA
+    print(f"\n{'=' * 23}  Corki · {label}  {'=' * 23}")
+    print(f"γ={gamma}, horizon={HORIZON} | 최종 궤적: "
+          f"{' → '.join(short_name(key) for key in out['trajectory'])}")
+    print(f"시뮬 캐시: {cache.hits} hits / {cache.misses} misses")
+    for step in out["steps"]:
+        alternatives = " / ".join(
+            f"{short_name(alt['item'])}:{alt['score']:.1f}" for alt in step["alternatives"]
+        )
+        print(
+            f"  {step['slot']}C → {short_name(step['item']):<10} | DPS {step['dps']:>7.1f} | "
+            f"Gold {step['gold']:>5.0f} | MarginalDPG {step['marginal_dpg']:>7.2f} | "
+            f"Score {step['score']:>7.2f} | {alternatives}"
+        )
+
+
+def main(gamma=None):
+    """코르키의 도란·키스톤 조합을 강제 닌탑 조건에서 베인식으로 탐색한다."""
+    if gamma is None:
+        gamma = GAMMA
+    for rune_key in ("conq", "lt"):
+        for doran_key in DORAN_OPTIONS:
+            cache = SimCache(doran_key, rune_key)
+            label = f"{DORAN_SHORT[doran_key]}+{short_name(CORKI_FORCED_SHOE)}+{rune_short(rune_key)}"
+            print_scenario(label, solve_greedy(cache, gamma=gamma), cache, gamma=gamma)
+
+
+def main_legacy_ranking():
+    """교체 전 코르키 4코어 전수 랭킹·그래프를 실행한다."""
+    print(
+        f"\n=== Corki 4-Core Efficiency "
+        f"(닌탑+핏빛길 강제, DPG vs Control, {CORE_WEIGHTS_LABEL}) ==="
+    )
 
     core12_candidates = [
         "muramana", "trinity", "statikk", "kraken", "guinsoo", "storm",
@@ -291,12 +448,12 @@ if __name__ == "__main__":
         "rfc", "storm", "yuntal",
     ]
     core4_candidates = ["ie", "ldr", "botrk", "bt", "kraken", "yuntal", "storm", "essence", "trinity", "statikk"]
-    shoe_candidates = ["plated", "berserker"]
+    shoe_candidates = [CORKI_FORCED_SHOE]
     rune_candidates = ["conq", "lt"]
 
-    # 대조군: 트포-무라마나-징수-LDR + 판금 + 정복자/체력차극복
+    # 대조군: 트포-무라마나-징수-LDR + 닌탑 + 정복자/핏빛길/체력차극복
     control_path = ("trinity", "muramana", "collector", "ldr")
-    control_shoe = "plated"
+    control_shoe = CORKI_FORCED_SHOE
     control_rune = "conq"
 
     results = []
@@ -332,7 +489,7 @@ if __name__ == "__main__":
 
                                 label = (
                                     f"{short_name(c1)}-{short_name(c2)}-{short_name(c3)}-{short_name(c4)}-"
-                                    f"{short_name(shoe)}-{rune_short(rune_key)} [{DORAN_SHORT[doran]}]"
+                                    f"{short_name(shoe)}-{rune_short(rune_key)}-Bloodline [{DORAN_SHORT[doran]}]"
                                 )
                                 is_control = (
                                     path == control_path and shoe == control_shoe and rune_key == control_rune
@@ -562,3 +719,27 @@ if __name__ == "__main__":
     plt.legend(loc="best", fontsize=8)
     plt.tight_layout()
     plt.show()
+
+
+def run_cli(args=None):
+    """기본 receding-horizon 또는 `legacy-ranking` 호환 모드로 코르키 CLI를 실행한다."""
+    import sys
+
+    cli_args = list(sys.argv[1:] if args is None else args)
+    if cli_args and cli_args[0] == "legacy-ranking":
+        main_legacy_ranking()
+        return
+    gamma = GAMMA
+    if cli_args:
+        try:
+            gamma = float(cli_args[0])
+            if not 0.0 < gamma <= 1.0:
+                raise ValueError
+        except ValueError:
+            print(f"[warn] gamma 인자 파싱 실패({cli_args[0]!r}) — 기본 {GAMMA} 사용")
+            gamma = GAMMA
+    main(gamma=gamma)
+
+
+if __name__ == "__main__":
+    run_cli()

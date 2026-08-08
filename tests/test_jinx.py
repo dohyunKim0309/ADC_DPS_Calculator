@@ -2,6 +2,8 @@
 [검증: CDragon raw + Wiki V26.04 + Meraki 3중교차]
 Run: .venv/bin/python -m tests.test_jinx
 """
+from unittest.mock import patch
+
 from adc_sim.champion import Jinx, Target
 from adc_sim.engine import run_simulation, calculate_mitigation
 from adc_sim.runes import LethalTempo, CutDown
@@ -106,6 +108,56 @@ def test_jinx_sim_runs_and_w_fires():
                                  verbose=False, respawn_to_full_kills=2)
     assert dps > 0 and kt > 0
     assert fired[0] >= 1                    # W 최소 1회 시전
+
+
+def test_jinx_dedicated_sim_defaults_to_long_range_fishbones():
+    """전용 징크스 경로는 기본적으로 미니건이 아닌 장거리 Fishbones를 사용한다."""
+    from adc_sim.simulations import jinx as jinx_sim
+
+    captured = {}
+
+    def fake_run(champion, target, **kwargs):
+        captured["q_mode"] = champion.q_mode
+        captured["minigun_stacks"] = champion.minigun_stacks
+        return 0.0, 123.0, {}
+
+    with patch.object(jinx_sim, "run_simulation", fake_run):
+        dps, _ = jinx_sim.simulate_jinx_core_path(("kraken", "pd", "ie", "ldr"), 1)
+
+    assert dps == 123.0
+    assert captured == {"q_mode": "fishbones", "minigun_stacks": 0}
+
+
+def test_jinx_dps_ranking_dedupes_by_dps_not_dpg():
+    """DPS 랭킹은 고비용이어도 DPS가 더 높은 패키지를 DPG dedup 전에 보존한다."""
+    from adc_sim.simulations import jinx as jinx_sim
+
+    challenger = ("storm", "c44", "ldr", "ie")
+    paths = [jinx_sim.CONTROL_PATH, challenger]
+    seen_q_modes = []
+
+    def fake_sim(full_path, core_tier, doran_key="doranblade", boots_key="berserker",
+                 rune_as_bonus=0.0, q_mode="fishbones"):
+        seen_q_modes.append(q_mode)
+        if tuple(full_path) == challenger:
+            # Berserker 패키지는 DPG가 높고, Glutton 패키지는 절대 DPS가 높다.
+            return ((200.0, 1000.0) if boots_key == "berserker" else (300.0, 10000.0))
+        return 100.0, 1000.0
+
+    jinx_sim._JINX_TOP1_CACHE.clear()
+    try:
+        with patch.object(jinx_sim, "_build_all_paths", return_value=paths), \
+                patch.object(jinx_sim, "simulate_jinx_core_path", side_effect=fake_sim):
+            dps_top = jinx_sim.get_jinx_4core_top1_build(rank_by="dps")
+            dpg_top = jinx_sim.get_jinx_4core_top1_build(rank_by="dpg")
+    finally:
+        jinx_sim._JINX_TOP1_CACHE.clear()
+
+    assert dps_top["path"] == challenger
+    assert dps_top["boots"] == "glutton"
+    assert dps_top["q_mode"] == "fishbones"
+    assert dpg_top["boots"] == "berserker"
+    assert set(seen_q_modes) == {"fishbones"}
 
 
 if __name__ == "__main__":

@@ -2,15 +2,37 @@
 
 기존에 ashe/kaisa/corki 시뮬에 각각 복제돼 있던 create_item_from_key 를 하나로 합친 것.
 스탯/가격/이름은 items_data.ITEMS(데이터)에서 주입하므로 데이터가 런타임 출처이고,
-동작·상태(stack, spellblade, manaflow 등)는 adc_sim/items.py 의 클래스가 그대로 담당한다.
-
-(다음 단계 예정: items.py 클래스의 하드코딩 스탯 제거 → 데이터를 유일 출처로.)
+동작·상태(stack, spellblade, manaflow 등)는 역할별 item 모듈의 클래스가 담당한다.
 """
-from adc_sim import items as _items
-from adc_sim.data.items_data import ITEMS, STAT_KEYS
+from adc_sim import component_items, core_items, utility_items
+from adc_sim.item_base import Item
+from adc_sim.data.items_data import (
+    CATALOG_SOURCE_MODIFIED_AT,
+    ITEM_CATALOG,
+    ITEMS,
+    STAT_KEYS,
+)
+
+
+_BEHAVIOR_MODULES = (core_items, component_items, utility_items)
+
+
+def _resolve_behavior_class(class_name):
+    """클래스 이름을 역할별 동작 모듈에서 찾아 반환한다.
+
+    class_name은 ITEMS의 behavior 문자열이며, 찾지 못하면 설정 오류를 즉시 드러낸다.
+    """
+    for module in _BEHAVIOR_MODULES:
+        if hasattr(module, class_name):
+            return getattr(module, class_name)
+    raise AttributeError(f"Unknown item behavior class: {class_name}")
+
 
 # 키 → 동작 클래스 (모듈 로드시 1회 해석)
-_BEHAVIOR_CLASS = {key: getattr(_items, spec["behavior"]) for key, spec in ITEMS.items()}
+_BEHAVIOR_CLASS = {
+    key: _resolve_behavior_class(spec["behavior"])
+    for key, spec in ITEMS.items()
+}
 
 
 def _apply_data(item, key):
@@ -56,3 +78,36 @@ def create_item_from_key(item_key, yuntal_crit=None):
 def get_item_ad_from_key(item_key):
     """키의 AD 값(라벨/정렬용)."""
     return create_item_from_key(item_key).stats.get("ad", 0)
+
+
+_CATALOG_BEHAVIOR_CLASS = {
+    # 현재 서사급 중 전투 효과까지 검증된 것은 곡궁의 적중 시 물리 피해뿐이다.
+    "곡궁": component_items.RecurveBow,
+}
+
+
+def create_catalog_item(item_name, allow_unsupported=False):
+    """정규화된 한국어 아이템 이름으로 런타임 인스턴스를 생성한다.
+
+    item_name은 ITEM_CATALOG의 키다. 미구현 효과가 있는 아이템은 기본적으로
+    NotImplementedError를 내며, allow_unsupported=True일 때만 정적 스탯 전용 Item을
+    반환한다. 반환 인스턴스에는 tier, 조합식, 출처와 effect_status도 보존한다.
+    """
+    if item_name not in ITEM_CATALOG:
+        raise ValueError(f"Unknown catalog item: {item_name}")
+    spec = ITEM_CATALOG[item_name]
+    if spec["effect_status"] == "unsupported" and not allow_unsupported:
+        raise NotImplementedError(f"Unsupported item effect: {item_name}")
+
+    behavior = _CATALOG_BEHAVIOR_CLASS.get(item_name)
+    item = behavior() if behavior is not None else Item(item_name)
+    item.name = item_name
+    item.cost = spec["cost"]
+    item.stats.update(spec["stats"])
+    item.tier = spec["tier"]
+    item.builds_from = spec["builds_from"]
+    item.builds_into = spec["builds_into"]
+    item.effect_status = spec["effect_status"]
+    item.source_file = spec["source_file"]
+    item.source_modified_at = CATALOG_SOURCE_MODIFIED_AT[item.source_file]
+    return item

@@ -3,7 +3,7 @@ AP 빌드(코그모 등)는 마법 → 마저 경감·마관·Shadowflame 경로
 Run: .venv/bin/python -m tests.test_adaptive_runes
 """
 from adc_sim.runes import LethalTempo, PressTheAttack, _adaptive_split
-from adc_sim.champion import CogMaw, Target
+from adc_sim.champion import CogMaw, KaiSa, Target
 from adc_sim.data.items_registry import create_item_from_key
 
 
@@ -42,6 +42,31 @@ def test_presstheattack_adaptive_magic_on_ap_build():
         pta.on_attack(c)
     phys, magic = pta.get_on_hit_damage(Target(hp=2000, armor=100, magic_resist=50), c)
     assert phys == 0 and magic > 0, (phys, magic)
+
+
+def test_kaisa_alacrity_attack_speed_does_not_count_for_e_evolution():
+    """Alacrity raises combat AS but must not contribute to Kai'Sa E evolution."""
+    kaisa = KaiSa(level=11, q_level=5, w_level=5, e_level=3, r_level=2)
+    for key in ("doranbow", "glutton", "guinsoo", "yuntal"):
+        kaisa.add_item(create_item_from_key(key))
+
+    combat_as_without_rune = kaisa.current_attack_speed
+    kaisa.bonus_as_percent += 0.18
+
+    assert kaisa.current_attack_speed > combat_as_without_rune
+    assert abs(kaisa._get_evolution_bonus_as() - 0.98) < 1e-9
+    assert kaisa.has_e_evolved() is False
+
+
+def test_kaisa_item_attack_speed_still_counts_for_e_evolution():
+    """Replacing lifesteal boots with AS boots must make the same build E-evolved."""
+    kaisa = KaiSa(level=11, q_level=5, w_level=5, e_level=3, r_level=2)
+    for key in ("doranbow", "berserker", "guinsoo", "yuntal"):
+        kaisa.add_item(create_item_from_key(key))
+    kaisa.bonus_as_percent += 0.18
+
+    assert abs(kaisa._get_evolution_bonus_as() - 1.23) < 1e-9
+    assert kaisa.has_e_evolved() is True
 
 
 if __name__ == "__main__":

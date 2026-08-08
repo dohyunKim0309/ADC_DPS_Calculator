@@ -35,6 +35,7 @@ from adc_sim.simulations.jinx import (
     simulate_jinx_core_path,
     get_jinx_powercompare_builds,
     build_jinx_core_report_meta,
+    JINX_RANKING_Q_MODE,
 )
 from adc_sim.runes import LethalTempo
 from adc_sim.data.items_data import DORAN_SHORT, ADC_PACKAGES
@@ -60,8 +61,21 @@ def _simulate_compare_stat(champ_name, cfg, core_tier):
         meta = build_ashe_like_core_report_meta("Yunara", cfg["path"], core_tier)
         choice = cfg.get("pkg_label", "Bld+Zerk")
     elif champ_name == "KaiSa":
-        dps, gold, w_cast_count = simulate_kaisa_core_path(cfg["path"], core_tier, **pkg_kw)
-        meta = build_kaisa_core_report_meta(cfg["path"], core_tier, w_cast_count=w_cast_count)
+        dps, gold, w_cast_count, sustain = simulate_kaisa_core_path(
+            cfg["path"],
+            core_tier,
+            bloodline_lifesteal=cfg.get("bloodline_lifesteal", 0.0),
+            return_sustain=True,
+            **pkg_kw,
+        )
+        meta = build_kaisa_core_report_meta(
+            cfg["path"],
+            core_tier,
+            w_cast_count=w_cast_count,
+            doran_key=pkg_kw["doran_key"],
+            boots_key=pkg_kw["boots_key"],
+            sustain=sustain,
+        )
         choice = cfg.get("pkg_label", "Bld+Zerk")
     elif champ_name == "Corki":
         # 챔피언 간 비교에서는 코르키 W(발키리 트레일) 데미지 제외
@@ -82,9 +96,10 @@ def _simulate_compare_stat(champ_name, cfg, core_tier):
         meta = build_vayne_core_report_meta(cfg["path"], core_tier)
         choice = f"{cfg.get('pkg_label', 'Bld+Zerk')}/{cfg.get('rune_label', 'LT')}"
     elif champ_name == "Jinx":
-        dps, gold = simulate_jinx_core_path(cfg["path"], core_tier, **pkg_kw)
-        meta = build_jinx_core_report_meta(cfg["path"], core_tier)
-        choice = cfg.get("pkg_label", "Bld+Zerk")
+        q_mode = cfg.get("q_mode", JINX_RANKING_Q_MODE)
+        dps, gold = simulate_jinx_core_path(cfg["path"], core_tier, q_mode=q_mode, **pkg_kw)
+        meta = build_jinx_core_report_meta(cfg["path"], core_tier, q_mode=q_mode)
+        choice = f"{cfg.get('pkg_label', 'Bld+Zerk')}/{q_mode}"
     else:
         raise ValueError(f"Unknown champion config: {champ_name}")
 
@@ -108,12 +123,14 @@ def _best_pkg_cfg(champ_name, path):
     best_cfg, best_w = None, -1.0
     for pkg in ADC_PACKAGES:
         probe = {"path": path, "doran": pkg["doran"], "boots": pkg["boots"],
-                 "rune_as": pkg["rune_as"], "pkg_label": pkg["label"]}
+                 "rune_as": pkg["rune_as"], "pkg_label": pkg["label"],
+                 "bloodline_lifesteal": pkg.get("bloodline_lifesteal", 0.0)}
         wsum = sum(weights[t - 1] * _simulate_compare_stat(champ_name, probe, t)["dpg"] for t in range(1, 5))
         if wsum > best_w:
             best_w = wsum
             best_cfg = {"doran": pkg["doran"], "boots": pkg["boots"],
-                        "rune_as": pkg["rune_as"], "pkg_label": pkg["label"]}
+                        "rune_as": pkg["rune_as"], "pkg_label": pkg["label"],
+                        "bloodline_lifesteal": pkg.get("bloodline_lifesteal", 0.0)}
     return best_cfg
 
 
@@ -134,7 +151,26 @@ def _print_compare_section(title, configs):
         winner = max(stats.items(), key=lambda kv: kv[1]["dpg"])
         print(f"[{core} Core] Winner: {winner[0]} ({winner[1]['dpg']:.2f} DPG)")
         for champ_name, value in sorted(stats.items(), key=lambda kv: kv[1]["dpg"], reverse=True):
-            print(f"  - {champ_name:<6} DPG {value['dpg']:.2f} | DPS {value['dps']:.1f} | Gold {value['gold']} | 적 {value['target_count']}명 | Opt {value['choice']}")
+            evolution_text = ""
+            if champ_name == "KaiSa":
+                # 실제 4코어 하위 조합식을 따라 진화까지 쓴 최소 누적 골드를 표시한다.
+                cells = []
+                for skill_name in ("q", "w", "e"):
+                    gold = value.get(f"{skill_name}_evolution_gold")
+                    gold_text = "불가" if gold is None else f"{gold}g"
+                    cells.append(f"{skill_name.upper()}:{gold_text}")
+                evolution_text = " | Evo " + " ".join(cells)
+                evolution_text += (
+                    f" | Sustain T{value.get('sustain_tier', 0)} "
+                    f"LS{value.get('lifesteal_rate', 0.0) * 100.0:.1f}% "
+                    f"OV{value.get('omnivamp_rate', 0.0) * 100.0:.1f}% "
+                    f"Heal {value.get('healing_per_second', 0.0):.1f}/s"
+                )
+            print(
+                f"  - {champ_name:<6} DPG {value['dpg']:.2f} | DPS {value['dps']:.1f} | "
+                f"Gold {value['gold']} | 적 {value['target_count']}명 | Opt {value['choice']}"
+                f"{evolution_text}"
+            )
         print()
     return rows
 
@@ -161,7 +197,23 @@ def _build_compare_export_rows(rows, variant):
                 "target_count": stat.get("target_count", 1),
                 "winner": winner,
                 "w_cast_count": stat.get("w_cast_count"),
+                "q_evolved": stat.get("q_evolved"),
+                "q_evolution_possible": stat.get("q_evolution_possible"),
+                "q_evolution_gold": stat.get("q_evolution_gold"),
                 "w_evolved": stat.get("w_evolved"),
+                "w_evolution_possible": stat.get("w_evolution_possible"),
+                "w_evolution_gold": stat.get("w_evolution_gold"),
+                "e_evolved": stat.get("e_evolved"),
+                "e_evolution_possible": stat.get("e_evolution_possible"),
+                "e_evolution_gold": stat.get("e_evolution_gold"),
+                "sustain_tier": stat.get("sustain_tier"),
+                "lifesteal_rate": stat.get("lifesteal_rate"),
+                "omnivamp_rate": stat.get("omnivamp_rate"),
+                "lifesteal_healing": stat.get("lifesteal_healing"),
+                "omnivamp_healing": stat.get("omnivamp_healing"),
+                "total_healing": stat.get("total_healing"),
+                "healing_per_second": stat.get("healing_per_second"),
+                "botrk_lifesteal_damage": stat.get("botrk_lifesteal_damage"),
                 "shoe": stat.get("shoe"),
                 "rune": stat.get("rune"),
                 "choice": stat.get("choice"),
@@ -371,7 +423,7 @@ def compare_builds():
     )
     print(
         f"- Jinx   : [{jinx_best.get('pkg_label','?')}] {'-'.join(jinx_best['path'])} / LT+CutDown "
-        f"(minigun +130% AS + W nuke; top1 by DPG)"
+        f"(long-range Fishbones + W nuke; top1 by weighted DPS)"
     )
     print()
 
@@ -380,8 +432,11 @@ def compare_builds():
             "doran": top1.get("doran", "doranblade"),
             "boots": top1.get("boots", "berserker"),
             "rune_as": top1.get("rune_as", 0.0),
+            "bloodline_lifesteal": top1.get("bloodline_lifesteal", 0.0),
             "pkg_label": top1.get("pkg_label", "Bld+Zerk"),
         }
+        if "q_mode" in top1:
+            cfg["q_mode"] = top1["q_mode"]
         if extra:
             cfg.update(extra)
         return cfg
@@ -398,7 +453,7 @@ def compare_builds():
         # 베인 = 룬 무관 최강 빌드(LT·PtA 중 우위)
         "Vayne": {"path": vayne_best["path"],
                   **_pkg_cfg(vayne_best, {"keystone_cls": vayne_best["keystone_cls"], "rune_label": vayne_best["rune_label"]})},
-        # 징크스 = RelDPG top1(미니건+W); Get Excited OFF
+        # 징크스 = 장거리 Fishbones 조건의 절대 weighted-DPS top1; Get Excited OFF
         "Jinx": {"path": jinx_best["path"], **_pkg_cfg(jinx_best)},
     }
     top1_rows = _print_compare_section("Cross-Champion Top1 Compare (1~4 Core)", top1_configs)
@@ -422,7 +477,7 @@ def compare_builds():
         # 베인 = 컨트롤(botrk-guinsoo-terminus-pd, 최적 패키지) under 치속(LethalTempo)
         "Vayne": {"path": vayne_meta["path"],
                   **_pkg_cfg(vayne_meta, {"keystone_cls": vayne_meta["keystone_cls"], "rune_label": vayne_meta["rune_label"]})},
-        # 징크스 = 컨트롤(kraken-pd-ie-ldr, 최적 패키지)
+        # 징크스 = Fishbones 컨트롤(kraken-pd-ie-ldr, DPS 최적 패키지)
         "Jinx": {"path": jinx_meta["path"], **_pkg_cfg(jinx_meta)},
     }
 
@@ -434,7 +489,7 @@ def compare_builds():
     print(f"- Corki  : {'-'.join(corki_basic_path)} + {corki_basic_shoe} / {corki_basic_rune}+CutDown (requested base build)")
     print(f"- CogMaw : {'-'.join(cogmaw_meta['path'])} + {cogmaw_meta.get('boots','glutton')} / {cogmaw_meta['rune_label']}+CutDown (실전 메타 빌드 / 치속)")
     print(f"- Vayne  : [{vayne_meta.get('pkg_label','?')}] {'-'.join(vayne_meta['path'])} + {vayne_meta.get('boots','berserker')} / {vayne_meta['rune_label']}+CutDown (control botrk-guinsoo-terminus-pd)")
-    print(f"- Jinx   : [{jinx_meta.get('pkg_label','?')}] {'-'.join(jinx_meta['path'])} + {jinx_meta.get('boots','berserker')} / LT+CutDown (control kraken-pd-ie-ldr)")
+    print(f"- Jinx   : [{jinx_meta.get('pkg_label','?')}] {'-'.join(jinx_meta['path'])} + {jinx_meta.get('boots','berserker')} / LT+CutDown (Fishbones control kraken-pd-ie-ldr)")
     print()
     basic_rows = _print_compare_section("Cross-Champion Basic Build Compare (1~4 Core)", basic_configs)
 

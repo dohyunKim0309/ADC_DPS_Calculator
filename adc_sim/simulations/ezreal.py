@@ -1,7 +1,7 @@
 from adc_sim.champion import Ezreal, Target
 from adc_sim.engine import run_simulation
 from adc_sim.runes import Conqueror, LethalTempo, CutDown
-from adc_sim.settings import CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL
+from adc_sim.settings import CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL, DEFAULT_DISCOUNT_GAMMA
 from adc_sim.data.items_registry import create_item_from_key
 from adc_sim.data.items_data import DORAN_OPTIONS, DORAN_SHORT, pen_rule_ok
 import matplotlib.pyplot as plt
@@ -13,9 +13,13 @@ CORE_TARGET_STATS = {
     2: {"hp": 1900, "armor": 70, "mr": 30},
     3: {"hp": 2400, "armor": 100, "mr": 50},
     4: {"hp": 2600, "armor": 120, "mr": 70},
+    5: {"hp": 3000, "armor": 150, "mr": 90},
 }
 
-CORE_LEVELS = {1: {"level": 9}, 2: {"level": 11}, 3: {"level": 13}, 4: {"level": 15}}
+CORE_LEVELS = {
+    1: {"level": 9}, 2: {"level": 11}, 3: {"level": 13},
+    4: {"level": 15}, 5: {"level": 17},
+}
 
 # Q 선마(코어별 스킬 레벨). R은 v1 미사용(데미지 제외)이라 r_level은 표기상 의미만. [H, 튜닝 가능]
 EZREAL_SKILL_LEVELS = {
@@ -23,6 +27,8 @@ EZREAL_SKILL_LEVELS = {
     2: {"q": 5, "w": 4, "e": 1, "r": 2},
     3: {"q": 5, "w": 5, "e": 2, "r": 2},
     4: {"q": 5, "w": 5, "e": 4, "r": 3},
+    # [Hypothesis] 기존 4코어 스킬 곡선을 17레벨까지 연장해 E를 마스터한다.
+    5: {"q": 5, "w": 5, "e": 5, "r": 3},
 }
 
 
@@ -140,7 +146,160 @@ def _iter_paths():
 # corki.get_corki_4core_top1_build 패턴(prefix sim 캐시)으로 추가한다. v1은 YAGNI로 제외.
 
 
-if __name__ == "__main__":
+GAMMA = DEFAULT_DISCOUNT_GAMMA
+HORIZON = 5
+# [Hypothesis] 이즈리얼 전용 5코어 풀이 없으므로 기존 4코어 후보를 재사용한다.
+CORE5_CANDIDATES = list(CORE4_CANDIDATES)
+CANDIDATES_BY_SLOT = {
+    1: CORE12_CANDIDATES,
+    2: CORE12_CANDIDATES,
+    3: CORE3_CANDIDATES,
+    4: CORE4_CANDIDATES,
+    5: CORE5_CANDIDATES,
+}
+
+
+class SimCache:
+    """아이템 집합과 윤탈 구매 시점을 키로 이즈리얼 DPS·골드를 메모이즈한다."""
+
+    def __init__(self, doran_key, shoe_key, rune_key):
+        """도란·신발·키스톤을 고정한 이즈리얼 탐색 캐시를 초기화한다."""
+        self.doran_key = doran_key
+        self.shoe_key = shoe_key
+        self.rune_key = rune_key
+        self.cache = {}
+        self.hits = 0
+        self.misses = 0
+
+    def _key(self, items_tuple):
+        """순서 무관 집합과 윤탈이 현재 구매 슬롯인지 여부를 캐시 키로 반환한다."""
+        sorted_items = tuple(sorted(items_tuple))
+        yuntal_last = bool(items_tuple) and "yuntal" in sorted_items and items_tuple[-1] == "yuntal"
+        return sorted_items, yuntal_last
+
+    def sim(self, items_tuple):
+        """W/E를 제외한 전용 랭킹 조건에서 현재 티어 DPS와 총 골드를 반환한다."""
+        key = self._key(items_tuple)
+        if key in self.cache:
+            self.hits += 1
+            return self.cache[key]
+        self.misses += 1
+        result = simulate_ezreal_core_path(
+            list(items_tuple), self.shoe_key, self.rune_key, len(items_tuple),
+            include_we=False, doran_key=self.doran_key,
+        )
+        self.cache[key] = result
+        return result
+
+
+def _ezreal_path_ok(item_keys):
+    """이즈리얼 고유 주문검 배타와 공용 관통 제약 충족 여부를 반환한다."""
+    return not ({"trinity", "essence"} <= set(item_keys)) and pen_rule_ok(item_keys)
+
+
+def _enumerate_future_combos(fixed, from_slot, horizon=HORIZON):
+    """확정 코어 뒤에서 이즈리얼 고유 제약을 만족하는 미래 조합을 생성한다."""
+    remaining = list(range(from_slot, horizon + 1))
+
+    def rec(index, current):
+        """현재 슬롯 이후의 합법적인 아이템 조합을 재귀 생성한다."""
+        if index == len(remaining):
+            yield tuple(current)
+            return
+        for item_key in CANDIDATES_BY_SLOT[remaining[index]]:
+            if item_key in fixed or item_key in current:
+                continue
+            candidate = tuple(fixed) + tuple(current) + (item_key,)
+            if not _ezreal_path_ok(candidate):
+                continue
+            current.append(item_key)
+            yield from rec(index + 1, current)
+            current.pop()
+
+    yield from rec(0, [])
+
+
+def _score_combo(cache, fixed, combo, from_slot, dps_prev, gold_prev, gamma, horizon):
+    """미래 코어별 마지널 DPG 할인합을 계산해 조합 점수로 반환한다."""
+    full_path = list(fixed) + list(combo)
+    score = 0.0
+    for offset, tier in enumerate(range(from_slot, horizon + 1)):
+        dps, gold = cache.sim(tuple(full_path[:tier]))
+        delta_gold = gold - gold_prev
+        marginal_dpg = (dps - dps_prev) / (delta_gold / 1000.0) if delta_gold > 0 else 0.0
+        score += (gamma ** offset) * marginal_dpg
+    return score
+
+
+def solve_greedy(cache, gamma=None, horizon=HORIZON, top_alt=3):
+    """매 슬롯에서 미래 할인 마지널 DPG를 재탐색해 이즈리얼 1~5코어 궤적을 반환한다."""
+    if gamma is None:
+        gamma = GAMMA
+    fixed, steps = [], []
+    dps_prev, gold_prev = 0.0, 0.0
+    for slot in range(1, horizon + 1):
+        best_score, best_combo = None, None
+        alternatives_by_item, alternatives_path = {}, {}
+        for combo in _enumerate_future_combos(fixed, slot, horizon):
+            score = _score_combo(cache, fixed, combo, slot, dps_prev, gold_prev, gamma, horizon)
+            item_key = combo[0]
+            if item_key not in alternatives_by_item or score > alternatives_by_item[item_key]:
+                alternatives_by_item[item_key], alternatives_path[item_key] = score, combo
+            if best_score is None or score > best_score:
+                best_score, best_combo = score, combo
+        if best_combo is None:
+            break
+        fixed.append(best_combo[0])
+        dps_now, gold_now = cache.sim(tuple(fixed))
+        delta_gold = gold_now - gold_prev
+        marginal_dpg = (dps_now - dps_prev) / (delta_gold / 1000.0) if delta_gold > 0 else 0.0
+        ranked = sorted(alternatives_by_item.items(), key=lambda pair: pair[1], reverse=True)[:top_alt]
+        steps.append({
+            "slot": slot, "item": best_combo[0], "score": best_score,
+            "dps": dps_now, "gold": gold_now, "marginal_dpg": marginal_dpg,
+            "future_path_winner": best_combo,
+            "alternatives": [
+                {"item": key, "score": score, "future_path": alternatives_path[key]}
+                for key, score in ranked
+            ],
+        })
+        dps_prev, gold_prev = dps_now, gold_now
+    return {"trajectory": fixed, "steps": steps}
+
+
+def print_scenario(label, out, cache, gamma=None):
+    """이즈리얼 receding-horizon 최종 궤적과 슬롯별 선택·대안을 출력한다."""
+    if gamma is None:
+        gamma = GAMMA
+    print(f"\n{'=' * 22}  Ezreal · {label}  {'=' * 22}")
+    print(f"γ={gamma}, horizon={HORIZON} | 최종 궤적: "
+          f"{' → '.join(short_name(key) for key in out['trajectory'])}")
+    print(f"시뮬 캐시: {cache.hits} hits / {cache.misses} misses")
+    for step in out["steps"]:
+        alternatives = " / ".join(
+            f"{short_name(alt['item'])}:{alt['score']:.1f}" for alt in step["alternatives"]
+        )
+        print(
+            f"  {step['slot']}C → {short_name(step['item']):<10} | DPS {step['dps']:>7.1f} | "
+            f"Gold {step['gold']:>5.0f} | MarginalDPG {step['marginal_dpg']:>7.2f} | "
+            f"Score {step['score']:>7.2f} | {alternatives}"
+        )
+
+
+def main(gamma=None):
+    """이즈리얼의 도란·신발·키스톤 조합을 베인식 receding-horizon으로 탐색한다."""
+    if gamma is None:
+        gamma = GAMMA
+    for rune_key in RUNE_CANDIDATES:
+        for shoe_key in SHOE_CANDIDATES:
+            for doran_key in DORAN_OPTIONS:
+                cache = SimCache(doran_key, shoe_key, rune_key)
+                label = f"{DORAN_SHORT[doran_key]}+{short_name(shoe_key)}+{rune_short(rune_key)}"
+                print_scenario(label, solve_greedy(cache, gamma=gamma), cache, gamma=gamma)
+
+
+def main_legacy_ranking():
+    """교체 전 이즈리얼 4코어 전수 랭킹·그래프를 실행한다."""
     print(f"\n=== Ezreal 4-Core Efficiency (DPG vs Control, {CORE_WEIGHTS_LABEL}, W/E 제외) ===")
     w1, w2, w3, w4 = CORE_WEIGHTS_RAW
     wsum = w1 + w2 + w3 + w4
@@ -209,3 +368,27 @@ if __name__ == "__main__":
     plt.xlabel("Invested Gold"); plt.ylabel("DPS")
     plt.grid(True, alpha=0.25); plt.legend(loc="best", fontsize=8); plt.tight_layout()
     plt.show()
+
+
+def run_cli(args=None):
+    """기본 receding-horizon 또는 `legacy-ranking` 호환 모드로 이즈리얼 CLI를 실행한다."""
+    import sys
+
+    cli_args = list(sys.argv[1:] if args is None else args)
+    if cli_args and cli_args[0] == "legacy-ranking":
+        main_legacy_ranking()
+        return
+    gamma = GAMMA
+    if cli_args:
+        try:
+            gamma = float(cli_args[0])
+            if not 0.0 < gamma <= 1.0:
+                raise ValueError
+        except ValueError:
+            print(f"[warn] gamma 인자 파싱 실패({cli_args[0]!r}) — 기본 {GAMMA} 사용")
+            gamma = GAMMA
+    main(gamma=gamma)
+
+
+if __name__ == "__main__":
+    run_cli()

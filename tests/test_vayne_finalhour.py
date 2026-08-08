@@ -42,6 +42,7 @@ def test_r_mana_cost_and_gate():
 
 
 def test_r_cast_at_t0_via_skill_plan():
+    """Q를 끄고 t=0 R 추가 AD 자체가 DPS를 높이는지 검증한다."""
     from adc_sim.engine import run_simulation
     from adc_sim.runes import LethalTempo, CutDown
     from adc_sim.data.items_registry import create_item_from_key
@@ -51,6 +52,7 @@ def test_r_cast_at_t0_via_skill_plan():
         v.add_item(create_item_from_key("botrk"))
         t = Target(hp=2500, armor=60, magic_resist=40, bonus_hp=1000)
         plan = {"manual_casts": [(0.0, "r")] if r_on else [],
-                "auto_cast": {"q": True, "r": False}, "auto_order": ["q"]}
+                # 이 테스트는 R의 AD 기여만 격리한다.
+                "auto_cast": {"q": False, "r": False}, "auto_order": ["q"]}
         return run_simulation(v, t, verbose=False, skill_plan=plan, respawn_to_full_kills=2)[1]
     assert _run(True) > _run(False)   # R 추가AD 로 DPS 증가

@@ -72,14 +72,17 @@ python3.10 -m venv .venv
 adc_sim/
   engine.py        # 이벤트 루프 + 경감 계산
   champion.py      # 데미지 모델, 챔피언 킷(이벤트 기반 스킬, 마나)
-  items.py         # 아이템 동작 클래스(온힛, 주문검, 증폭 훅)
+  item_base.py     # 공통 아이템 인터페이스와 정적 런타임 상태
+  core_items.py    # 전설급 아이템 동작
+  component_items.py # 기본·서사급 재료 동작
+  utility_items.py # 시작 아이템·장화·소모품 동작
   runes.py         # 키스톤 + 보조(적응형 온힛 분배)
   data/
     items_data.py      # 아이템 스탯/가격 — 단일 출처
     items_registry.py  # 키 → 설정된 아이템 인스턴스
     cdragon.py         # Community Dragon 커넥터(패치 대조용)
   simulations/     # 챔피언별 빌드 탐색 + 랭킹 + 리포트
-tests/             # 70+ 유닛·회귀 테스트
+tests/             # 120+ 유닛·회귀 테스트
 ```
 
 ## 패치마다 하는 일

@@ -1,7 +1,7 @@
 """Community Dragon(CDragon) 데이터 소스 연동 — 받아오기(fetch) 계층까지만.
 
 이 모듈은 패치별 LoL 정적 데이터를 CDragon에서 *받아오는* 역할만 한다.
-받아온 값을 `adc_sim/items.py`·`adc_sim/champion.py` 의 계수로 매핑하는 작업은
+받아온 값을 역할별 아이템 모듈·`adc_sim/champion.py`의 계수로 매핑하는 작업은
 아직 하지 않는다(의도적 범위 제한). 매핑/검증은 추후 별도 작업.
 
 데이터 위치 (patch 16.11 기준 직접 확인):
