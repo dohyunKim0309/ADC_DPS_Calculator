@@ -75,7 +75,9 @@ ITEMS = {
     "pd":          {"name": "Phantom Dancer",           "cost": 2650, "behavior": "PhantomDancer",       "stats": {"as": 0.65, "crit": 0.25}, "recipe": ("단검", "열정의 검", "단검")},
     "runaan":      {"name": "Runaan's Hurricane",       "cost": 2650, "behavior": "RunaansHurricane",    "stats": {"as": 0.40, "crit": 0.25}},
     # 경계: 빛 스택(방어력+마저 각 레벨비례 ×3)이 방어 성격 → defense 태그.
-    # ⚠️ 현재 Terminus 클래스의 빛 스택은 실제로 적용되지 않는다(champion 에 ar/mr 속성 없음).
+    # 빛 스택은 champion.bonus_armor / bonus_mr 로 실제 적용된다(EHP 반영, 딜 계산엔 무관).
+    #   레벨 1~6 +6 / 7~11 +7 / 12~18 +8, 최대 3스택. 구현은 Terminus.on_hit.
+    # (2026-08-11 이전에는 `hasattr(champion,'af')` 오타 때문에 죽은 코드였다.)
     "terminus":    {"name": "Terminus",                 "cost": 3000, "behavior": "Terminus",            "stats": {"ad": 30, "as": 0.35}, "recipe": ("온기가 필요한 자의 도끼", "곡궁"), "tags": ("defense",)},
     "guinsoo":     {"name": "Guinsoo's Rageblade",      "cost": 3000, "behavior": "GuinsoosRageblade",   "stats": {"ad": 30, "ap": 30, "as": 0.25}, "recipe": ("증폭의 고서", "곡궁", "곡괭이")},
     "ie":          {"name": "Infinity Edge",            "cost": 3500, "behavior": "InfinityEdge",        "stats": {"ad": 75, "crit": 0.25, "add_crit_damage": 0.30}, "recipe": ("B.F. 대검", "곡괭이", "민첩성의 망토")},
