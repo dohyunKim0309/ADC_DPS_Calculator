@@ -27,6 +27,34 @@ class Target:
     def reset(self):
         self.current_hp = self.max_hp
 
+    # ── 유효 체력 (사용자 정의 2026-08-11) ─────────────────────────────
+    # 공식은 engine.effective_hp 가 정본이며, 여기서는 코어 모듈 간 import 금지 규칙
+    # (CLAUDE.md 아키텍처) 때문에 같은 한 줄 식을 그대로 둔다. 수정 시 둘 다 갱신할 것.
+    #   유효체력 = 체력 × (100 + 저항)/100  ← 실피해 = raw × 100/(100+저항) 의 역함수
+    def effective_hp(self, damage_type="physical", current=False):
+        """고정 피해 기준 유효 체력.
+
+        damage_type: "physical"(방어력) | "magic"(마법저항) | "true"(저항 무시).
+        current=True 면 현재 체력 기준, False(기본)면 최대 체력 기준.
+        관통은 공격자 스탯이라 여기 반영되지 않는다 — engine.effective_hp_after_penetration 사용.
+        """
+        hp = self.current_hp if current else self.max_hp
+        if damage_type == "magic":
+            resist = self.magic_resist
+        elif damage_type == "true":
+            resist = 0.0
+        else:
+            resist = self.armor
+        return hp * (100.0 + resist) / 100.0
+
+    def effective_hp_all(self, current=False):
+        """물리/마법/고정 세 축의 유효 체력을 한 번에 반환한다."""
+        return {
+            "physical": self.effective_hp("physical", current),
+            "magic": self.effective_hp("magic", current),
+            "true": self.effective_hp("true", current),
+        }
+
 
 # 2. 챔피언 부모 클래스 (Base Class)
 class Champion:
@@ -43,6 +71,19 @@ class Champion:
         self.ad_growth = ad_growth       # 레벨당 공격력 증가량
 
         self.crit_chance = 0             # 치명타 확률
+
+        # 방어 기본 스탯 — 유효 체력(EHP) 계산용. 서브클래스가 챔피언별 값으로 덮어쓴다.
+        # 출처: DDragon 16.16.1 (hp/hpperlevel/armor/armorperlevel/spellblock/spellblockperlevel).
+        # 딜 계산에는 전혀 관여하지 않는다(EHP 전용).
+        self.base_hp = 0
+        self.hp_growth = 0
+        self.base_armor = 0
+        self.armor_growth = 0
+        self.base_mr = 0
+        self.mr_growth = 0
+        self.bonus_hp = 0                # 아이템/효과로 얻은 추가 체력
+        self.bonus_armor = 0             # 아이템/효과(경계 빛 스택 등) 방어력
+        self.bonus_mr = 0                # 아이템/효과 마법저항
 
         # 인벤토리 및 상태
         self.inventory = []  # Item 객체들이 저장될 리스트
@@ -93,6 +134,64 @@ class Champion:
         self.magic_pen_percent = 1 - (1 - self.magic_pen_percent) * (
                     1 - item.stats.get('magic_pen_percent', 0))  # %마법관통(공허 등): 곱연산 합성
         self.ability_haste += item.stats.get('cdr', 0)
+        # 방어 스탯 — 유효 체력(EHP) 계산용. 딜 계산엔 관여하지 않는다.
+        self.bonus_hp += item.stats.get('hp', 0)
+        self.bonus_armor += item.stats.get('armor', 0)
+        self.bonus_mr += item.stats.get('mr', 0)
+
+    # ── 방어 스탯 / 유효 체력 (사용자 정의 2026-08-11) ──────────────────
+    # 성장 곡선은 실 LoL 공식 g×(n-1)×(0.7025+0.0175(n-1)) 을 쓴다.
+    # 계산은 adc_sim.growth 단일 출처 — 2026-08-11 선형 근사에서 전환.
+    @property
+    def total_hp(self):
+        """현재 레벨 기본 체력 + 아이템 체력."""
+        return stat_at_level(self.base_hp, self.hp_growth, self.level) + self.bonus_hp
+
+    @property
+    def total_armor(self):
+        """현재 레벨 기본 방어력 + 아이템/효과 방어력."""
+        return stat_at_level(self.base_armor, self.armor_growth, self.level) + self.bonus_armor
+
+    @property
+    def total_mr(self):
+        """현재 레벨 기본 마법저항 + 아이템/효과 마법저항."""
+        return stat_at_level(self.base_mr, self.mr_growth, self.level) + self.bonus_mr
+
+    def passive_bonus_hp(self, damage_type="physical"):
+        """방어 패시브(수호천사 부활·철갑궁 방어막 등)를 체력 상당분으로 환산한 합.
+
+        속성별로 값이 다를 수 있다 — 멜모셔스 생명선은 마법 피해만 흡수한다.
+        """
+        return sum(item.get_bonus_ehp(self, damage_type) for item in self.inventory)
+
+    def effective_hp(self, damage_type="physical", include_passives=True):
+        """자기 자신의 유효 체력 — 이만큼의 해당 속성 원시 피해를 받아야 죽는다.
+
+        유효체력 = (체력 + 방어패시브 환산) × (100 + 저항)/100.
+        damage_type: "physical"(방어력) | "magic"(마법저항) | "true"(저항 무시).
+        include_passives=False 면 순수 스탯 기준(부활·방어막 제외)만 계산한다.
+        """
+        if damage_type == "magic":
+            resist = self.total_mr
+        elif damage_type == "true":
+            resist = 0.0
+        else:
+            resist = self.total_armor
+        hp = self.total_hp + (self.passive_bonus_hp(damage_type) if include_passives else 0.0)
+        return hp * (100.0 + resist) / 100.0
+
+    def effective_hp_all(self, include_passives=True):
+        """물리/마법/고정 유효 체력과 그 근거 스탯을 함께 반환한다."""
+        return {
+            "hp": self.total_hp,
+            "armor": self.total_armor,
+            "mr": self.total_mr,
+            "passive_hp": self.passive_bonus_hp("physical"),
+            "passive_hp_magic": self.passive_bonus_hp("magic"),
+            "physical": self.effective_hp("physical", include_passives),
+            "magic": self.effective_hp("magic", include_passives),
+            "true": self.effective_hp("true", include_passives),
+        }
 
     # 룬 장착 함수
     def set_rune(self, rune):
@@ -462,6 +561,11 @@ class Ashe(Champion):
     def __init__(self, level=1, q_level=5):
         # 성장 공속 3.33% 적용, 성장 공격력 3.5 적용 (버프 반영)
         super().__init__(name="Ashe", base_ad=59, base_as=0.658, as_ratio=0.658, as_growth=3.33, base_range=600, level=level, ad_growth=3.5)
+
+        # 방어 스탯 (EHP 전용, DDragon 16.16.1) — 딜 계산 무관
+        self.base_hp = 610; self.hp_growth = 101
+        self.base_armor = 26; self.armor_growth = 4.6
+        self.base_mr = 33; self.mr_growth = 1.1
         
         # 스킬 레벨 설정
         self.q_level = q_level
@@ -597,6 +701,11 @@ class Jinx(Champion):
             ad_growth=3.25,
         )
 
+        # 방어 스탯 (EHP 전용, DDragon 16.16.1) — 딜 계산 무관
+        self.base_hp = 630; self.hp_growth = 105
+        self.base_armor = 26; self.armor_growth = 4.2
+        self.base_mr = 33; self.mr_growth = 1.1
+
         self.q_level = max(1, min(5, q_level))
         self.w_level = max(1, min(5, w_level))
         self.q_mode = q_mode
@@ -706,6 +815,11 @@ class Yunara(Champion):
     def __init__(self, level=1, q_level=5, w_level=5, r_level=3, w_enabled=True):
         # Base AD 55, AS 0.65, AS Ratio 0.65, AS Growth 2.75, AD Growth 3.0 (다음 패치 버프: 2.5→3.0)
         super().__init__(name="Yunara", base_ad=55, base_as=0.650, as_ratio=0.650, as_growth=2.75, base_range=575, level=level, ad_growth=3.0)
+
+        # 방어 스탯 (EHP 전용, DDragon 16.16.1) — 딜 계산 무관
+        self.base_hp = 590; self.hp_growth = 110
+        self.base_armor = 25; self.armor_growth = 4.4
+        self.base_mr = 33; self.mr_growth = 1.1
 
         self.q_level = q_level
 
@@ -1040,8 +1154,8 @@ class KaiSa(Champion):
         self.mp5_growth = 0.7
         self.base_armor = 25
         self.armor_growth = 4.2
-        self.base_mr = 30
-        self.mr_growth = 1.3
+        self.base_mr = 33
+        self.mr_growth = 1.1
         self.base_ms = 335
 
         # 스킬 레벨
@@ -1428,8 +1542,8 @@ class Corki(Champion):
         self.mp5_growth = 0.7
         self.base_armor = 27
         self.armor_growth = 4.5
-        self.base_mr = 30
-        self.mr_growth = 1.3
+        self.base_mr = 33
+        self.mr_growth = 1.1
 
         # 스킬 레벨
         self.q_level = q_level
@@ -1732,7 +1846,7 @@ class Ezreal(Champion):
         # base_mp5/mp5_growth: Champion.mana_regen_per_sec가 읽는 이름 (Task 5 확정). [spec §3.5]
         self.base_mp5 = 8.5; self.mp5_growth = 1.0
         self.base_armor = 24; self.armor_growth = 4.2
-        self.base_mr = 30; self.mr_growth = 1.3
+        self.base_mr = 33; self.mr_growth = 1.1
 
         self.q_level = q_level; self.w_level = w_level
         self.e_level = e_level; self.r_level = r_level
@@ -1972,7 +2086,7 @@ class CogMaw(Champion):
         self.base_range = 500
         self.base_hp = 635; self.hp_growth = 99
         self.base_armor = 24; self.armor_growth = 4.45
-        self.base_mr = 30; self.mr_growth = 1.3
+        self.base_mr = 33; self.mr_growth = 1.1
         # 마나 (spec §3.5/§4.1). base_mp5/mp5_growth = Champion.mana_regen_per_sec가 읽는 이름.
         self.base_mana = 325; self.mana_growth = 40
         self.base_mp5 = 8.75; self.mp5_growth = 0.7
@@ -2254,7 +2368,7 @@ class Vayne(Champion):
         # 보관(비-DPS): 미래 1대1 모델용
         self.base_hp = 550; self.hp_growth = 103
         self.base_armor = 23; self.armor_growth = 4.6
-        self.base_mr = 30; self.mr_growth = 1.3
+        self.base_mr = 33; self.mr_growth = 1.1
         # 마나 (spec §3.1). base_mp5/mp5_growth = Champion.mana_regen_per_sec 가 읽는 이름.
         self.base_mana = 232.0; self.mana_growth = 35.0
         self.base_mp5 = 7.0; self.mp5_growth = 0.4

@@ -74,22 +74,33 @@ ITEMS = {
     "bot_as18":    {"name": "BotRK (AS+18%)",           "cost": 3200, "behavior": "BladeOfRuinedKing",   "stats": {"ad": 40, "as": 0.43, "lifesteal": 0.10}},
     "pd":          {"name": "Phantom Dancer",           "cost": 2650, "behavior": "PhantomDancer",       "stats": {"as": 0.65, "crit": 0.25}, "recipe": ("단검", "열정의 검", "단검")},
     "runaan":      {"name": "Runaan's Hurricane",       "cost": 2650, "behavior": "RunaansHurricane",    "stats": {"as": 0.40, "crit": 0.25}},
-    "terminus":    {"name": "Terminus",                 "cost": 3000, "behavior": "Terminus",            "stats": {"ad": 30, "as": 0.35}, "recipe": ("온기가 필요한 자의 도끼", "곡궁")},
+    # 경계: 빛 스택(방어력+마저 각 레벨비례 ×3)이 방어 성격 → defense 태그.
+    # ⚠️ 현재 Terminus 클래스의 빛 스택은 실제로 적용되지 않는다(champion 에 ar/mr 속성 없음).
+    "terminus":    {"name": "Terminus",                 "cost": 3000, "behavior": "Terminus",            "stats": {"ad": 30, "as": 0.35}, "recipe": ("온기가 필요한 자의 도끼", "곡궁"), "tags": ("defense",)},
     "guinsoo":     {"name": "Guinsoo's Rageblade",      "cost": 3000, "behavior": "GuinsoosRageblade",   "stats": {"ad": 30, "ap": 30, "as": 0.25}, "recipe": ("증폭의 고서", "곡궁", "곡괭이")},
     "ie":          {"name": "Infinity Edge",            "cost": 3500, "behavior": "InfinityEdge",        "stats": {"ad": 75, "crit": 0.25, "add_crit_damage": 0.30}, "recipe": ("B.F. 대검", "곡괭이", "민첩성의 망토")},
     "ldr":         {"name": "Lord Dominik's Regards",   "cost": 3300, "behavior": "LordDominiksRegards", "stats": {"ad": 35, "crit": 0.25, "armor_pen_percent": 0.35}, "recipe": ("최후의 속삭임", "절정의 화살")},
     "mortal":      {"name": "Mortal Reminder",          "cost": 3000, "behavior": "MortalReminder",      "stats": {"ad": 35, "crit": 0.25, "armor_pen_percent": 0.30}, "recipe": ("처형인의 대검", "최후의 속삭임", "민첩성의 망토")},
-    "bt":          {"name": "Bloodthirster",            "cost": 3400, "behavior": "Bloodthirster",       "stats": {"ad": 80, "lifesteal": 0.15}},
-    "ga":          {"name": "Guardian Angel",           "cost": 3200, "behavior": "GuardianAngel",       "stats": {"ad": 55}},
-    "mercurial":   {"name": "Mercurial Scimitar",       "cost": 3200, "behavior": "MercurialScimitar",   "stats": {"ad": 50}},
+    "bt":          {"name": "Bloodthirster",            "cost": 3400, "behavior": "Bloodthirster",       "stats": {"ad": 80, "lifesteal": 0.15}, "tags": ("defense",)},
+    # 수호천사: 방어력 45 는 그동안 데이터에 누락돼 있었다(2026-08-11 추가, EHP 에 반영).
+    # 재생(Rebirth): 치명타 피해 시 4초 스테이시스 후 기본 체력 50% + 최대 마나 100% 회복, 쿨 300초.
+    # → 부활 체력은 GuardianAngel.get_bonus_ehp 가 유효 체력에 가산한다. [H-GA-REBIRTH-1]
+    "ga":          {"name": "Guardian Angel",           "cost": 3200, "behavior": "GuardianAngel",       "stats": {"ad": 55, "armor": 45}, "tags": ("defense",)},
+    # 헤르메스의 시미터: AD50/마저35/생명력흡수10% (사용자 확정 2026-08-11).
+    # 마저 35 는 그동안 주석에만 있고 데이터에 없었다 — EHP 도입으로 이제 실제로 쓰인다.
+    # 수은(액티브, 쿨 90초)의 군중제어 해제는 EHP 로 환산 불가 → 미모델(상수만 보존).
+    "mercurial":   {"name": "Mercurial Scimitar",       "cost": 3200, "behavior": "MercurialScimitar",   "stats": {"ad": 50, "mr": 35, "lifesteal": 0.10}, "tags": ("defense",)},
     # 멜모셔스: AD60/AH15는 DPS 반영(cdr=AH), MR40은 방어 스탯이라 보존만(현 DPS 무영향).
     # Lifeline(방어막+옴니뱀)은 딜 무기여 → 스탯 아님, MawOfMalmortius 클래스 속성으로 둠.
-    "maw":         {"name": "Maw of Malmortius",        "cost": 3100, "behavior": "MawOfMalmortius",     "stats": {"ad": 60, "cdr": 15, "mr": 40}},
+    "maw":         {"name": "Maw of Malmortius",        "cost": 3100, "behavior": "MawOfMalmortius",     "stats": {"ad": 60, "cdr": 15, "mr": 40}, "tags": ("defense",)},
     "nashor":      {"name": "Nashor's Tooth",           "cost": 2900, "behavior": "NashorsTooth",        "stats": {"ap": 80, "as": 0.50, "cdr": 15}, "recipe": ("곡궁", "방출의 마법봉", "악마의 마법서")},
     "rabadon":     {"name": "Rabadon's Deathcap",       "cost": 3500, "behavior": "RabadonsDeathcap",    "stats": {"ap": 130}, "recipe": ("쓸데없이 큰 지팡이", "쓸데없이 큰 지팡이")},
     "shadowflame": {"name": "Shadowflame",              "cost": 3200, "behavior": "Shadowflame",         "stats": {"ap": 110, "magic_pen_flat": 15}, "recipe": ("마법공학 교류 발전기", "쓸데없이 큰 지팡이")},
+    # 존야의 모래시계: AP105/방어력50, 3250골드 (u.gg 2026-08 기준). 시간 정지(스테이시스 2.5초)는
+    # "피해를 막는 시간"이라 고정된 유효 체력으로 환산할 수 없어 미모델 — 방어력만 EHP 에 반영된다.
+    "zhonya":      {"name": "Zhonya's Hourglass",       "cost": 3250, "behavior": "ZhonyasHourglass",  "stats": {"ap": 105, "armor": 50}, "tags": ("defense",)},
     "void":        {"name": "Void Staff",               "cost": 3000, "behavior": "VoidStaff",           "stats": {"ap": 95, "magic_pen_percent": 0.40}},
-    "shieldbow":   {"name": "Immortal Shieldbow",       "cost": 3000, "behavior": "ImmortalShieldbow",   "stats": {"ad": 55, "crit": 0.25}, "recipe": ("곡괭이", "절정의 화살")},
+    "shieldbow":   {"name": "Immortal Shieldbow",       "cost": 3000, "behavior": "ImmortalShieldbow",   "stats": {"ad": 55, "crit": 0.25}, "recipe": ("곡괭이", "절정의 화살"), "tags": ("defense",)},
     "trinity":     {"name": "Trinity Force",            "cost": 3333, "behavior": "TrinityForce",        "stats": {"ad": 36, "as": 0.30, "cdr": 15}},
     "essence":     {"name": "Essence Reaver",           "cost": 3050, "behavior": "EssenceReaver",       "stats": {"ad": 50, "crit": 0.25, "cdr": 20}},
     # 황혼과 새벽: AP60/AH20(cdr)/AS20% 는 DPS 반영. 체력300 은 STAT_KEYS 미포함이라 보존 안 됨(DPS 무영향, 가격엔 포함).
@@ -112,7 +123,34 @@ ITEMS = {
     "doranbow":    {"name": "Doran's Bow",              "cost": 400,  "behavior": "DoransBow",           "stats": {"ad": 8, "as": 0.15, "omnivamp": 0.015}},
     "yuntal":      {"name": "Yun Tal Wildarrows",       "cost": 3000, "behavior": "YunTalWildarrows",    "stats": {"ad": 50, "as": 0.45}, "recipe": ("B.F. 대검", "정찰병의 새총", "롱소드"), "yuntal_default_crit": 0.25},  # [Patch 2026-07-26 buff: -100g, AS 40→45%]
     "yuntal25":    {"name": "Yun Tal Wildarrows",       "cost": 3000, "behavior": "YunTalWildarrows",    "stats": {"ad": 50, "as": 0.45}, "recipe": ("B.F. 대검", "정찰병의 새총", "롱소드"), "yuntal_default_crit": 0.25},  # [Patch 2026-07-26 buff: -100g, AS 40→45%]
+    # 칠흑의 양날도끼 [H-CLEAVER-1] (사용자 제공 수치, 나무위키 × 최신 패치노트 교차검증 2026-08-11):
+    # AD 45 / 체력 400 / 스킬가속 20, 3300골드. 체력은 STAT_KEYS 에 있으나 DPS 모델엔 무영향(보존만).
+    # 깎아내기(방어력 6% 감소 ×5중첩)는 BlackCleaver 클래스가 처리. 열정(이속)은 DPS 무관 → 미모델.
+    "cleaver":     {"name": "Black Cleaver",            "cost": 3000, "behavior": "BlackCleaver",        "stats": {"ad": 45, "hp": 400, "cdr": 20}, "tags": ("defense",)},
 }
+
+# ── 아이템 태그 — 분류의 단일 출처 ────────────────────────────────────────
+# 'defense' = 생존/보호가 주 목적인 아이템. 사용자 확정(2026-08-11): 실전에서 이 계열은
+# 4코어 이내에 사는 게 일반적이라 DEFENSIVE_MAX_CORE 를 권장 상한으로 같이 둔다.
+# ⚠️ 태그는 '분류'일 뿐 탐색 풀에서의 제외를 뜻하지 않는다. 철갑궁·피바라기·칠흑은
+#    AD/치확이 실딜이라 DPS 후보 풀에 그대로 남는다(사용자 확정). 애쉬 case_ranking 의
+#    방어 슬롯 축(sim_settings.DEFENSIVE_ITEMS = maw/ga/mercurial)은 현행 유지 — 이 태그와 별개다.
+DEFENSIVE_TAG = "defense"
+DEFENSIVE_MAX_CORE = 4   # 권장 구매 상한 코어. 현재 소비처 없음(탐색기가 참조할 자리).
+
+
+def item_tags(key):
+    """아이템 키의 태그 튜플을 반환한다(미지정이면 빈 튜플)."""
+    return ITEMS[key].get("tags", ())
+
+
+def is_defensive(key):
+    """방어 성격 아이템인지 여부."""
+    return DEFENSIVE_TAG in item_tags(key)
+
+
+# 태그에서 파생 — 아이템 추가 시 자동 반영(하드코딩 목록 없음).
+DEFENSIVE_KEYS = frozenset(k for k in ITEMS if is_defensive(k))
 
 # 위 recipe 필드의 출처: namu_wiki/item_legendary 첫 조합식 블록.
 ITEM_RECIPE_SOURCE_MODIFIED_AT = "2026-07-14 04:12:55"

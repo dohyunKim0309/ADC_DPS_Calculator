@@ -1,4 +1,33 @@
 # 시뮬레이션 엔진
+
+def effective_hp(hp, resist=0.0):
+    """고정(true) 피해 기준으로 환산한 유효 체력 (사용자 정의 2026-08-11).
+
+    같은 체력이라도 저항이 있으면 그만큼 더 많은 원시 피해가 필요하다.
+    `실피해 = raw × 100/(100+저항)` 의 역함수라 정확히 대칭이다:
+
+        유효체력 = 체력 × (100 + 저항) / 100
+
+    hp: 대상의 체력. resist: 물리면 방어력, 마법이면 마법저항, 고정 피해면 0.
+    저항이 음수(셔레드 과다)여도 그대로 반영한다 — 이 경우 유효 체력이 체력보다 작다.
+    반환: 대상을 죽이는 데 필요한 해당 속성 원시 피해량.
+    """
+    return hp * (100.0 + resist) / 100.0
+
+
+def effective_hp_after_penetration(hp, resist, champion, magic=False):
+    """관통까지 적용한 뒤의 유효 체력 — '이 챔피언 기준' 체감 내구도.
+
+    관통은 대상 스탯이 아니라 공격자 스탯이라, 같은 대상도 공격자마다 유효 체력이 다르다.
+    저항 축소 공식은 calculate_mitigation 과 동일하게 맞춘다(감소 → 관통 → 경감 순서).
+    """
+    if magic:
+        eff = resist * (1 - champion.magic_pen_percent) - champion.magic_pen_flat
+    else:
+        eff = resist * (1 - champion.armor_pen_percent) - champion.lethality
+    return effective_hp(hp, max(0.0, eff))
+
+
 def calculate_mitigation(raw_phys, raw_magic, target, champion):
     """
     방어력/마법저항력 및 관통력을 적용하여 실제 피해량을 계산
@@ -27,6 +56,12 @@ def _get_sustain_rates(champion):
     lifesteal = sum(item.stats.get("lifesteal", 0.0) for item in champion.inventory)
     lifesteal += float(getattr(champion, "rune_lifesteal", 0.0))
     omnivamp = sum(item.stats.get("omnivamp", 0.0) for item in champion.inventory)
+    # 조건부 흡혈(멜모셔스 생명선 발동 후 10% 등). 발동 조건은 미모델 → 상한선.
+    omnivamp += sum(
+        item.get_conditional_omnivamp(champion)
+        for item in champion.inventory
+        if hasattr(item, "get_conditional_omnivamp")
+    )
     return lifesteal, omnivamp
 
 
