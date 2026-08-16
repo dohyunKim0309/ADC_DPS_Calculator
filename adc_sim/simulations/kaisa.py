@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 import matplotlib.pyplot as plt
-from adc_sim.runes import LethalTempo, CutDown
+from adc_sim.runes import LethalTempo, CutDown, PressTheAttack, CoupDeGrace
 from adc_sim.settings import CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL, DEFAULT_DISCOUNT_GAMMA
 from adc_sim.engine import run_simulation
 
@@ -27,6 +27,15 @@ CORE_LEVELS = {
     5: {"level": 17},
 }
 
+# 대조군(컨트롤) 4코어 빌드 — 숫자의 단일 출처(랭킹 baseline·power_compare basic 이 참조).
+# CTRL 1 = 기본(메타) 템트리. 2026-08-11 사용자 확정으로 크라켄-구인수-내셔-경계 →
+#   크라켄-구인수-경계-유령무희 로 교체(정배 패키지 A = 도란검+광전사+핏빛길, 키스톤 치명적 속도).
+# CTRL 2 = 크리 계열 비교군(유지).
+KAISA_CONTROL_PATHS = {
+    "CTRL 1": ("kraken", "guinsoo", "terminus", "pd"),
+    "CTRL 2": ("kraken", "guinsoo", "pd", "ie"),
+}
+
 
 def get_e_level_for_core(core_tier):
     # 요청 가정:
@@ -46,8 +55,13 @@ def build_target_for_core(core_tier):
 
 # 아이템 키 → 인스턴스 생성은 통합 레지스트리 사용 (스탯/가격은 adc_sim/data/items_data.py)
 from adc_sim.data.items_registry import create_item_from_key, get_item_ad_from_key
+from adc_sim.simulations.ehp import (
+    core_timing_ehp, ehp_per_1000_gold, healing_effective, survivability,
+    survivability_per_1000_gold,
+)
 from adc_sim.data.items_data import (
     ADC_PACKAGES,
+    BLOODLINE_LIFESTEAL,
     DORAN_OPTIONS,
     DORAN_SHORT,
     ITEM_CATALOG,
@@ -55,6 +69,16 @@ from adc_sim.data.items_data import (
     ITEMS,
     pen_rule_ok,
 )
+
+# 기본 템트리(=CTRL 1)의 기준 패키지·룬 = 정배 패키지 A + 치명적 속도 + 체력차 극복.
+# 코어별 DPS/DPG 표(`main_basic_table`)의 기본값이며, 사용자 지정 "광전사·핏빛길·치속"에 해당한다.
+KAISA_BASIC_PACKAGE = {
+    "label": "Bld+Zerk+핏빛길",
+    "doran": "doranblade",
+    "boots": "berserker",
+    "rune_as": 0.0,
+    "bloodline_lifesteal": BLOODLINE_LIFESTEAL,
+}
 
 
 def get_yuntal_crit_for_tier(purchase_tier, current_tier):
@@ -76,12 +100,18 @@ def simulate_kaisa_core_path(
     rune_as_bonus=0.0,
     bloodline_lifesteal=0.0,
     return_sustain=False,
+    keystone_cls=LethalTempo,
+    sub_rune_cls=CutDown,
 ):
     """Simulate Kai'Sa DPS, total gold, and W cast count for a core timing.
 
     doran_key: 시작 도란 아이템(검/활). None이면 미포함.
     boots_key: 신발(기본 광전사). rune_as_bonus: 공속 룬(민첩함 등)의 평타 공속 가산(골드 무료, E 진화 제외).
     bloodline_lifesteal: 핏빛길 생명력 흡수율. return_sustain=True면 4번째 값으로 피흡 집계를 반환한다.
+    keystone_cls: 키스톤 룬 클래스(LethalTempo|PressTheAttack). 기본값은 기존 동작(치명적 속도).
+    sub_rune_cls: 보조룬 클래스(CutDown|CoupDeGrace). None 이면 보조룬 없음.
+        기본값은 기존 동작(체력차 극복) — 기존 호출부 수치는 불변이다.
+        (베인 `simulate_vayne_core_path` 의 룬 파라미터 규약을 그대로 미러링.)
     """
     target = build_target_for_core(core_tier)
     level_cfg = CORE_LEVELS[core_tier]
@@ -92,9 +122,10 @@ def simulate_kaisa_core_path(
     # - 0초에 Q/W 동시 시전 + 평타 시작, 이후 쿨마다 즉시 Q/W 사용
     kaisa = KaiSa(level=level_cfg["level"], q_level=5, w_level=5, e_level=e_level_for_tier, r_level=3)
 
-    # 기본 룬: 치명적 속도 + 체력차 극복
-    kaisa.set_rune(LethalTempo())
-    kaisa.set_sub_rune(CutDown())
+    # 룬: 기본은 치명적 속도 + 체력차 극복(기존 동작), 인자로 집중공격/최후의 일격 교체 가능.
+    kaisa.set_rune(keystone_cls())
+    if sub_rune_cls is not None:
+        kaisa.set_sub_rune(sub_rune_cls())
 
     current_keys = list(full_path[:core_tier])
 
@@ -520,8 +551,8 @@ def get_kaisa_4core_top1_build(rank_by="dpg"):
     core3_candidates = ["nashor", "guinsoo", "terminus", "pd", "bot", "storm", "ie", "ldr", "kraken"]
     core4_candidates = ["ie", "ldr", "mortal", "terminus", "bot", "guinsoo", "storm", "nashor", "rabadon", "shadowflame", "kraken", "pd"]
 
-    ctrl1_core4_combo = tuple(sorted(["kraken", "guinsoo", "nashor", "terminus"]))
-    ctrl2_core4_combo = tuple(sorted(["kraken", "guinsoo", "pd", "ie"]))
+    ctrl1_core4_combo = tuple(sorted(KAISA_CONTROL_PATHS["CTRL 1"]))
+    ctrl2_core4_combo = tuple(sorted(KAISA_CONTROL_PATHS["CTRL 2"]))
 
     ad_by_key = {}
     as_by_key = {}
@@ -609,10 +640,7 @@ def get_kaisa_4core_top1_build(rank_by="dpg"):
 
     # 컨트롤은 dedup 재정렬(초반 DPG 최대 순서)이 아니라 사용자 정의 순서(크라켄 1코어)로 고정 (main script와 동일).
     # DPS는 장착 '집합'에만 의존하므로 재정렬은 1코어 아이템만 바꾼다 → baseline 1코어를 크라켄으로 되돌림.
-    canonical_control_order = {
-        "CTRL 1": ("kraken", "guinsoo", "nashor", "terminus"),
-        "CTRL 2": ("kraken", "guinsoo", "pd", "ie"),
-    }
+    canonical_control_order = dict(KAISA_CONTROL_PATHS)
     rows_dedup = [r for r in rows_dedup if not r["is_control"]]
     for _cpath in canonical_control_order.values():
         _cands = [r for r in rows if tuple(r["path"]) == _cpath]
@@ -722,13 +750,20 @@ class SimCache:
         boots_key,
         rune_as_bonus,
         bloodline_lifesteal=0.0,
+        keystone_cls=LethalTempo,
+        sub_rune_cls=CutDown,
     ):
-        """시작 패키지를 고정한 독립 receding-horizon 시뮬레이션 캐시를 초기화한다."""
+        """시작 패키지·룬을 고정한 독립 receding-horizon 시뮬레이션 캐시를 초기화한다.
+
+        keystone_cls/sub_rune_cls 기본값은 기존 동작(치속+체력차 극복)이라 기존 호출부 불변.
+        """
         self.kw = {
             "doran_key": doran_key,
             "boots_key": boots_key,
             "rune_as_bonus": rune_as_bonus,
             "bloodline_lifesteal": bloodline_lifesteal,
+            "keystone_cls": keystone_cls,
+            "sub_rune_cls": sub_rune_cls,
         }
         self.cache = {}
         self.hits = 0
@@ -989,14 +1024,49 @@ def print_scenario(label, out, cache_stats, doran_key, boots_key, gamma=None):
         )
 
 
+RUNE_LABELS = {LethalTempo: "치명적속도", PressTheAttack: "집중공격"}
+SUB_RUNE_LABELS = {CutDown: "체력차 극복", CoupDeGrace: "최후의 일격"}
+
+
+def build_kaisa_rune_scenarios(packages=None, keystones=(LethalTempo, PressTheAttack),
+                               sub_runes=(CutDown, CoupDeGrace)):
+    """패키지 × 키스톤 × 보조룬 조합 시나리오 목록을 만든다 (베인 main() 미러).
+
+    출력 순서는 베인 관례를 따라 키스톤 → 패키지(신발/공속룬) → 보조룬 순이다.
+    반환: [{label, doran, boots, rune_as, bloodline_lifesteal, keystone_cls, sub_rune_cls}, ...]
+    """
+    if packages is None:
+        packages = ADC_PACKAGES
+    scenarios = []
+    for keystone in keystones:
+        for package in packages:
+            for sub_rune in sub_runes:
+                scenarios.append({
+                    "label": (f"{RUNE_LABELS[keystone]} + {package['label']} + "
+                              f"{SUB_RUNE_LABELS[sub_rune]}"),
+                    "doran": package["doran"],
+                    "boots": package["boots"],
+                    "rune_as": package["rune_as"],
+                    "bloodline_lifesteal": package.get("bloodline_lifesteal", 0.0),
+                    "keystone_cls": keystone,
+                    "sub_rune_cls": sub_rune,
+                })
+    return scenarios
+
+
 def _run_scenarios(packages, gamma):
-    """카이사 시작 패키지별 receding-horizon 탐색 결과를 진화 표시와 함께 출력한다."""
+    """카이사 시나리오별 receding-horizon 탐색 결과를 진화 표시와 함께 출력한다.
+
+    packages 항목은 keystone_cls/sub_rune_cls 를 가질 수 있다(없으면 기존 기본룬).
+    """
     for package in packages:
         cache = SimCache(
             doran_key=package["doran"],
             boots_key=package["boots"],
             rune_as_bonus=package["rune_as"],
             bloodline_lifesteal=package.get("bloodline_lifesteal", 0.0),
+            keystone_cls=package.get("keystone_cls", LethalTempo),
+            sub_rune_cls=package.get("sub_rune_cls", CutDown),
         )
         out = solve_greedy(cache, gamma=gamma)
         print_scenario(
@@ -1009,11 +1079,120 @@ def _run_scenarios(packages, gamma):
         )
 
 
+def basic_build_core_table(path=None, scenarios=None):
+    """기본 템트리(CTRL 1)의 시나리오별 1~5코어 DPS/골드/DPG 행을 계산한다.
+
+    path: 코어 경로(기본 KAISA_CONTROL_PATHS["CTRL 1"] + 5코어는 미지정 → 4코어까지).
+    scenarios: build_kaisa_rune_scenarios() 형식. 기본은 8시나리오 전체.
+    반환: [{label, dps[], gold[], dpg[]}, ...]
+    """
+    if path is None:
+        path = KAISA_CONTROL_PATHS["CTRL 1"]
+    if scenarios is None:
+        scenarios = build_kaisa_rune_scenarios()
+    rows = []
+    for scenario in scenarios:
+        kw = {
+            "doran_key": scenario["doran"],
+            "boots_key": scenario["boots"],
+            "rune_as_bonus": scenario["rune_as"],
+            "bloodline_lifesteal": scenario.get("bloodline_lifesteal", 0.0),
+            "keystone_cls": scenario.get("keystone_cls", LethalTempo),
+            "sub_rune_cls": scenario.get("sub_rune_cls", CutDown),
+        }
+        dps_values, gold_values, ehp_values = [], [], []
+        heal_values, surv_values = [], []
+        for tier in range(1, len(path) + 1):
+            dps, gold, _w, sustain = simulate_kaisa_core_path(
+                list(path), tier, return_sustain=True, **kw)
+            dps_values.append(dps)
+            gold_values.append(gold)
+            heal_values.append(sustain["total_healing"])
+            # 유효 체력은 전투와 무관한 스탯 산술 → 시뮬 없이 같은 타이밍 스냅샷으로 계산.
+            ehp_values.append(core_timing_ehp(
+                lambda level, t=tier: KaiSa(level=level, q_level=5, w_level=5,
+                                            e_level=get_e_level_for_core(t), r_level=3),
+                CORE_LEVELS[tier]["level"],
+                [scenario["doran"], scenario["boots"]] + list(path[:tier]),
+            ))
+        dpg = [dps_values[i] / (gold_values[i] / 1000.0) if gold_values[i] > 0 else 0.0
+               for i in range(len(dps_values))]
+        ehp_g = [{axis: ehp_per_1000_gold(ehp_values[i][axis], gold_values[i])
+                  for axis in ("physical", "magic", "true")}
+                 for i in range(len(ehp_values))]
+        surv_values = [survivability(ehp_values[i], heal_values[i])
+                       for i in range(len(ehp_values))]
+        surv_g = [{axis: survivability_per_1000_gold(surv_values[i][axis], gold_values[i])
+                   for axis in ("physical", "magic", "true")}
+                  for i in range(len(surv_values))]
+        rows.append({"label": scenario["label"], "dps": dps_values,
+                     "gold": gold_values, "dpg": dpg,
+                     "ehp": ehp_values, "ehp_per_gold": ehp_g,
+                     "healing": heal_values,
+                     "survivability": surv_values, "surv_per_gold": surv_g})
+    return rows
+
+
+def print_basic_build_core_table(path=None, scenarios=None):
+    """기본 템트리의 코어별 DPS/DPG 표와 유효 체력(물리/마법/고정) 표를 출력한다.
+
+    표만 출력하므로 헤드리스 안전. EHP 원자료는 반환값 rows[i]["ehp"][tier] 에 있다.
+    """
+    if path is None:
+        path = KAISA_CONTROL_PATHS["CTRL 1"]
+    rows = basic_build_core_table(path=path, scenarios=scenarios)
+    build_text = "-".join(ITEM_SHORT.get(key, key) for key in path)
+    tiers = len(path)
+    print(f"\n{'=' * 118}")
+    print(f"[KAISA 기본 템트리] {build_text}  — 코어별 DPS / DPG (1000골드당 DPS)")
+    print(f"{'SCENARIO':<34} | " + " ".join(f"{f'{t}C DPS':>8}" for t in range(1, tiers + 1))
+          + " | " + " ".join(f"{f'{t}C DPG':>7}" for t in range(1, tiers + 1)) + f" | {'GOLD':>6}")
+    print("-" * 118)
+    for row in rows:
+        dps_text = " ".join(f"{value:>8.1f}" for value in row["dps"])
+        dpg_text = " ".join(f"{value:>7.1f}" for value in row["dpg"])
+        print(f"{row['label']:<34} | {dps_text} | {dpg_text} | {row['gold'][-1]:>6.0f}")
+
+    # EHP 는 레벨 + 장착 아이템만의 함수라 룬/키스톤과 무관하다 → 시나리오가 아니라
+    # '시작 패키지(도란+신발)' 단위로만 갈린다. 그래서 별도 표로 중복 없이 출력한다.
+    print(f"\n[회복량] 기준 전투(K=2 처치) 누적 — 생명력흡수 + 모든피해흡혈 (DPS 기반 근사)")
+    print("  단위는 각 피해 속성 기준 유효 체력 = 회복량 × (100+저항)/100. "
+          "고정 행이 원시 회복량(저항 무시).")
+    print(f"{'SCENARIO':<34}{'축':<6} | " + " ".join(f"{f'{t}C':>8}" for t in range(1, tiers + 1)))
+    print("-" * 118)
+    for row in rows:
+        heal_axes = [healing_effective(row["healing"][i], row["ehp"][i]) for i in range(tiers)]
+        for axis, tag_ko in (("physical", "물리"), ("magic", "마법"), ("true", "고정")):
+            cells = " ".join(f"{value[axis]:>8.0f}" for value in heal_axes)
+            print(f"{row['label']:<34}{tag_ko:<6} | {cells}")
+
+    print(f"\n[생존성] 유효체력 + 회복 환산 — 물리/마법/고정. 괄호는 1000골드당 생존성")
+    print(f"{'SCENARIO':<34}{'축':<6} | " + " ".join(f"{f'{t}C':>17}" for t in range(1, tiers + 1)))
+    print("-" * 150)
+    for row in rows:
+        for axis, tag_ko in (("physical", "물리"), ("magic", "마법"), ("true", "고정")):
+            cells = " ".join(
+                f"{row['survivability'][i][axis]:>9.0f}({row['surv_per_gold'][i][axis]:>6.1f})"
+                for i in range(tiers)
+            )
+            print(f"{row['label']:<34}{tag_ko:<6} | {cells}")
+    return rows
+
+
 def main(gamma=None):
-    """두 카이사 기본 ADC 패키지를 베인식 receding-horizon 선택기로 탐색한다."""
+    """카이사 8시나리오(키스톤 × 패키지 × 보조룬)를 베인식 receding-horizon으로 탐색한다.
+
+    앞에 기본 템트리(CTRL 1)의 코어별 DPS/DPG 표를 같은 8시나리오로 먼저 출력한다.
+    """
     if gamma is None:
         gamma = GAMMA
-    _run_scenarios(ADC_PACKAGES, gamma)
+    print_basic_build_core_table()
+    _run_scenarios(build_kaisa_rune_scenarios(), gamma)
+
+
+def main_basic_table():
+    """기본 템트리 코어별 DPS/DPG 표만 출력한다(탐색 없이 빠르게)."""
+    print_basic_build_core_table()
 
 
 def main_legacy_ranking():
@@ -1046,12 +1225,12 @@ def main_legacy_ranking():
         "shieldbow": "Shieldbow",
     }
 
-    # 대조군(4코어 기준)
-    # CTRL 1: Krk-Gui-Nashor-Terminus (+ ShadowFlame 5코어)
+    # 대조군(4코어 기준) — 경로는 모듈 상수 KAISA_CONTROL_PATHS 가 단일 출처.
+    # CTRL 1: Krk-Gui-Terminus-PD (기본 템트리, 2026-08-11 교체)
     # CTRL 2: Krk-Gui-PD-IE (+ Terminus 5코어)
     # 랭킹 baseline은 4코어 집합 기준; 5코어는 표/그래프에 top2 옵션으로 표시(핀 고정 아님)
-    ctrl1_core4_combo = tuple(sorted(["kraken", "guinsoo", "nashor", "terminus"]))
-    ctrl2_core4_combo = tuple(sorted(["kraken", "guinsoo", "pd", "ie"]))
+    ctrl1_core4_combo = tuple(sorted(KAISA_CONTROL_PATHS["CTRL 1"]))
+    ctrl2_core4_combo = tuple(sorted(KAISA_CONTROL_PATHS["CTRL 2"]))
 
     all_paths = []
     seen_paths = set()
@@ -1172,10 +1351,7 @@ def main_legacy_ranking():
     # 컨트롤은 dedup 재정렬(초반 가중 DPG 최대 순서)이 아니라 사용자 정의 순서(크라켄 1코어)로 고정한다.
     # 근거: DPS는 장착 '집합'에만 의존 → 재정렬은 1코어 아이템만 바꾼다. baseline 1코어가 크라켄이어야
     #       "크라켄 선행 빌드의 1코어 상대 DPG = 0%"가 성립한다(2~4코어 집합은 순서 무관 동일).
-    CANONICAL_CONTROL_ORDER = {
-        "CTRL 1": ("kraken", "guinsoo", "nashor", "terminus"),
-        "CTRL 2": ("kraken", "guinsoo", "pd", "ie"),
-    }
+    CANONICAL_CONTROL_ORDER = dict(KAISA_CONTROL_PATHS)
     results = [r for r in results if not r["is_control"]]
     for _cpath in CANONICAL_CONTROL_ORDER.values():
         _cands = [r for r in all_results if tuple(r["path"][:4]) == _cpath]
@@ -1269,8 +1445,8 @@ def main_legacy_ranking():
     ranked = sorted(results, key=lambda r: r["rel_dpg_score"], reverse=True)
     ranked_main = ranked
     control_build_text = {
-        "CTRL 1": "Krk-Gui-Nashor-Terminus",
-        "CTRL 2": "Krk-Gui-PD-IE",
+        label: "-".join(ITEM_SHORT.get(key, key) for key in path)
+        for label, path in KAISA_CONTROL_PATHS.items()
     }
 
     def trim_text(text, width):
@@ -1642,17 +1818,21 @@ def main_legacy_ranking():
 def run_cli(args=None):
     """카이사 CLI를 실행한다.
 
-    기본은 1~5코어 receding-horizon이며 `legacy-ranking`은 교체 전 4코어 전수
+    기본은 8시나리오 1~5코어 receding-horizon(+ 기본 템트리 코어 표)이며,
+    `basic-table`은 기본 템트리 코어별 DPS/DPG 표만, `legacy-ranking`은 교체 전 4코어 전수
     랭킹과 5코어 확장 표·그래프를 실행한다. 숫자 인자는 기본 탐색의 할인율이다.
     """
     import sys
 
     cli_args = list(sys.argv[1:] if args is None else args)
     mode = "default"
-    if cli_args and cli_args[0] == "legacy-ranking":
+    if cli_args and cli_args[0] in ("legacy-ranking", "basic-table"):
         mode = cli_args.pop(0)
     if mode == "legacy-ranking":
         main_legacy_ranking()
+        return
+    if mode == "basic-table":
+        main_basic_table()
         return
 
     gamma = GAMMA
