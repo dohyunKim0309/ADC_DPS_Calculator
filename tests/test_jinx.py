@@ -18,8 +18,10 @@ def test_jinx_base_stats():
     assert abs(j.as_growth - 1.0) < 1e-9                         # V26.01 너프(1.4→1.0)
     assert j.base_mana == 260.0 and j.mana_growth == 50.0
     assert abs(j.base_mp5 - 6.7) < 1e-9 and abs(j.mp5_growth - 1.0) < 1e-9
-    # 레벨 11 기본 AD = 59 + 3.25*10 = 91.5
-    assert abs(Jinx(level=11).base_attack_ad - 91.5) < 1e-9
+    # 레벨 11 기본 AD = 59 + 3.25 × g(11) = 59 + 3.25 × 8.775 = 87.51875
+    # 2026-08-11 성장 곡선 정정(선형 → 실 LoL g×(n-1)×(0.7025+0.0175(n-1)), adc_sim/growth.py).
+    # 선형 근사였을 때의 91.5 대비 -4.35%.
+    assert abs(Jinx(level=11).base_attack_ad - 87.51875) < 1e-9
 
 
 def test_jinx_w_data():

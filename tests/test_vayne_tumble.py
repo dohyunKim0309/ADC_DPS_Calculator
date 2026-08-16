@@ -116,8 +116,10 @@ def test_default_simulation_q_has_one_first_wall_reset_then_full_attack_timer():
     )
     attack_times = [time for time, _ in history[1:]]
     assert attack_times[0] == ANIM_CANCEL_CLIP
-    assert 1.47 in attack_times  # Q 쿨 완료 시 직전 평타가 0.1초 밖 → 일반 평타를 먼저 친다.
-    assert 2.87 in attack_times  # 그 직후 Q 시전 0.25초 + 새 평타 간격 뒤 강화 평타.
+    # 2026-08-11 성장 곡선 정정(선형 → 실 LoL, adc_sim/growth.py)으로 레벨 11 공속이 낮아져
+    # 평타 간격이 늘었다. 검증 대상은 '벽캔 1회 후 정상 타이머' 패턴이지 절대 시각이 아니다.
+    assert 1.51 in attack_times  # Q 쿨 완료 시 직전 평타가 0.1초 밖 → 일반 평타를 먼저 친다. (구 1.47)
+    assert 2.94 in attack_times  # 그 직후 Q 시전 0.25초 + 새 평타 간격 뒤 강화 평타. (구 2.87)
 
 
 def test_auto_q_uses_recent_attack_window_or_defers_until_after_basic_attack():

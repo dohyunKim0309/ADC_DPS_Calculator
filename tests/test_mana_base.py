@@ -1,14 +1,20 @@
 """Base-class mana mechanics. Run: .venv/bin/python -m tests.test_mana_base"""
 from adc_sim.champion import Champion
+from adc_sim.growth import level_growth_factor
+
+# 이 파일은 "마나 기계장치"(초기화·재생·클램프·afford)를 검증한다. 성장 곡선 자체는 대상이 아니라,
+# 성장치를 g(11) 로 나눠 넣어 레벨 11 총량을 예전과 같은 800 마나 / 3.0 마나젠으로 고정한다.
+# 2026-08-11 성장 곡선이 선형 → 실 LoL 곡선으로 바뀌어도 이 테스트의 기대값은 흔들리지 않는다.
+_G11 = level_growth_factor(11)   # 8.775
 
 
 def _make():
     c = Champion(name="T", base_ad=60, base_as=0.65, as_ratio=0.65,
                  as_growth=2.0, base_range=500, level=11)
     c.base_mana = 400.0
-    c.mana_growth = 40.0      # total_mana = 400 + 40*10 = 800
+    c.mana_growth = 400.0 / _G11   # total_mana = 400 + 400 = 800
     c.base_mp5 = 10.0
-    c.mp5_growth = 0.5        # mp5 = 10 + 0.5*10 = 15 -> 3.0/sec
+    c.mp5_growth = 5.0 / _G11      # mp5 = 10 + 5 = 15 -> 3.0/sec
     return c
 
 

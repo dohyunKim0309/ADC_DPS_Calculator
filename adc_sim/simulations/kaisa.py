@@ -1,4 +1,5 @@
 from adc_sim.champion import KaiSa, Target
+from adc_sim.growth import growth_at_level
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -240,8 +241,8 @@ def _kaisa_level_growth(level):
     """해당 레벨에서 Q와 E 진화에 포함되는 성장 AD/AS를 반환한다."""
     kaisa = KaiSa(level=level)
     return {
-        "ad": kaisa.ad_growth * (level - 1),
-        "as": kaisa.as_growth * (level - 1) / 100.0,
+        "ad": growth_at_level(kaisa.ad_growth, level),
+        "as": growth_at_level(kaisa.as_growth, level) / 100.0,
     }
 
 

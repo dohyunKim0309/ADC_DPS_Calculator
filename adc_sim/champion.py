@@ -1,5 +1,9 @@
 # import matplotlib.pyplot as plt
 
+# 레벨 성장 곡선의 단일 출처. 이 모듈은 의존성 없는 리프라 순환 참조가 없다.
+# 성장 수식(0.7025 / 0.0175)을 바꿀 일이 있으면 adc_sim/growth.py 한 곳만 고칠 것.
+from adc_sim.growth import growth_at_level, stat_at_level
+
 
 # 1. 적 챔피언 (타겟) 클래스
 # 평타 캔슬 상수: Q(초월/궁) 등 스킬 활성 직후 평타 딜레이를 캔슬해
@@ -115,7 +119,7 @@ class Champion:
     @property
     def base_attack_ad(self):
         # 현재 레벨 기준 "기본 공격력" (아이템 AD 제외)
-        growth_ad = self.ad_growth * (self.level - 1)
+        growth_ad = growth_at_level(self.ad_growth, self.level)
         return self.base_ad + growth_ad
 
     @property
@@ -142,7 +146,7 @@ class Champion:
     def total_mana(self):
         base_mana = getattr(self, "base_mana", 0.0)
         mana_growth = getattr(self, "mana_growth", 0.0)
-        growth_mana = mana_growth * (self.level - 1)
+        growth_mana = growth_at_level(mana_growth, self.level)
 
         dynamic_bonus_mana = 0.0
         for item in self.inventory:
@@ -153,7 +157,7 @@ class Champion:
     @property
     def mana_regen_per_sec(self):
         """초당 마나 재생 = (기본 MP5 + 성장 + 아이템 MP5)/5. [H-MANA-1] 복합 패시브 무시."""
-        base = self.base_mp5 + self.mp5_growth * (self.level - 1)
+        base = stat_at_level(self.base_mp5, self.mp5_growth, self.level)
         item_mp5 = 0.0
         for item in self.inventory:
             item_mp5 += getattr(item, "stats", {}).get("mana_regen", 0.0)
@@ -183,7 +187,7 @@ class Champion:
 
     def get_total_bonus_as_percent(self):
         """총 추가 공격 속도(%) 반환 (아이템 + 성장 + 룬)"""
-        level_bonus = (self.as_growth * (self.level - 1)) / 100
+        level_bonus = growth_at_level(self.as_growth, self.level) / 100
         rune_bonus = self.rune.get_bonus_as() if self.rune else 0.0
         return level_bonus + self.bonus_as_percent + rune_bonus
 
@@ -1091,12 +1095,12 @@ class KaiSa(Champion):
 
     def _get_bonus_ad_for_scaling(self):
         # LoL 기준 bonus AD(아이템 + 성장 AD)에 가깝게 계산
-        return self.bonus_ad + (self.ad_growth * (self.level - 1))
+        return self.bonus_ad + growth_at_level(self.ad_growth, self.level)
 
     def _get_evolution_bonus_as(self):
         """Return E-evolution attack speed from items and level growth only."""
         item_bonus_as = sum(item.stats.get("as", 0.0) for item in self.inventory)
-        level_bonus_as = self.as_growth * (self.level - 1) / 100.0
+        level_bonus_as = growth_at_level(self.as_growth, self.level) / 100.0
         return item_bonus_as + level_bonus_as
 
     def has_q_evolved(self):
