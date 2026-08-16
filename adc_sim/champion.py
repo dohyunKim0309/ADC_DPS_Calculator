@@ -10,6 +10,11 @@ from adc_sim.growth import growth_at_level, stat_at_level
 # 다음 평타 간격(1/AS)을 이 값으로 상한 클리핑(초). Ashe·Yunara 공통.
 ANIM_CANCEL_CLIP = 0.33
 
+# 루난의 허리케인 '바람의 격노' 볼트 AD 계수 (다중 타겟 확산 계산용, 숫자의 단일 출처).
+# 2026-08-11 패치 버프: 0.55 → 0.65 (이속 4%→5% 는 DPS 모델에 반영되지 않음).
+# 소비처: Yunara.get_one_hit_damage 6-2 (루난 확산 대미지).
+RUNAAN_BOLT_AD_RATIO = 0.65
+
 
 class Target:
     def __init__(self, hp, armor, magic_resist, bonus_hp=0):
@@ -853,8 +858,9 @@ class Yunara(Champion):
             if has_runaan:
                 sub_targets = min(2, self.target_count - 1)
 
-                # 기본(AD) 계열 증폭: 1 + (0.55 * 0.3 * 서브타겟수)
-                ad_multiplier = 1.0 + (0.55 * 0.3 * sub_targets)
+                # 기본(AD) 계열 증폭: 1 + (볼트 AD계수 * 0.3 * 서브타겟수)
+                # 볼트 AD계수는 모듈 상수 RUNAAN_BOLT_AD_RATIO(=0.65, 2026-08-11 버프 전 0.55).
+                ad_multiplier = 1.0 + (RUNAAN_BOLT_AD_RATIO * 0.3 * sub_targets)
                 p_base *= ad_multiplier
                 m_base *= ad_multiplier
 

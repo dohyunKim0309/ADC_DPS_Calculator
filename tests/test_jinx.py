@@ -8,6 +8,7 @@ from adc_sim.champion import Jinx, Target
 from adc_sim.engine import run_simulation, calculate_mitigation
 from adc_sim.runes import LethalTempo, CutDown
 from adc_sim.data.items_registry import create_item_from_key
+from adc_sim.data.items_data import ITEMS
 
 
 def test_jinx_base_stats():
@@ -65,14 +66,17 @@ def test_jinx_w_is_pure_no_crit_no_onhit():
 
 def test_jinx_minigun_as_ramp_and_cap():
     """미니건 3스택 = +130%(랭크5). fishbones 는 스택 미적용·보너스AS ×0.90. 엔진 공속캡=3.0."""
+    # 광전사 공속은 items_data 가 단일 출처라 패치(2026-08-11 25%→30%)마다 바뀐다.
+    # 이 테스트의 관심사는 미니건 스택 규칙이지 신발 수치가 아니므로 데이터에서 읽어 쓴다.
+    zerk_as = ITEMS["berserker"]["stats"]["as"]
     # 미니건 최대 스택: super 보너스 + 1.30
     jm = Jinx(level=1, q_level=5, minigun_stacks=3, q_mode="minigun")
-    jm.add_item(create_item_from_key("berserker"))     # +0.25 AS
-    assert abs(jm.get_total_bonus_as_percent() - (0.25 + 1.30)) < 1e-9
+    jm.add_item(create_item_from_key("berserker"))     # +광전사 공속
+    assert abs(jm.get_total_bonus_as_percent() - (zerk_as + 1.30)) < 1e-9
     # fishbones: 스택 미적용, 보너스AS ×0.90
     jf = Jinx(level=1, q_level=5, minigun_stacks=3, q_mode="fishbones")
     jf.add_item(create_item_from_key("berserker"))
-    assert abs(jf.get_total_bonus_as_percent() - (0.25 * 0.90)) < 1e-9
+    assert abs(jf.get_total_bonus_as_percent() - (zerk_as * 0.90)) < 1e-9
     # 공속 상한(현재 엔진 3.0): 과충전 시 3.0 로 클램프 [AS-CAP: 실제 롤 2.5 — 별도 결정사항]
     # Jinx 는 base/ratio 0.625 라 캡 도달에 ~380% 추가공속 필요 → 순수 공속 6코어로 과충전해 확인.
     jcap = Jinx(level=18, q_level=5, minigun_stacks=3, q_mode="minigun")

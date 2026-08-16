@@ -105,7 +105,8 @@ ITEMS = {
     "manamune":    {"name": "Manamune",                 "cost": 2900, "behavior": "Manamune",            "stats": {"ad": 35, "cdr": 15, "mana": 500}},
     "muramana":    {"name": "Muramana",                 "cost": 2900, "behavior": "Manamune",            "stats": {"ad": 35, "cdr": 15, "mana": 500}},
     "plated":      {"name": "Plated Steelcaps",         "cost": 1200, "behavior": "Plated_Steelcaps",    "stats": {}},
-    "berserker":   {"name": "Berserker Greaves",        "cost": 1100, "behavior": "BerserkerGreaves",    "stats": {"as": 0.25}},
+    # 광전사의 신발: 2026-08-11 패치 버프 공속 25% → 30% (+5%p). 이속 45 는 DPS 모델 무영향.
+    "berserker":   {"name": "Berserker Greaves",        "cost": 1100, "behavior": "BerserkerGreaves",    "stats": {"as": 0.30}},
     "glutton":     {"name": "Gluttonous Greaves",       "cost": 1000, "behavior": "GluttonousGreaves",   "stats": {"omnivamp": 0.04}},
     "doranblade":  {"name": "Doran's Blade",            "cost": 450,  "behavior": "Doranblade",          "stats": {"ad": 10, "hp": 80, "omnivamp": 0.025}},
     "doranbow":    {"name": "Doran's Bow",              "cost": 400,  "behavior": "DoransBow",           "stats": {"ad": 8, "as": 0.15, "omnivamp": 0.015}},
