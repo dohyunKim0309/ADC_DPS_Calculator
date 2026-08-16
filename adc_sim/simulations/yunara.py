@@ -9,6 +9,9 @@ from adc_sim.runes import LethalTempo, CutDown
 from adc_sim.engine import run_simulation
 from adc_sim.settings import get_result_export_settings
 from adc_sim.data.items_registry import create_item_from_key
+from adc_sim.simulations.ehp import (
+    core_timing_ehp, healing_effective, survivability, survivability_per_1000_gold,
+)
 from adc_sim.data.items_data import (
     DORAN_OPTIONS, DORAN_SHORT, ADC_PACKAGES, pen_rule_ok,
 )
@@ -135,13 +138,15 @@ def simulate_yunara_reference_path(core_tier):
     return dps, total_cost
 
 
-def simulate_yunara_core_path(core_item_keys, core_tier, doran_key=None, boots_key="berserker", rune_as_bonus=0.0, target_count=1):
+def simulate_yunara_core_path(core_item_keys, core_tier, doran_key=None, boots_key="berserker",
+                              rune_as_bonus=0.0, target_count=1, return_sustain=False):
     """Simulate Yunara DPS and total gold for the given core progression.
 
     doran_key: 시작 도란 아이템(검/활). None이면 미포함.
     boots_key: 신발(기본 광전사). rune_as_bonus: 공속 룬(민첩함 등)의 평타 공속 가산(골드 무료).
     target_count: 교전 중 적 수. 1이면 순수 단일 대상. 2+면 (Q 활성 시) 크라켄 추가발동·루난 확산
         업리프트가 1차 대상 기록값에 합산된다(=다대상 유효 DPS). 1차 대상 딜은 줄지 않는다.
+    return_sustain=True 면 3번째 값으로 피흡 집계(engine.sustain_metrics)를 반환한다.
     """
     target = build_target_for_core(core_tier)
     level_cfg = CORE_YUNARA_LEVELS[core_tier]
@@ -177,6 +182,9 @@ def simulate_yunara_core_path(core_item_keys, core_tier, doran_key=None, boots_k
 
     # 로테이션(평타→궁→평타→W쿨마다)은 Yunara 모델 내부에서 처리.
     _, dps, _ = run_simulation(yunara, target, verbose=False, respawn_to_full_kills=2)
+    if return_sustain:
+        # 피흡 집계(engine 이 채운 이벤트 누적치). 카이사·베인 시뮬과 같은 규약.
+        return dps, total_cost, dict(yunara.sustain_metrics)
     return dps, total_cost
 
 
@@ -441,6 +449,32 @@ def export_yunara_ranking_report(ranked_data, top_n=20):
     return written_paths
 
 
+def _row_survivability(row, target_count=1):
+    """랭킹 행의 코어 1~4 생존성(유효체력 + 회복 환산)과 회복량을 반환한다.
+
+    EHP 는 시뮬 무관 스탯 산술이지만 회복량은 전투 결과라 코어별로 시뮬을 한 번 더 돈다.
+    반환: (surv_list, healing_list, ehp_list) — surv_list[i] = {physical, magic, true, ...}
+    """
+    survs, heals, ehps = [], [], []
+    for tier in (1, 2, 3, 4):
+        level_cfg = CORE_YUNARA_LEVELS[tier]
+        ehp = core_timing_ehp(
+            lambda level, lv=level_cfg: Yunara(
+                level=lv["level"], q_level=lv["q_level"],
+                w_level=lv["w_level"], r_level=lv["r_level"]),
+            level_cfg["level"],
+            ([row["doran"]] if row["doran"] else []) + [row["boots"]] + list(row["path"][:tier]),
+        )
+        _dps, _gold, sustain = simulate_yunara_core_path(
+            list(row["path"]), tier, doran_key=row["doran"], boots_key=row["boots"],
+            rune_as_bonus=row["rune_as"], target_count=target_count, return_sustain=True,
+        )
+        heals.append(sustain["total_healing"])
+        ehps.append(ehp)
+        survs.append(survivability(ehp, sustain["total_healing"]))
+    return survs, heals, ehps
+
+
 def print_case_style_table(ranked, best_control, target_count, top_n=20):
     """Print the Yunara ranking in case_ranking.py table format (4코어).
 
@@ -454,23 +488,36 @@ def print_case_style_table(ranked, best_control, target_count, top_n=20):
           "후보=YUNARA_CORE1~4_CANDIDATES(core1·2에 statikk 포함, 애쉬와 분리)")
     print("좌 4열=DPS(코어1~4), 우 4열=DPG(코어1~4), GOLD=4코어 총골드 | "
           "SCORE=컨트롤 대비 가중 상대(DPG=골드효율=랭킹지표, DPS=절대파워), vs=±%")
-    print(f"{'':>2} | {'':<36} | {'----- DPS (core 1->4) -----':^27} | "
-          f"{'----- DPG (core 1->4) -----':^27} | {'':>6} | {'DPG (rank metric)':^16} | {'DPS':^16}")
+    print("각 빌드 아래 보조행 = 생존성(코어1~4) = 유효체력 + 회복 환산. 물리/마법/고정 세 축이며 "
+          "괄호는 1000골드당 생존성. HEAL 은 기준 전투 누적 회복량(DPS 기반 근사).")
     header = (f"{'RK':>2} | {'BUILD':<36} | "
               f"{'1C':>6} {'2C':>6} {'3C':>6} {'4C':>6} | "
               f"{'1C':>6} {'2C':>6} {'3C':>6} {'4C':>6} | "
-              f"{'GOLD':>6} | {'SCORE':>8} {'vs':>7} | {'SCORE':>8} {'vs':>7}")
+              f"{'GOLD':>6} | {'회복물리':>7} {'회복마법':>7} {'회복고정':>7} | "
+              f"{'SCORE':>8} {'vs':>7} | {'SCORE':>8} {'vs':>7}")
+    print(f"{'':>2} | {'':<36} | {'--- DPS (core 1->4) ---':^27} | "
+          f"{'--- DPG (core 1->4) ---':^27} | {'':>6} | {'-- 4코어 회복(축별 EHP) --':^23} | "
+          f"{'DPG (rank metric)':^16} | {'DPS':^16}")
     print(header)
     print("-" * len(header))
 
-    def _row(tag, label, dpss, dpgs, gold, score_dpg, score_dps):
+    def _row(tag, label, dpss, dpgs, survs, heals, golds, gold, score_dpg, score_dps, ehps):
         dps_s = " ".join(f"{dpss[i]:>6.0f}" for i in range(4))
         dpg_s = " ".join(f"{dpgs[i]:>6.1f}" for i in range(4))
+        h4 = healing_effective(heals[3], ehps[3])     # 4코어 회복을 축별 유효체력으로
         print(f"{tag:>2} | {label:<36} | {dps_s} | {dpg_s} | {gold:>6.0f} | "
+              f"{h4['physical']:>7.0f} {h4['magic']:>7.0f} {h4['true']:>7.0f} | "
               f"{score_dpg:>8.2f} {score_dpg - 100.0:>+7.2f} | {score_dps:>8.2f} {score_dps - 100.0:>+7.2f}")
+        for axis, tag_ko in (("physical", "물리"), ("magic", "마법"), ("true", "고정")):
+            cells = " ".join(
+                f"{survs[i][axis]:>6.0f}({survivability_per_1000_gold(survs[i][axis], golds[i]):>5.1f})"
+                for i in range(4)
+            )
+            print(f"{'':>2} | {'  ↳ 생존성 ' + tag_ko:<36} | {cells}")
 
+    ctrl_surv, ctrl_heal, ctrl_ehp = _row_survivability(best_control, target_count)
     _row("C", best_control["label"] + " [CTRL]", best_control["y"], best_control["dpg"],
-         best_control["x"][3], 100.0, 100.0)
+         ctrl_surv, ctrl_heal, best_control["x"], best_control["x"][3], 100.0, 100.0, ctrl_ehp)
     rank = 0
     for row in ranked:
         if row["is_control"]:
@@ -478,8 +525,9 @@ def print_case_style_table(ranked, best_control, target_count, top_n=20):
         rank += 1
         if rank > top_n:
             break
-        _row(str(rank), row["label"], row["y"], row["dpg"], row["x"][3],
-             row["rel_dpg_score"], row["rel_dps_score"])
+        row_surv, row_heal, row_ehp = _row_survivability(row, target_count)
+        _row(str(rank), row["label"], row["y"], row["dpg"], row_surv, row_heal,
+             row["x"], row["x"][3], row["rel_dpg_score"], row["rel_dps_score"], row_ehp)
 
 
 def plot_graph(ranked, best_control):
@@ -531,6 +579,9 @@ def plot_graph(ranked, best_control):
 
 GAMMA = DEFAULT_DISCOUNT_GAMMA
 HORIZON = 5
+# receding-horizon 기본 모드가 훑는 교전 적 수 시나리오.
+# 1=순수 단일 대상, 2=루난 서브타겟 1명, 3=루난 서브타겟 캡(2명) 완전 활용.
+TARGET_COUNT_SCENARIOS = (1, 2, 3)
 CORE1_CANDIDATES = [
     "kraken", "yuntal25", "storm", "c44", "bot", "guinsoo", "terminus", "nashor", "statikk",
 ]
@@ -680,10 +731,14 @@ def print_scenario(label, out, cache, target_count, gamma=None):
 
 
 def main(gamma=None):
-    """유나라의 단일·2대상과 두 ADC 패키지를 베인식 receding-horizon으로 탐색한다."""
+    """유나라의 단일·2·3대상과 두 ADC 패키지를 베인식 receding-horizon으로 탐색한다.
+
+    TC3 은 루난 서브타겟 캡(2명)이 완전히 채워지는 시나리오다
+    (champion.py 6-2: sub_targets = min(2, target_count - 1)).
+    """
     if gamma is None:
         gamma = GAMMA
-    for target_count in (1, 2):
+    for target_count in TARGET_COUNT_SCENARIOS:
         for package in ADC_PACKAGES:
             cache = SimCache(package, target_count)
             out = solve_greedy(cache, gamma=gamma)

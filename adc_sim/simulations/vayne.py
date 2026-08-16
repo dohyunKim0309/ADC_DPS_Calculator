@@ -4,6 +4,9 @@ import time
 from adc_sim.runes import CoupDeGrace, LethalTempo, PressTheAttack, CutDown
 from adc_sim.engine import run_simulation
 from adc_sim.data.items_registry import create_item_from_key
+from adc_sim.simulations.ehp import (
+    core_timing_ehp, healing_effective, survivability, survivability_per_1000_gold,
+)
 from adc_sim.data.items_data import pen_rule_ok
 from adc_sim.settings import CORE_WEIGHTS_LABEL, DEFAULT_DISCOUNT_GAMMA
 from adc_sim.simulations.ashe import build_ashe_like_core_report_meta
@@ -54,12 +57,14 @@ VAYNE_RESPAWN_TO_FULL_KILLS = 2
 def simulate_vayne_core_path(full_path, core_tier, doran_key="doranblade",
                              boots_key="berserker", rune_as_bonus=0.0,
                              keystone_cls=LethalTempo,
-                             sub_rune_cls=_SUB_RUNE_DEFAULT):
+                             sub_rune_cls=_SUB_RUNE_DEFAULT,
+                             return_sustain=False):
     """Vayne DPS + total gold for a core timing. R@t=0, Q 쿨마다(마나 바운드). K=2.
 
     full_path: 코어 키 리스트. core_tier: 1~5. doran/boots/rune_as: 패키지.
     keystone_cls: 키스톤 룬 클래스(LethalTempo|PressTheAttack). 기본 CutDown 보조룬.
     sub_rune_cls: 보조룬 클래스. None 이면 보조룬 없음(핏빛길·민첩함 등 amp 없는 룬 시나리오용).
+    return_sustain=True 면 3번째 값으로 피흡 집계(engine.sustain_metrics)를 반환한다.
     (PtA·CutDown·CoupDeGrace 의 8% 대미지증가는 `_last_damage_amp` 를 통해 은화살 고정딜에도 자동 적용.)
     반환: (dps, total_cost).
     """
@@ -99,6 +104,9 @@ def simulate_vayne_core_path(full_path, core_tier, doran_key="doranblade",
         vayne, target, verbose=False, skill_plan=skill_plan,
         respawn_to_full_kills=VAYNE_RESPAWN_TO_FULL_KILLS,
     )
+    if return_sustain:
+        # 피흡 집계(engine 이 채운 이벤트 누적치). 카이사 시뮬과 같은 규약.
+        return dps, total_cost, dict(vayne.sustain_metrics)
     return dps, total_cost
 
 
@@ -334,8 +342,15 @@ def _fmt_items(seq):
     return "-".join(ITEM_SHORT.get(key, key) for key in seq)
 
 
-def print_scenario(label, out, cache_stats, gamma=None):
-    """한 receding-horizon 시나리오의 궤적·코어별 선택·대안을 표로 출력한다."""
+def print_scenario(label, out, cache_stats, gamma=None,
+                   doran_key="doranbow", boots_key="glutton", rune_as_bonus=0.0,
+                   keystone_cls=LethalTempo, sub_rune_cls=_SUB_RUNE_DEFAULT):
+    """한 receding-horizon 시나리오의 궤적·코어별 선택·대안을 표로 출력한다.
+
+    회복·생존성 모두 물리/마법/고정 3축이며 단위는 각 피해 속성 기준 유효 체력이다
+    (회복량 × (100+저항)/100). 원시 회복량은 고정 열과 같다.
+    doran_key/boots_key 는 EHP 계산에만 쓰이며 기본값은 베인 8시나리오 고정 패키지다.
+    """
     if gamma is None:
         gamma = GAMMA
     print(f"\n{'=' * 26}  {label}  {'=' * 26}")
@@ -355,10 +370,32 @@ def print_scenario(label, out, cache_stats, gamma=None):
     print()
     print(
         f"{'Slot':>4} | {'Pick':<12} | {'DPS':>9} | {'Gold':>6} | {'ΔDPS':>9} | "
-        f"{'ΔGold':>6} | {'MarginalDPG':>11} | {'Score':>8} | 대안(top3)"
+        f"{'ΔGold':>6} | {'MarginalDPG':>11} | "
+        f"{'회복물리':>8} {'회복마법':>8} {'회복고정':>8} | "
+        f"{'생존물리':>9} {'생존마법':>9} {'생존고정':>9} | {'생존/1k골드':>11} | {'Score':>8}"
     )
-    print("-" * 130)
+    print("-" * 186)
+    equipped = []
     for step in out["steps"]:
+        equipped.append(step["item"])
+        tier = step["slot"]
+        ehp = core_timing_ehp(
+            lambda level, t=tier: Vayne(
+                level=level, q_level=_skill_levels_for_core(t)[0],
+                w_level=_skill_levels_for_core(t)[1], e_level=_skill_levels_for_core(t)[2],
+                r_level=_skill_levels_for_core(t)[3], q_first_wall_reset_only=True),
+            CORE_VAYNE_LEVELS[tier]["level"],
+            [doran_key, boots_key] + list(equipped),
+        )
+        # 회복량: 같은 타이밍을 피흡 집계까지 받아 재현(생존성 = EHP + 회복 환산).
+        _dps, _gold, sustain = simulate_vayne_core_path(
+            list(equipped), tier, doran_key=doran_key, boots_key=boots_key,
+            rune_as_bonus=rune_as_bonus, keystone_cls=keystone_cls,
+            sub_rune_cls=sub_rune_cls, return_sustain=True,
+        )
+        healing = sustain["total_healing"]
+        heal_axes = healing_effective(healing, ehp)   # 축별 유효체력 단위로 환산
+        surv = survivability(ehp, healing)
         delta_dps = step["dps"] - step["baseline_dps_prev"]
         delta_gold = step["gold"] - step["baseline_gold_prev"]
         alternatives = " / ".join(
@@ -372,7 +409,11 @@ def print_scenario(label, out, cache_stats, gamma=None):
         print(
             f"{step['slot']:>4} | {pick_label:<12} | {step['dps']:>9.1f} | "
             f"{step['gold']:>6} | {delta_dps:>9.1f} | {delta_gold:>6} | "
-            f"{step['marginal_dpg']:>11.2f} | {score_text} | {alternatives}"
+            f"{step['marginal_dpg']:>11.2f} | "
+            f"{heal_axes['physical']:>8.0f} {heal_axes['magic']:>8.0f} {heal_axes['true']:>8.0f} | "
+            f"{surv['physical']:>9.0f} {surv['magic']:>9.0f} {surv['true']:>9.0f} | "
+            f"{survivability_per_1000_gold(surv['physical'], step['gold']):>11.1f} | "
+            f"{score_text}"
         )
     print("\n[각 슬롯 결정 시 상정한 미래 조합 (winner)]")
     for step in out["steps"]:
@@ -397,6 +438,8 @@ def _run_scenarios(scenarios, gamma):
         elapsed = time.time() - started_at
         print_scenario(
             label, out, {"hits": cache.hits, "misses": cache.misses}, gamma=gamma,
+            doran_key="doranbow", boots_key="glutton", rune_as_bonus=rune_as,
+            keystone_cls=keystone, sub_rune_cls=sub_rune,
         )
         print(f"[elapsed] {elapsed:.1f}s")
 

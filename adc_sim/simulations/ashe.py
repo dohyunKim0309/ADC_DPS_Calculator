@@ -56,14 +56,19 @@ def build_target_for_core(core_tier):
 
 # 아이템 키 → 인스턴스 생성은 통합 레지스트리 사용 (스탯/가격은 adc_sim/data/items_data.py)
 from adc_sim.data.items_registry import create_item_from_key
+from adc_sim.simulations.ehp import (
+    core_timing_ehp, healing_effective, survivability, survivability_per_1000_gold,
+)
 from adc_sim.data.items_data import DORAN_OPTIONS, DORAN_SHORT, ADC_PACKAGES, pen_rule_ok
 
 
-def simulate_ashe_core_path(core_item_keys, core_tier, doran_key=None, boots_key="berserker", rune_as_bonus=0.0):
+def simulate_ashe_core_path(core_item_keys, core_tier, doran_key=None, boots_key="berserker",
+                            rune_as_bonus=0.0, return_sustain=False):
     """Simulate Ashe DPS and total gold for the given core progression.
 
     doran_key: 시작 도란 아이템(검/활). None이면 미포함.
     boots_key: 신발(기본 광전사). rune_as_bonus: 공속 룬(민첩함 등)의 평타 공속 가산(골드 무료).
+    return_sustain=True 면 3번째 값으로 피흡 집계(engine.sustain_metrics)를 반환한다.
     """
     target = build_target_for_core(core_tier)
     level_cfg = CORE_ASHE_LEVELS[core_tier]
@@ -96,6 +101,9 @@ def simulate_ashe_core_path(core_item_keys, core_tier, doran_key=None, boots_key
     ashe.bonus_as_percent += rune_as_bonus  # 공속 룬(민첩함): 골드 무료, 평타 공속 가산
 
     _, dps, _ = run_simulation(ashe, target, verbose=False, respawn_to_full_kills=2)
+    if return_sustain:
+        # 피흡 집계(engine 이 채운 이벤트 누적치). 카이사·베인·유나라 시뮬과 같은 규약.
+        return dps, total_cost, dict(ashe.sustain_metrics)
     return dps, total_cost
 
 
@@ -745,24 +753,51 @@ def solve_greedy(cache, gamma=None, horizon=HORIZON, top_alt=3):
     return {"trajectory": fixed, "steps": steps}
 
 
-def print_scenario(label, out, cache, gamma=None):
-    """애쉬 receding-horizon 최종 궤적과 슬롯별 선택·대안을 출력한다."""
+def print_scenario(label, out, cache, gamma=None,
+                   doran_key="doranblade", boots_key="berserker", rune_as_bonus=0.0):
+    """애쉬 receding-horizon 최종 궤적과 슬롯별 선택·대안을 출력한다.
+
+    회복·생존성은 물리/마법/고정 3축이며 단위는 각 피해 속성 기준 유효 체력이다
+    (회복량 × (100+저항)/100). 생존성 = 유효체력 + 회복 환산.
+    """
     if gamma is None:
         gamma = GAMMA
     print(f"\n{'=' * 24}  Ashe · {label}  {'=' * 24}")
     print(f"γ={gamma}, horizon={HORIZON} | 최종 궤적: "
           f"{' → '.join(ITEM_SHORT.get(key, key) for key in out['trajectory'])}")
     print(f"시뮬 캐시: {cache.hits} hits / {cache.misses} misses")
+    print(f"  {'':>14} | {'DPS':>8} | {'Gold':>6} | {'MargDPG':>8} | "
+          f"{'회복물리':>8} {'회복마법':>8} {'회복고정':>8} | "
+          f"{'생존물리':>9} {'생존마법':>9} {'생존고정':>9} | {'생존/1k':>8} | {'Score':>7}")
+    equipped = []
     for step in out["steps"]:
+        equipped.append(step["item"])
+        tier = step["slot"]
+        level_cfg = CORE_ASHE_LEVELS[tier]
+        ehp = core_timing_ehp(
+            lambda level, c=level_cfg: Ashe(level=c["level"], q_level=c["q_level"]),
+            level_cfg["level"],
+            ([doran_key] if doran_key else []) + [boots_key] + list(equipped),
+        )
+        _dps, _gold, sustain = simulate_ashe_core_path(
+            list(equipped), tier, doran_key=doran_key, boots_key=boots_key,
+            rune_as_bonus=rune_as_bonus, return_sustain=True,
+        )
+        heal_axes = healing_effective(sustain["total_healing"], ehp)
+        surv = survivability(ehp, sustain["total_healing"])
         alternatives = " / ".join(
             f"{ITEM_SHORT.get(alt['item'], alt['item'])}:{alt['score']:.1f}"
             for alt in step["alternatives"]
         )
         print(
             f"  {step['slot']}C → {ITEM_SHORT.get(step['item'], step['item']):<10} | "
-            f"DPS {step['dps']:>7.1f} | Gold {step['gold']:>5.0f} | "
-            f"MarginalDPG {step['marginal_dpg']:>7.2f} | Score {step['score']:>7.2f} | {alternatives}"
+            f"{step['dps']:>8.1f} | {step['gold']:>6.0f} | {step['marginal_dpg']:>8.2f} | "
+            f"{heal_axes['physical']:>8.0f} {heal_axes['magic']:>8.0f} {heal_axes['true']:>8.0f} | "
+            f"{surv['physical']:>9.0f} {surv['magic']:>9.0f} {surv['true']:>9.0f} | "
+            f"{survivability_per_1000_gold(surv['physical'], step['gold']):>8.1f} | "
+            f"{step['score']:>7.2f}"
         )
+        print(f"  {'':>14}   대안: {alternatives}")
 
 
 def main(gamma=None):
@@ -771,7 +806,9 @@ def main(gamma=None):
         gamma = GAMMA
     for package in ADC_PACKAGES:
         cache = SimCache(package["doran"], package["boots"], package["rune_as"])
-        print_scenario(package["label"], solve_greedy(cache, gamma=gamma), cache, gamma=gamma)
+        print_scenario(package["label"], solve_greedy(cache, gamma=gamma), cache, gamma=gamma,
+                       doran_key=package["doran"], boots_key=package["boots"],
+                       rune_as_bonus=package["rune_as"])
 
 
 # --- 교체 전 메인 실행부(호환 모드) ---
