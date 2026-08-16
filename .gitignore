@@ -28,3 +28,7 @@ results/
 reports/
 # CDragon 등에서 받아온 패치 데이터 스냅샷 (생성물)
 patch_data/
+
+# ── 에이전트 로컬 설정 ─────────────────────
+# Claude Code 의 머신별 권한/설정. 저장소에 공유할 내용이 아니다.
+.claude/settings.local.json
