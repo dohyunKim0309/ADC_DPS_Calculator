@@ -85,11 +85,12 @@ def build_ashe_like_core_report_meta(champion_name, full_path, core_tier):
 # === 유나라 전용 시뮬 설정 (애쉬 파일에서 분리; Ashe 가정에 의존하지 않음) ===
 # 코어 단계별 고정 타깃 스탯 (유나라 자체 보유)
 CORE_TARGET_STATS = {
-    1: {"hp": 1700, "armor": 50, "mr": 25},
-    2: {"hp": 1900, "armor": 70, "mr": 30},
-    3: {"hp": 2400, "armor": 100, "mr": 50},
-    4: {"hp": 2600, "armor": 120, "mr": 70},
-    5: {"hp": 3000, "armor": 150, "mr": 90},
+    # 마저 +5 일괄 상향(25/30/50/70/90 → 30/35/55/75/95) — 원딜 마저 버프 반영, 사용자 확정 2026-08-31.
+    1: {"hp": 1700, "armor": 50, "mr": 30},
+    2: {"hp": 1900, "armor": 70, "mr": 35},
+    3: {"hp": 2400, "armor": 100, "mr": 55},
+    4: {"hp": 2600, "armor": 120, "mr": 75},
+    5: {"hp": 3000, "armor": 150, "mr": 95},
 }
 
 # 코어 타이밍별 유나라 레벨/스킬 레벨 (Ashe 레벨표 참조 제거 — 자체 정의)
@@ -104,6 +105,24 @@ CORE_YUNARA_LEVELS = {
 }
 
 
+# 타깃 추가 체력(거인 학살자 증폭 판정) = max(0, 최대체력 − 1600) — 사용자 확정 2026-08-31,
+# 전 챔피언 공통 규칙(기존 hp−1500 에서 하향). 이전의 유나라 전용 700 캡(같은 날 오전)은 폐기.
+# 코어별: 100 / 300 / 800 / 1000 / 1400 → LDR 증폭 1 / 3 / 8 / 10 / 14 %.
+
+# ── 스탯 파편(작은 룬) — 사용자 확정 2026-08-31 ──────────────────────────────
+# 1줄: 공속 10% (공속/공격력5.6(AP9)/스킬가속8 중 택1 — ADC 정배 공속)
+# 2줄: 적응형 공격력 +5.4 (공격력/이속2.5%/성장체력 중 택1) — 사용자 정정 2026-08-31(5.6 아님)
+# 3줄: 방어(성장체력/고정체력/강인함·둔화저항) — 전부 DPS 0 → 미모델
+# [H] 적응형은 유나라 정배가 AD 빌드라 AD 5.4 고정(AP 빌드에선 AP 9 이 정확하나 미세 차이).
+YUNARA_SHARD_AS = 0.10
+YUNARA_SHARD_AD = 5.4
+# 파편 1줄 선택지(사용자 요청 2026-08-31): 공속10%+적응형5.4(기본) vs 적응형×2(AD 10.8, 공속 0)
+SHARD_SCENARIOS = {
+    "AS10%+AD5.4": {"shard_as": 0.10, "shard_ad": 5.4},
+    "AD5.4x2":     {"shard_as": 0.0,  "shard_ad": 10.8},
+}
+
+
 def build_target_for_core(core_tier):
     """코어 티어별 더미 타깃 생성 (유나라 시뮬 전용)."""
     stats = CORE_TARGET_STATS[core_tier]
@@ -111,7 +130,7 @@ def build_target_for_core(core_tier):
         hp=stats["hp"],
         armor=stats["armor"],
         magic_resist=stats["mr"],
-        bonus_hp=max(0, stats["hp"] - 1500),
+        bonus_hp=max(0, stats["hp"] - 1600),
     )
 
 
@@ -139,7 +158,8 @@ def simulate_yunara_reference_path(core_tier):
 
 
 def simulate_yunara_core_path(core_item_keys, core_tier, doran_key=None, boots_key="berserker",
-                              rune_as_bonus=0.0, target_count=1, return_sustain=False):
+                              rune_as_bonus=0.0, target_count=1, return_sustain=False,
+                              shard_as=YUNARA_SHARD_AS, shard_ad=YUNARA_SHARD_AD):
     """Simulate Yunara DPS and total gold for the given core progression.
 
     doran_key: 시작 도란 아이템(검/활). None이면 미포함.
@@ -179,6 +199,8 @@ def simulate_yunara_core_path(core_item_keys, core_tier, doran_key=None, boots_k
         total_cost += item.cost
         yunara.add_item(item)
     yunara.bonus_as_percent += rune_as_bonus  # 공속 룬(민첩함): 골드 무료, 평타 공속 가산
+    yunara.bonus_as_percent += shard_as   # 스탯 파편 1줄 (기본 공속 10%; SHARD_SCENARIOS 로 교체 가능)
+    yunara.bonus_ad += shard_ad           # 스탯 파편 2줄 적응형 (기본 5.4; 1줄도 적응형이면 10.8)
 
     # 로테이션(평타→궁→평타→W쿨마다)은 Yunara 모델 내부에서 처리.
     _, dps, _ = run_simulation(yunara, target, verbose=False, respawn_to_full_kills=2)
@@ -308,6 +330,68 @@ def rank_yunara_4core_paths(target_count=1):
         "best_control": best_control_after,
         "total_paths_simulated": len(all_paths),
     }
+
+
+# ── 적 수 혼합 랭킹 — 사용자 확정 2026-08-31 ─────────────────────────────────
+# 템트리 선택 지표를 단일 tc 가 아니라 교전 시나리오 혼합으로: DPS_mix = Σ w·DPS_tc.
+# 기본 = 적1 0.5 : 적2 0.5 (사용자 변경 2026-08-31, 최초 0.6:0.4 에서 조정.
+# w = 교전 중 두 번째 적이 붙어 있는 시간 비중 해석).
+# 적3(루난 서브타겟 풀활용)은 한타 한정이라 혼합에서 제외(별도 참고 표).
+TARGET_MIX_WEIGHTS = ((1, 0.5), (2, 0.5))
+
+
+def rank_yunara_4core_paths_mixed(mix=None):
+    """혼합 DPS 기준 4코어 전수 랭킹. 반환 스키마는 rank_yunara_4core_paths 와 동일.
+
+    mix: ((target_count, weight), ...). 코어별 DPS/DPG 는 혼합값으로 계산되고,
+    rel_dpg_score 는 같은 혼합 기준의 컨트롤 대비 상대값이다. 골드는 tc 무관 동일.
+    """
+    mix = tuple(mix or TARGET_MIX_WEIGHTS)
+    all_paths = _build_yunara_4core_all_paths()
+
+    results = []
+    for c1, c2, c3, c4 in all_paths:
+        for pkg in ADC_PACKAGES:
+            dps_mix = [0.0, 0.0, 0.0, 0.0]
+            costs = [0, 0, 0, 0]
+            for tc, w in mix:
+                kw = dict(doran_key=pkg["doran"], boots_key=pkg["boots"],
+                          rune_as_bonus=pkg["rune_as"], target_count=tc)
+                for tier in range(1, 5):
+                    d, g = simulate_yunara_core_path([c1, c2, c3, c4][:tier], tier, **kw)
+                    dps_mix[tier - 1] += w * d
+                    costs[tier - 1] = g
+            results.append(_build_yunara_result_entry((c1, c2, c3, c4), dps_mix, costs, pkg))
+
+    control_candidates = [row for row in results if row["is_control"]]
+    if not control_candidates:
+        raise RuntimeError("Control build not found: Krk-PD-IE-LDR")
+
+    def _weighted_dpg(row):
+        d = _calculate_dpg_values(row["y"], row["x"])
+        return sum(CORE_WEIGHTS[i] * d[i] for i in range(4))
+    best_control = max(control_candidates, key=_weighted_dpg)
+    ctrl_dpg = _calculate_dpg_values(best_control["y"], best_control["x"])
+    ctrl_dps = best_control["y"]
+
+    for row in results:
+        row_dpg = _calculate_dpg_values(row["y"], row["x"])
+        rel = [(row_dpg[i] / ctrl_dpg[i]) if ctrl_dpg[i] > 0 else 0.0 for i in range(4)]
+        row["dpg"] = row_dpg
+        row["rel_dpg_score"] = sum(CORE_WEIGHTS[i] * rel[i] for i in range(4)) * 100.0
+        rel_dps = [(row["y"][i] / ctrl_dps[i]) if ctrl_dps[i] > 0 else 0.0 for i in range(4)]
+        row["rel_dps_score"] = sum(CORE_WEIGHTS[i] * rel_dps[i] for i in range(4)) * 100.0
+
+    combo_best = {}
+    for row in results:
+        key = tuple(sorted(row["path"]))
+        prev = combo_best.get(key)
+        if prev is None or row["rel_dpg_score"] > prev["rel_dpg_score"]:
+            combo_best[key] = row
+    deduped = sorted(combo_best.values(), key=lambda r: r["rel_dpg_score"], reverse=True)
+    best_control_after = next(row for row in deduped if row["is_control"])
+    return {"ranked": deduped, "best_control": best_control_after,
+            "total_paths_simulated": len(all_paths), "mix": mix}
 
 
 def get_yunara_4core_top1_build(target_count=1, rank_by="dpg"):
@@ -610,14 +694,16 @@ CANDIDATES_BY_SLOT = {
 class SimCache:
     """아이템 집합과 윤탈 구매 시점을 키로 유나라 DPS·골드를 메모이즈한다."""
 
-    def __init__(self, package, target_count):
-        """시작 패키지와 교전 적 수를 고정한 유나라 탐색 캐시를 초기화한다."""
+    def __init__(self, package, target_count, shards=None):
+        """시작 패키지·교전 적 수·파편 구성(shards={"shard_as","shard_ad"})을 고정한 캐시."""
         self.kw = {
             "doran_key": package["doran"],
             "boots_key": package["boots"],
             "rune_as_bonus": package["rune_as"],
             "target_count": target_count,
         }
+        if shards:
+            self.kw.update(shards)
         self.cache = {}
         self.hits = 0
         self.misses = 0
@@ -638,6 +724,264 @@ class SimCache:
         result = simulate_yunara_core_path(list(items_tuple), len(items_tuple), **self.kw)
         self.cache[key] = result
         return result
+
+
+class MixedSimCache:
+    """적 수 시나리오 혼합 캐시 — sim() 이 TARGET_MIX_WEIGHTS 가중으로 tc별 DPS 를 합산.
+
+    혼합 랭킹(rank_yunara_4core_paths_mixed)과 같은 지표를 receding-horizon 에서 쓰는 래퍼
+    (사용자 확정 2026-08-31: 혼합 1:1 이 유나라 기본 선택 지표). 골드는 tc 무관 동일.
+    """
+
+    def __init__(self, package, mix=None, shards=None):
+        self.mix = tuple(mix or TARGET_MIX_WEIGHTS)
+        self.caches = {tc: SimCache(package, tc, shards=shards) for tc, _ in self.mix}
+        self.hits = 0
+        self.misses = 0
+
+    def sim(self, items_tuple):
+        dps, gold = 0.0, 0
+        for tc, w in self.mix:
+            d, g = self.caches[tc].sim(items_tuple)
+            dps += w * d
+            gold = g
+        self.hits = sum(c.hits for c in self.caches.values())
+        self.misses = sum(c.misses for c in self.caches.values())
+        return dps, gold
+
+
+# ── 하프 티어(코어 사이 하위템 구간) — 사용자 확정 2026-08-31 ─────────────────
+# 각 코어 k 완성 전, 다음 코어의 조합식 하위템(합계 ≤1600G 중 시뮬 최적 부분집합)을 든
+# 중간 지점을 시뮬해 receding-horizon 마지널 DPG 체인에 포함한다.
+# 레벨 = 짝수 보간(코어 k 직전 = 8/10/12/14/16), 타깃 = 인접 코어 스탯 선형 보간.
+# [H-HALF-1] 하프 시점 스킬레벨은 다음 코어 표를 사용(레벨 조건으로 R 랭크만 가드).
+# [H-HALF-2] 윤탈이 이미 완성된 상태의 하프 시점 치명타는 25%(스택이 얼추 찼다고 가정).
+# [H-HALF-DISCOUNT] 하프+풀 스텝은 γ^(s/2) (s=0,1,2,…) 로 할인 — 풀 코어 간 비율은 기존 γ 유지.
+HALF_TIER_GOLD_CAP = 1600
+HALF_TIER_LEVELS = {1: 8, 2: 10, 3: 12, 4: 14, 5: 16}
+# 조합식이 데이터에 없는 아이템의 대체 하위템 (루난=열정의 검 계열, 공허=지팡이 계열)
+FALLBACK_RECIPES = {
+    "runaan": ("열정의 검", "민첩성의 망토"),
+    "rfc": ("열정의 검", "민첩성의 망토"),
+    "void": ("쓸데없이 큰 지팡이", "망각의 구"),
+}
+
+
+def _half_tier_target(k):
+    """코어 k 직전 하프 티어 타깃: 인접 코어 스탯 선형 보간(0.5코어는 코어1 그대로)."""
+    if k <= 1:
+        st = CORE_TARGET_STATS[1]
+        hp, armor, mr = st["hp"], st["armor"], st["mr"]
+    else:
+        a, b = CORE_TARGET_STATS[k - 1], CORE_TARGET_STATS[min(5, k)]
+        hp = (a["hp"] + b["hp"]) / 2.0
+        armor = (a["armor"] + b["armor"]) / 2.0
+        mr = (a["mr"] + b["mr"]) / 2.0
+    return Target(hp=hp, armor=armor, magic_resist=mr, bonus_hp=max(0, hp - 1600))
+
+
+def _recipe_component_names(next_key):
+    """다음 코어의 조합식 하위템 이름 튜플(데이터 recipe → 없으면 FALLBACK_RECIPES → 빈 튜플)."""
+    from adc_sim.data.items_data import ITEMS as _ITEMS
+    recipe = _ITEMS.get(next_key, {}).get("recipe") or FALLBACK_RECIPES.get(next_key)
+    return tuple(recipe) if recipe else ()
+
+
+def _component_subsets(next_key, cap=HALF_TIER_GOLD_CAP):
+    """조합식 슬롯별 {안 삼 | 완제 하위템 | 그 재료(builds_from) 부분집합} 택1의 곱 중 합계 ≤ cap.
+
+    이미 든 하위템의 재료를 중복 보유하는 조합(완성 시 잉여 환불 효과)은 금지 —
+    예: 윤탈 = B.F.+단검(1550G) 가능(새총 재료 단검만 선구매), 새총+단검×2 는 불가.
+    사용자 지적 2026-08-31.
+    """
+    from itertools import combinations, product
+    from adc_sim.data.items_data import ITEM_CATALOG
+
+    def slot_options(name):
+        if name not in ITEM_CATALOG:
+            return [()]
+        opts = [(), (name,)]
+        if ITEM_CATALOG[name]["tier"] == "epic":
+            mats = [b for b in ITEM_CATALOG[name].get("builds_from", ()) if b in ITEM_CATALOG]
+            for r in range(1, len(mats) + 1):
+                for c in combinations(mats, r):
+                    opts.append(tuple(c))
+        # 슬롯 내 중복 옵션 제거
+        seen, uniq = set(), []
+        for o in opts:
+            k = tuple(sorted(o))
+            if k not in seen:
+                seen.add(k)
+                uniq.append(o)
+        return uniq
+
+    slots = [slot_options(n) for n in _recipe_component_names(next_key)]
+    subsets, seen = [()], {()}
+    for pick in product(*slots) if slots else []:
+        combo = tuple(n for part in pick for n in part)
+        key = tuple(sorted(combo))
+        if key in seen:
+            continue
+        cost = sum(ITEM_CATALOG[n]["cost"] for n in combo)
+        if cost <= cap:
+            seen.add(key)
+            subsets.append(combo)
+    return subsets
+
+
+def simulate_yunara_half_tier(done_keys, next_key, comp_names, doran_key=None,
+                              boots_key="berserker", rune_as_bonus=0.0, target_count=1,
+                              shard_as=YUNARA_SHARD_AS, shard_ad=YUNARA_SHARD_AD):
+    """코어 done_keys 완성 + next_key 의 하위템 comp_names 를 든 하프 티어 DPS·총 골드."""
+    from adc_sim.data.items_registry import create_catalog_item
+    k = min(5, len(done_keys) + 1)
+    level = HALF_TIER_LEVELS[k]
+    cfg = CORE_YUNARA_LEVELS[k]
+    r_guard = 1 if level < 11 else (2 if level < 16 else 3)
+    yunara = Yunara(level=level, q_level=cfg["q_level"], w_level=cfg["w_level"],
+                    r_level=min(cfg["r_level"], r_guard))
+    yunara.set_rune(LethalTempo())
+    yunara.set_sub_rune(CutDown())
+    yunara.set_target_count(target_count)
+
+    items = [create_item_from_key(doran_key)] if doran_key else []
+    items.append(create_item_from_key(boots_key))
+    for key in done_keys:
+        if key == "yuntal25":
+            items.append(create_item_from_key(key, yuntal_crit=0.25))   # [H-HALF-2]
+        else:
+            items.append(create_item_from_key(key))
+    for name in comp_names:
+        items.append(create_catalog_item(name, allow_unsupported=True))
+
+    total_cost = 0
+    for item in items:
+        total_cost += item.cost
+        yunara.add_item(item)
+    yunara.bonus_as_percent += rune_as_bonus + shard_as
+    yunara.bonus_ad += shard_ad
+
+    target = _half_tier_target(k)
+    _, dps, _ = run_simulation(yunara, target, verbose=False, respawn_to_full_kills=2)
+    return dps, total_cost
+
+
+def _half_cache_sim(cache, done_tuple, next_key):
+    """SimCache 하나에 대해 (done, next) 하프 티어 최적 하위템 구성을 메모이즈해 반환."""
+    key = (tuple(sorted(done_tuple)), next_key)
+    store = getattr(cache, "_half_cache", None)
+    if store is None:
+        store = cache._half_cache = {}
+    if key in store:
+        return store[key]
+    best = None
+    for comps in _component_subsets(next_key):
+        d, g = simulate_yunara_half_tier(list(done_tuple), next_key, comps, **cache.kw)
+        if best is None or d > best[0]:
+            best = (d, g, comps)
+    store[key] = best
+    return best
+
+
+def _mixed_half_sim(mixed_cache, done_tuple, next_key):
+    """MixedSimCache 용 하프 티어: 부분집합을 '혼합 DPS' 기준으로 최적화."""
+    key = (tuple(sorted(done_tuple)), next_key)
+    store = getattr(mixed_cache, "_half_cache", None)
+    if store is None:
+        store = mixed_cache._half_cache = {}
+    if key in store:
+        return store[key]
+    best = None
+    for comps in _component_subsets(next_key):
+        dps, gold = 0.0, 0
+        for tc, w in mixed_cache.mix:
+            d, g = simulate_yunara_half_tier(list(done_tuple), next_key, comps,
+                                             **mixed_cache.caches[tc].kw)
+            dps += w * d
+            gold = g
+        if best is None or dps > best[0]:
+            best = (dps, gold, comps)
+    store[key] = best
+    return best
+
+
+def sim_half(cache, done_tuple, next_key):
+    """캐시 타입에 맞는 하프 티어 시뮬 (dps, gold, comps)."""
+    if isinstance(cache, MixedSimCache):
+        return _mixed_half_sim(cache, done_tuple, next_key)
+    return _half_cache_sim(cache, done_tuple, next_key)
+
+
+def _score_combo_half(cache, fixed, combo, from_slot, dps_prev, gold_prev, gamma, horizon):
+    """하프+풀 스텝을 γ^(s/2) 로 할인한 마지널 DPG 합. [H-HALF-DISCOUNT]"""
+    full_path = list(fixed) + list(combo)
+    score, step = 0.0, 0
+    d_prev, g_prev = dps_prev, gold_prev
+    for tier in range(from_slot, horizon + 1):
+        done = tuple(full_path[:tier - 1])
+        nxt = full_path[tier - 1]
+        h_dps, h_gold, _ = sim_half(cache, done, nxt)
+        dg = h_gold - g_prev
+        if dg > 0:
+            score += (gamma ** (step / 2.0)) * (h_dps - d_prev) / (dg / 1000.0)
+        d_prev, g_prev = max(d_prev, h_dps), max(g_prev, h_gold)
+        step += 1
+        f_dps, f_gold = cache.sim(tuple(full_path[:tier]))
+        dg = f_gold - g_prev
+        if dg > 0:
+            score += (gamma ** (step / 2.0)) * (f_dps - d_prev) / (dg / 1000.0)
+        d_prev, g_prev = f_dps, f_gold
+        step += 1
+    return score
+
+
+def solve_greedy_half(cache, gamma=None, horizon=HORIZON, top_alt=3):
+    """하프 티어 포함 receding-horizon: 매 슬롯 미래(하프+풀) 할인 마지널 DPG 재탐색."""
+    if gamma is None:
+        gamma = GAMMA
+    fixed, steps = [], []
+    dps_prev, gold_prev = 0.0, 0.0
+    for slot in range(1, horizon + 1):
+        best_score, best_combo = None, None
+        alternatives_by_item, alternatives_path = {}, {}
+        for combo in _enumerate_future_combos(fixed, slot, horizon):
+            score = _score_combo_half(cache, fixed, combo, slot, dps_prev, gold_prev, gamma, horizon)
+            item_key = combo[0]
+            if item_key not in alternatives_by_item or score > alternatives_by_item[item_key]:
+                alternatives_by_item[item_key], alternatives_path[item_key] = score, combo
+            if best_score is None or score > best_score:
+                best_score, best_combo = score, combo
+        if best_combo is None:
+            break
+        nxt = best_combo[0]
+        h_dps, h_gold, h_comps = sim_half(cache, tuple(fixed), nxt)
+        fixed.append(nxt)
+        dps_now, gold_now = cache.sim(tuple(fixed))
+        ranked = sorted(alternatives_by_item.items(), key=lambda kv: kv[1], reverse=True)[:top_alt]
+        steps.append({
+            "slot": slot, "item": nxt, "score": best_score,
+            "half_dps": h_dps, "half_gold": h_gold, "half_comps": h_comps,
+            "dps": dps_now, "gold": gold_now,
+            "alternatives": [{"item": k, "score": v, "future_path": alternatives_path[k]}
+                             for k, v in ranked],
+        })
+        dps_prev, gold_prev = dps_now, gold_now
+    return {"trajectory": fixed, "steps": steps}
+
+
+def print_half_scenario(label, out, gamma=None):
+    if gamma is None:
+        gamma = GAMMA
+    print(f"\n{'=' * 18}  Yunara · 하프 티어 포함 · {label}  {'=' * 18}")
+    print(f"γ={gamma}(하프 스텝 √γ), horizon={HORIZON} | 최종 궤적: "
+          f"{' → '.join(ITEM_SHORT.get(k, k) for k in out['trajectory'])}")
+    for s in out["steps"]:
+        comps = "+".join(c[:6] for c in s["half_comps"]) if s["half_comps"] else "(없음)"
+        alts = " / ".join(f"{ITEM_SHORT.get(a['item'], a['item'])}:{a['score']:.1f}"
+                          for a in s["alternatives"])
+        print(f"  {s['slot']}C {ITEM_SHORT.get(s['item'], s['item']):<9} "
+              f"| 하프[{comps}] DPS {s['half_dps']:6.1f}/G{s['half_gold']:<5.0f} "
+              f"→ 완성 DPS {s['dps']:7.1f}/G{s['gold']:<5.0f} | {alts}")
 
 
 def _enumerate_future_combos(fixed, from_slot, horizon=HORIZON):
@@ -743,6 +1087,11 @@ def main(gamma=None):
             cache = SimCache(package, target_count)
             out = solve_greedy(cache, gamma=gamma)
             print_scenario(package["label"], out, cache, target_count, gamma=gamma)
+    # 혼합(기본 선택 지표, 사용자 확정 2026-08-31): DPS_mix = Σ w·DPS_tc (TARGET_MIX_WEIGHTS, 기본 1:1)
+    for package in ADC_PACKAGES:
+        cache = MixedSimCache(package)
+        out = solve_greedy(cache, gamma=gamma)
+        print_scenario(f"{package['label']} · MIX 0.5/0.5", out, cache, "mix", gamma=gamma)
 
 
 def main_legacy_ranking():
@@ -772,6 +1121,16 @@ def run_cli(args=None):
     cli_args = list(sys.argv[1:] if args is None else args)
     if cli_args and cli_args[0] == "legacy-ranking":
         main_legacy_ranking()
+        return
+    if cli_args and cli_args[0] == "half":
+        # 하프 티어 포함 RH — 혼합 지표(기본) × 유효 신발·전설룬 4조합 × 파편 시나리오
+        # (광전사+민첩함 제외 — 프로젝트 기본 규칙, items_data.ADC_PACKAGES_VIABLE)
+        from adc_sim.data.items_data import ADC_PACKAGES_VIABLE
+        for shard_label, shards in SHARD_SCENARIOS.items():
+            for package in ADC_PACKAGES_VIABLE:
+                cache = MixedSimCache(package, shards=shards)
+                out = solve_greedy_half(cache)
+                print_half_scenario(f"{package['label']} · MIX · 파편 {shard_label}", out)
         return
     gamma = GAMMA
     if cli_args:

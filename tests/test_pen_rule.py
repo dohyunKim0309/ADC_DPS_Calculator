@@ -6,7 +6,7 @@ from adc_sim.data.items_data import (
 
 def test_exclusive_sets():
     assert ARMOR_PEN_EXCLUSIVE == frozenset({"ldr", "mortal", "terminus"})
-    assert MAGIC_PEN_EXCLUSIVE == frozenset({"void", "terminus"})
+    assert MAGIC_PEN_EXCLUSIVE == frozenset({"void", "terminus", "cryptbloom"})   # 무덤꽃 배타 추가(2026-08-27 Azir)
 
 
 def test_pen_rule_ok_cases():

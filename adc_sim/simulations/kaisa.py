@@ -11,11 +11,12 @@ from adc_sim.engine import run_simulation
 
 # 코어 단계별 고정 타겟 스탯 (Ashe 시뮬레이션과 동일)
 CORE_TARGET_STATS = {
-    1: {"hp": 1700, "armor": 50, "mr": 25},
-    2: {"hp": 1900, "armor": 70, "mr": 30},
-    3: {"hp": 2400, "armor": 100, "mr": 50},
-    4: {"hp": 2600, "armor": 120, "mr": 70},
-    5: {"hp": 3000, "armor": 150, "mr": 90},
+    # 마저 +5 일괄 상향(25/30/50/70/90 → 30/35/55/75/95) — 원딜 마저 버프 반영, 사용자 확정 2026-08-31.
+    1: {"hp": 1700, "armor": 50, "mr": 30},
+    2: {"hp": 1900, "armor": 70, "mr": 35},
+    3: {"hp": 2400, "armor": 100, "mr": 55},
+    4: {"hp": 2600, "armor": 120, "mr": 75},
+    5: {"hp": 3000, "armor": 150, "mr": 95},
 }
 
 # 코어 타이밍별 레벨 (Ashe 시뮬레이션과 동일)
@@ -49,7 +50,7 @@ def build_target_for_core(core_tier):
         hp=stats["hp"],
         armor=stats["armor"],
         magic_resist=stats["mr"],
-        bonus_hp=max(0, stats["hp"] - 1500),
+        bonus_hp=max(0, stats["hp"] - 1600),
     )
 
 
@@ -102,8 +103,14 @@ def simulate_kaisa_core_path(
     return_sustain=False,
     keystone_cls=LethalTempo,
     sub_rune_cls=CutDown,
+    shard_as=0.0,
+    shard_ad=0.0,
 ):
     """Simulate Kai'Sa DPS, total gold, and W cast count for a core timing.
+
+    shard_as/shard_ad: 스탯 파편(기본 0 = 기존 동작 불변). [H-KAISA-SHARD-EVO] 파편 공속은
+    민첩함과 같은 경로(bonus_as_percent)라 E 진화 판정 제외, 파편 AD 는 bonus_ad 경유라
+    Q 진화(보너스 AD≥100)에 카운트됨 — 실게임 부합.
 
     doran_key: 시작 도란 아이템(검/활). None이면 미포함.
     boots_key: 신발(기본 광전사). rune_as_bonus: 공속 룬(민첩함 등)의 평타 공속 가산(골드 무료, E 진화 제외).
@@ -143,6 +150,8 @@ def simulate_kaisa_core_path(
         total_cost += item.cost
         kaisa.add_item(item)
     kaisa.bonus_as_percent += rune_as_bonus  # 민첩함: 전투 공속에만 반영, E 진화 판정에서는 제외
+    kaisa.bonus_as_percent += shard_as       # 파편 공속(기본 0) — E 진화 제외(민첩함과 동일 경로)
+    kaisa.bonus_ad += shard_ad               # 파편 적응형 AD(기본 0) — Q 진화 카운트
     kaisa.rune_lifesteal = bloodline_lifesteal
 
     # 진화 조건은 카이사 기본 규칙 사용:
@@ -752,6 +761,8 @@ class SimCache:
         bloodline_lifesteal=0.0,
         keystone_cls=LethalTempo,
         sub_rune_cls=CutDown,
+        shard_as=0.0,
+        shard_ad=0.0,
     ):
         """시작 패키지·룬을 고정한 독립 receding-horizon 시뮬레이션 캐시를 초기화한다.
 
@@ -764,6 +775,8 @@ class SimCache:
             "bloodline_lifesteal": bloodline_lifesteal,
             "keystone_cls": keystone_cls,
             "sub_rune_cls": sub_rune_cls,
+            "shard_as": shard_as,
+            "shard_ad": shard_ad,
         }
         self.cache = {}
         self.hits = 0
@@ -1825,6 +1838,9 @@ def run_cli(args=None):
     import sys
 
     cli_args = list(sys.argv[1:] if args is None else args)
+    if cli_args and cli_args[0] == 'half':
+        main_half_sweep(cli_args[1] if len(cli_args) > 1 else None)
+        return
     mode = "default"
     if cli_args and cli_args[0] in ("legacy-ranking", "basic-table"):
         mode = cli_args.pop(0)
@@ -1845,6 +1861,204 @@ def run_cli(args=None):
             print(f"[warn] gamma 인자 파싱 실패({cli_args[0]!r}) — 기본 {GAMMA} 사용")
             gamma = GAMMA
     main(gamma=gamma)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 하프 티어(코어 사이 하위템 구간) — 유나라 구현 미러 (2026-08-31, spec: yunara.py 주석 참조)
+# 하위템 스탯이 인벤토리로 들어가므로 카이사 진화(Q=보너스AD100 / W=AP100 / E=아이템+성장 공속100%)
+# 판정에 자동 반영된다 — 하위템 구간의 진화 가속까지 모델에 포함.
+# 부분집합 규칙·대체 조합식은 yunara 의 공용 헬퍼를 재사용(공용화는 ranking_core 방식으로 추후).
+# ═══════════════════════════════════════════════════════════════════════════════
+from adc_sim.simulations.yunara import _component_subsets as _half_component_subsets
+
+KAISA_HALF_TIER_LEVELS = {1: 8, 2: 10, 3: 12, 4: 14, 5: 16}
+
+
+def _kaisa_half_tier_target(k):
+    """코어 k 직전 하프 티어 타깃(인접 코어 선형 보간, 0.5코어는 코어1 그대로)."""
+    if k <= 1:
+        st = CORE_TARGET_STATS[1]
+        hp, armor, mr = st["hp"], st["armor"], st["mr"]
+    else:
+        a, b = CORE_TARGET_STATS[k - 1], CORE_TARGET_STATS[min(5, k)]
+        hp = (a["hp"] + b["hp"]) / 2.0
+        armor = (a["armor"] + b["armor"]) / 2.0
+        mr = (a["mr"] + b["mr"]) / 2.0
+    return Target(hp=hp, armor=armor, magic_resist=mr, bonus_hp=max(0, hp - 1600))
+
+
+def simulate_kaisa_half_tier(done_keys, next_key, comp_names, doran_key=None, boots_key="berserker",
+                             rune_as_bonus=0.0, bloodline_lifesteal=0.0,
+                             keystone_cls=LethalTempo, sub_rune_cls=CutDown,
+                             shard_as=0.0, shard_ad=0.0):
+    """코어 done_keys 완성 + next_key 하위템 comp_names 보유 하프 티어 DPS·총 골드.
+
+    레벨 = 짝수 보간(8/10/12/14/16), 완성 윤탈 치명타 = 25% [H-HALF-2 미러].
+    """
+    from adc_sim.data.items_registry import create_catalog_item
+    k = min(5, len(done_keys) + 1)
+    level = KAISA_HALF_TIER_LEVELS[k]
+    kaisa = KaiSa(level=level, q_level=5, w_level=5,
+                  e_level=get_e_level_for_core(k), r_level=3)
+    kaisa.set_rune(keystone_cls())
+    if sub_rune_cls is not None:
+        kaisa.set_sub_rune(sub_rune_cls())
+
+    items = [create_item_from_key(doran_key)] if doran_key else []
+    items.append(create_item_from_key(boots_key))
+    for key in done_keys:
+        if key == "yuntal":
+            items.append(create_item_from_key(key, yuntal_crit=0.25))
+        else:
+            items.append(create_item_from_key(key))
+    for name in comp_names:
+        items.append(create_catalog_item(name, allow_unsupported=True))
+
+    total_cost = 0
+    for item in items:
+        total_cost += item.cost
+        kaisa.add_item(item)
+    kaisa.bonus_as_percent += rune_as_bonus + shard_as
+    kaisa.bonus_ad += shard_ad
+    kaisa.rune_lifesteal = bloodline_lifesteal
+    kaisa.q_evolved_override = None
+    kaisa.w_evolved_override = None
+
+    skill_plan = {
+        "manual_casts": [(0.0, "e"), (0.0, "q"), (0.0, "w")],
+        "auto_cast": {"q": True, "w": True, "e": True, "r": False},
+        "auto_order": ["q", "w", "e", "r"],
+    }
+    target = _kaisa_half_tier_target(k)
+    _, dps, _ = run_simulation(kaisa, target, verbose=False, skill_plan=skill_plan,
+                               respawn_to_full_kills=2)
+    return dps, total_cost
+
+
+def kaisa_sim_half(cache, done_tuple, next_key):
+    """(done, next) 하프 티어 최적 하위템 구성 메모이즈 — (dps, gold, comps)."""
+    key = (tuple(sorted(done_tuple)), next_key)
+    store = getattr(cache, "_half_cache", None)
+    if store is None:
+        store = cache._half_cache = {}
+    if key in store:
+        return store[key]
+    kw = {k: v for k, v in cache.kw.items()}
+    best = None
+    for comps in _half_component_subsets(next_key):
+        d, g = simulate_kaisa_half_tier(list(done_tuple), next_key, comps, **kw)
+        if best is None or d > best[0]:
+            best = (d, g, comps)
+    store[key] = best
+    return best
+
+
+def _score_combo_half(cache, fixed, combo, from_slot, dps_prev, gold_prev, gamma, horizon):
+    """하프+풀 스텝을 γ^(s/2) 로 할인한 마지널 DPG 합 (유나라 [H-HALF-DISCOUNT] 미러)."""
+    full_path = list(fixed) + list(combo)
+    score, step = 0.0, 0
+    d_prev, g_prev = dps_prev, gold_prev
+    for tier in range(from_slot, horizon + 1):
+        done = tuple(full_path[:tier - 1])
+        nxt = full_path[tier - 1]
+        h_dps, h_gold, _ = kaisa_sim_half(cache, done, nxt)
+        dg = h_gold - g_prev
+        if dg > 0:
+            score += (gamma ** (step / 2.0)) * (h_dps - d_prev) / (dg / 1000.0)
+        d_prev, g_prev = max(d_prev, h_dps), max(g_prev, h_gold)
+        step += 1
+        f_dps, f_gold = cache.sim(tuple(full_path[:tier]))
+        dg = f_gold - g_prev
+        if dg > 0:
+            score += (gamma ** (step / 2.0)) * (f_dps - d_prev) / (dg / 1000.0)
+        d_prev, g_prev = f_dps, f_gold
+        step += 1
+    return score
+
+
+def solve_greedy_half_kaisa(cache, gamma=None, horizon=HORIZON, top_alt=3):
+    """하프 티어 포함 카이사 receding-horizon (유나라 solve_greedy_half 미러)."""
+    if gamma is None:
+        gamma = GAMMA
+    fixed, steps = [], []
+    dps_prev, gold_prev = 0.0, 0.0
+    for slot in range(1, horizon + 1):
+        best_score, best_combo = None, None
+        alternatives_by_item, alternatives_path = {}, {}
+        for combo in _enumerate_future_combos(fixed, slot, horizon):
+            score = _score_combo_half(cache, fixed, combo, slot, dps_prev, gold_prev, gamma, horizon)
+            item_key = combo[0]
+            if item_key not in alternatives_by_item or score > alternatives_by_item[item_key]:
+                alternatives_by_item[item_key], alternatives_path[item_key] = score, combo
+            if best_score is None or score > best_score:
+                best_score, best_combo = score, combo
+        if best_combo is None:
+            break
+        nxt = best_combo[0]
+        h_dps, h_gold, h_comps = kaisa_sim_half(cache, tuple(fixed), nxt)
+        fixed.append(nxt)
+        dps_now, gold_now = cache.sim(tuple(fixed))
+        ranked = sorted(alternatives_by_item.items(), key=lambda kv: kv[1], reverse=True)[:top_alt]
+        steps.append({
+            "slot": slot, "item": nxt, "score": best_score,
+            "half_dps": h_dps, "half_gold": h_gold, "half_comps": h_comps,
+            "dps": dps_now, "gold": gold_now,
+            "alternatives": [{"item": kk, "score": vv, "future_path": alternatives_path[kk]}
+                             for kk, vv in ranked],
+        })
+        dps_prev, gold_prev = dps_now, gold_now
+    return {"trajectory": fixed, "steps": steps}
+
+
+def print_kaisa_half_scenario(label, out, gamma=None):
+    if gamma is None:
+        gamma = GAMMA
+    print(f"\n{'=' * 16}  KaiSa · 하프 티어 포함 · {label}  {'=' * 16}")
+    print(f"γ={gamma}(하프 스텝 √γ), horizon={HORIZON} | 최종 궤적: "
+          f"{' → '.join(ITEM_SHORT.get(k, k) for k in out['trajectory'])}")
+    for st in out["steps"]:
+        comps = "+".join(c[:6] for c in st["half_comps"]) if st["half_comps"] else "(없음)"
+        alts = " / ".join(f"{ITEM_SHORT.get(a['item'], a['item'])}:{a['score']:.1f}"
+                          for a in st["alternatives"])
+        print(f"  {st['slot']}C {ITEM_SHORT.get(st['item'], st['item']):<9} "
+              f"| 하프[{comps}] DPS {st['half_dps']:6.1f}/G{st['half_gold']:<5.0f} "
+              f"→ 완성 DPS {st['dps']:7.1f}/G{st['gold']:<5.0f} | {alts}")
+
+
+# ── 룬·파편·신발 시나리오 스윕 (사용자 지정 2026-08-31) ─────────────────────
+# 키스톤 치명적 속도 고정 × 보조(최후의 일격/체력차 극복) × 파편(공속10%+AD5.4 / AD5.4×2)
+# × 신발·전설룬 4조합(유효 규칙: 피흡 소스 ≥1): 판금+핏빛길 / 피흡신×(핏빛길|민첩함) / 광전사+핏빛길.
+# 도란은 관례상 피흡신발 → 도란활, 그 외 → 도란검. [가정 — 도란 축은 미탐색]
+KAISA_HALF_SWEEP_BOOTS = (
+    {"label": "판금+핏빛길", "boots": "plated",    "doran": "doranblade", "rune_as": 0.0,  "bloodline": BLOODLINE_LIFESTEAL},
+    {"label": "피흡신+핏빛길", "boots": "glutton",  "doran": "doranbow",   "rune_as": 0.0,  "bloodline": BLOODLINE_LIFESTEAL},
+    {"label": "피흡신+민첩함", "boots": "glutton",  "doran": "doranbow",   "rune_as": 0.18, "bloodline": 0.0},
+    {"label": "광전사+핏빛길", "boots": "berserker","doran": "doranblade", "rune_as": 0.0,  "bloodline": BLOODLINE_LIFESTEAL},
+    # 광전사+민첩함(피흡 0)은 non-viable — 프로젝트 기본 규칙(items_data 참조)으로 제외 (사용자 확정 2026-08-31).
+)
+KAISA_SHARD_SCENARIOS = {
+    "AS10%+AD5.4": {"shard_as": 0.10, "shard_ad": 5.4},
+    "AD5.4x2":     {"shard_as": 0.0,  "shard_ad": 10.8},
+}
+KAISA_SUB_RUNES = {"최후의일격": CoupDeGrace, "체력차극복": CutDown}
+
+
+def main_half_sweep(only=None):
+    """하프 티어 포함 RH 를 20개 시나리오(보조2×파편2×신발·전설5)로 스윕.
+
+    only: (sub_label, shard_label, boots_label) 부분일치 필터(병렬 분할 실행용).
+    """
+    for sub_label, sub_cls in KAISA_SUB_RUNES.items():
+        for shard_label, shards in KAISA_SHARD_SCENARIOS.items():
+            for pkg in KAISA_HALF_SWEEP_BOOTS:
+                label = f"{pkg['label']} · {sub_label} · 파편 {shard_label}"
+                if only and only not in label:
+                    continue
+                cache = SimCache(pkg["doran"], pkg["boots"], pkg["rune_as"],
+                                 bloodline_lifesteal=pkg["bloodline"],
+                                 keystone_cls=LethalTempo, sub_rune_cls=sub_cls, **shards)
+                out = solve_greedy_half_kaisa(cache)
+                print_kaisa_half_scenario(label, out)
 
 
 if __name__ == "__main__":

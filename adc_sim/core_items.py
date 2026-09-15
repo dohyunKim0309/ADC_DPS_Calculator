@@ -899,3 +899,291 @@ class HextechGunblade(Item):
     def __init__(self):
         super().__init__("Hextech Gunblade", ad=40, ap=80, omnivamp=0.10)
         self.cost = 3000
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Azir(미드 AP) 추가분 — 2026-08-27. spec docs/superpowers/specs/2026-08-27-azir-design.md §4.
+# 스탯/가격의 단일 출처는 data/items_data.py (여기 리터럴은 레거시 기본값, 런타임에 덮어씀).
+#
+# 선택적 훅(챔피언이 hasattr 로 읽음 — 현재 Azir 만 소비, 기존 챔피언 동작 불변):
+#   on_spell_effect(target, champion, time, source) → 즉시 마법 피해(float). 스킬/병사 '스킬 효과' 1회당 호출.
+#       source ∈ {"soldier","q","e","r","belt"}. DoT 등록은 champion.apply_dot(...) 로 위임.
+#   get_bonus_ap(champion) / get_ap_multiplier(champion) → 동적 AP(가산 / 곱).
+#   get_bonus_as(champion) → 동적 공속(리치베인 준비 중 +50%).
+#   try_stormraider(champion, time, recent_fraction) → 스콜 피해 or None (폭풍 쇄도).
+#   active_damage(champion) → 액티브 1회 피해(벨트).
+# ═══════════════════════════════════════════════════════════════════════════════
+class LiandrysTorment(Item):
+    """리안드리의 고통. 고통 = 스킬(병사 포함) 피해 시 3초 동안 0.5초마다 최대체력 1% 마법(총 6%).
+    고난 = 적 챔피언과 전투 중 매초 2% 피해 증가(최대 6%, 3초). 전투 시작 = t=0.
+    (LoL Wiki: 'ability damage or pet damage' → 아지르 병사 적용 확인.)"""
+    BURN_PCT_PER_TICK = 0.01
+    BURN_TICK = 0.5
+    BURN_DURATION = 3.0
+    SUFFER_PER_SEC = 0.02
+    SUFFER_MAX = 0.06
+
+    def __init__(self):
+        super().__init__("Liandry's Torment", ap=60, hp=300)
+        self.cost = 3000
+
+    def on_spell_effect(self, target, champion, time, source):
+        if hasattr(champion, "apply_dot"):
+            champion.apply_dot(
+                "liandry", lambda t, ch: self.BURN_PCT_PER_TICK * t.max_hp,
+                self.BURN_TICK, self.BURN_DURATION, time,
+            )
+        return 0.0
+
+    def get_damage_modifier(self, target, champion):
+        t = getattr(champion, "_combat_time", 0.0)
+        return min(self.SUFFER_MAX, self.SUFFER_PER_SEC * int(t))
+
+
+class LichBane(Item):
+    """리치베인. 주문검: 스킬 사용 후 다음 기본 공격에 (기본AD 75% + AP 45%) 마법 온힛, 내부 쿨 1.5s
+    (강화 평타 소비 시점 기준, Wiki V26.10). 준비 중 공속 +50%(get_bonus_as). 이속 6% 미모델.
+    아지르 병사 공격은 온힛 50% → 부모(Azir.get_one_hit_damage)가 0.5 배 적용."""
+    def __init__(self):
+        super().__init__("Lich Bane", ap=100, cdr=10)
+        self.cost = 2900
+        self.is_spellblade_active = False
+        self.spellblade_cd = 1.5
+        self.ready_after = -999.0
+        self.last_spellblade_damage = 0.0
+
+    def on_spell_cast(self, champion, time):
+        if time >= self.ready_after:
+            self.is_spellblade_active = True
+
+    def on_hit(self, target, champion):
+        self.last_spellblade_damage = 0.0
+        if self.is_spellblade_active:
+            magic = champion.base_attack_ad * 0.75 + champion.total_ap * 0.45
+            self.last_spellblade_damage = magic
+            self.is_spellblade_active = False
+            self.ready_after = getattr(champion, "_combat_time", 0.0) + self.spellblade_cd
+            return 0, magic, 0, 0
+        return 0, 0, 0, 0
+
+    def get_bonus_as(self, champion):
+        return 0.50 if self.is_spellblade_active else 0.0
+
+
+class Cryptbloom(Item):
+    """무덤꽃: AP75 / %마관 30% / AH20 (스탯은 items_data 주입). 죽음에서 피어난 생명(회복)은 미모델.
+    공허의 지팡이와 배타(items_data.MAGIC_PEN_EXCLUSIVE)."""
+    def __init__(self):
+        super().__init__("Cryptbloom", ap=75, cdr=20)
+        self.cost = 3000
+
+
+class BloodlettersCurse(Item):
+    """핏빛 저주. 썩은 부식: 스킬/패시브 마법 피해 시 대상 마저 7.5% 감소, 4중첩(최대 30%), 6초.
+    [H-AZIR-5] 지속 전투(공격 간격 < 6s)에서는 만료되지 않는다고 가정 → 만료 로직 생략.
+    감소는 대상 '기본' 마저 기준(첫 적용 시점 값 저장), calculate_mitigation 앞단(감소 → 관통 순)."""
+    SHRED_PER_STACK = 0.075
+    MAX_STACKS = 4
+
+    def __init__(self):
+        super().__init__("Bloodletter's Curse", ap=60, hp=350, cdr=15)
+        self.cost = 2500
+        self.stacks = 0
+        self._target = None
+        self._base_mr = 0.0
+
+    def on_spell_effect(self, target, champion, time, source):
+        if self._target is not target:
+            self._target = target
+            self._base_mr = target.magic_resist
+            self.stacks = 0
+        if self.stacks < self.MAX_STACKS:
+            self.stacks += 1
+            target.magic_resist -= self._base_mr * self.SHRED_PER_STACK
+        return 0.0
+
+
+class Stormsurge(Item):
+    """폭풍 쇄도. 폭풍 약탈자: 2.5s 내 챔피언 최대체력 25% 피해 → 질풍(2s 후 125 + AP 10% 마법), 쿨 30s.
+    피해 창(window) 추적은 챔피언(Azir.advance_combat_time)이 하고, 조건 판정/쿨은 여기서."""
+    THRESHOLD = 0.25
+    WINDOW = 2.5
+    DELAY = 2.0
+    COOLDOWN = 30.0
+
+    def __init__(self):
+        super().__init__("Stormsurge", ap=90, magic_pen_flat=15)
+        self.cost = 2800
+        self.ready_after = -999.0
+
+    def try_stormraider(self, champion, time, recent_fraction):
+        """recent_fraction: 최근 WINDOW 초 동안 입힌 피해 / 대상 최대체력. 발동 시 질풍 피해 반환."""
+        if time < self.ready_after or recent_fraction < self.THRESHOLD:
+            return None
+        self.ready_after = time + self.COOLDOWN
+        return 125.0 + 0.10 * champion.total_ap
+
+
+class LudensEcho(Item):
+    """루덴의 메아리. 메아리(쿨 12s): 스킬 피해 시 (75 + AP 5%) 마법 + 남은 메아리 5개 × 20% 를 주 대상에게
+    → 단일 대상 총 (75 + 0.05·AP) × 2.0. 아지르 병사 공격도 스킬 효과라 발동(나무위키·Wiki)."""
+    COOLDOWN = 12.0
+    ECHOES = 6
+    REMAINDER_RATIO = 0.20
+
+    def __init__(self):
+        super().__init__("Luden's Echo", ap=100, cdr=10)
+        self.cost = 2750
+        self.ready_after = -999.0
+
+    def on_spell_effect(self, target, champion, time, source):
+        if time < self.ready_after:
+            return 0.0
+        self.ready_after = time + self.COOLDOWN
+        base = 75.0 + 0.05 * champion.total_ap
+        return base * (1.0 + (self.ECHOES - 1) * self.REMAINDER_RATIO)
+
+
+class BlackfireTorch(Item):
+    """어둠불꽃 횃불. 악의의 불길: 스킬 피해 시 3초 동안 0.5초마다 10 + AP 1% 마법(총 60 + 6%AP).
+    어둠불꽃: 불타는 적 챔피언 1명당 AP +4% (단일 더미 = 1명 → 전투 중 상시 ×1.04)."""
+    TICK = 0.5
+    DURATION = 3.0
+    AP_PER_BURNING = 0.04
+
+    def __init__(self):
+        super().__init__("Blackfire Torch", ap=80, cdr=20)
+        self.cost = 2800
+        self.burn_until = -1.0
+
+    def on_spell_effect(self, target, champion, time, source):
+        self.burn_until = time + self.DURATION
+        if hasattr(champion, "apply_dot"):
+            # AP 는 틱 시점 값(어둠불꽃 자기 증폭 포함) — champion.total_ap 를 매 틱 읽는다.
+            champion.apply_dot("blackfire", lambda t, ch: 10.0 + 0.01 * ch.total_ap,
+                               self.TICK, self.DURATION, time)
+        return 0.0
+
+    def get_ap_multiplier(self, champion):
+        t = getattr(champion, "_combat_time", 0.0)
+        return 1.0 + self.AP_PER_BURNING if t <= self.burn_until else 1.0
+
+
+class Malignance(Item):
+    """악의. 증오안개: 궁극기로 적 챔피언 피해 시 3초 동안 0.25초마다 15 + AP 1.25% 마법(총 180 + 15%AP)
+    + 마저 10 감소. 0.5초 틱(30 + 2.5%AP)으로 환산해 DoT 등록. 궁극기 가속 20 은 R 1회 시전이라 무영향."""
+    DURATION = 3.0
+    MR_REDUCTION = 10.0
+
+    def __init__(self):
+        super().__init__("Malignance", ap=90, cdr=15)
+        self.cost = 2700
+
+    def on_spell_effect(self, target, champion, time, source):
+        if source != "r":
+            return 0.0
+        if hasattr(champion, "apply_dot"):
+            champion.apply_dot("malignance", lambda t, ch: 30.0 + 0.025 * ch.total_ap,
+                               0.5, self.DURATION, time)
+        if hasattr(champion, "apply_mr_debuff"):
+            champion.apply_mr_debuff("malignance", target, self.MR_REDUCTION, self.DURATION, time)
+        return 0.0
+
+
+class ArchangelsStaff(Item):
+    """대천사의 지팡이(구매 코어): AP70/마나600/AH25 + 경탄(추가 마나 1% AP). 마나순환 스택은 다음 코어에
+    세라핀(seraph 키)으로 resolved — 마나무네/무라마나 규약."""
+    AWE_RATIO = 0.01
+
+    def __init__(self):
+        super().__init__("Archangel's Staff", ap=70, cdr=25)
+        self.cost = 2900
+
+    def get_bonus_ap(self, champion):
+        return self.AWE_RATIO * champion.bonus_mana
+
+
+class SeraphsEmbrace(ArchangelsStaff):
+    """세라핀의 포옹: AP70/마나1000/AH25 + 경탄(추가 마나 2% AP). 생명선 보호막(최대마나 18%)은 미모델."""
+    AWE_RATIO = 0.02
+
+    def __init__(self):
+        super().__init__()
+        self.name = "Seraph's Embrace"
+
+
+class RylaisCrystalScepter(Item):
+    """라일라이의 수정홀: AP65/HP400. 서리(둔화)는 DPS 무관 → 미모델."""
+    def __init__(self):
+        super().__init__("Rylai's Crystal Scepter", ap=65, hp=400)
+        self.cost = 2600
+
+
+class HextechRocketbelt(Item):
+    """마법공학 로켓 벨트: AP60/HP350/AH20 + 초음속(액티브, 쿨 40s): 100 + AP 10% 마법. t=0 1회(챔피언이 시전)."""
+    def __init__(self):
+        super().__init__("Hextech Rocketbelt", ap=60, hp=350, cdr=20)
+        self.cost = 2650
+
+    def active_damage(self, champion):
+        return 100.0 + 0.10 * champion.total_ap
+
+
+class BansheesVeil(Item):
+    """밴시의 장막: AP105/MR40(EHP). 주문 방어막은 고정 EHP 환산 불가 → 미모델. defense 태그."""
+    def __init__(self):
+        super().__init__("Banshee's Veil", ap=105, mr=40)
+        self.cost = 3000
+
+
+class HorizonFocus(Item):
+    """지평선의 초점: AP75/AH25. 초강력 사격: 600+ 거리에서 스킬 피해 → 6s 동안 모든 피해 +10%.
+    [H-AZIR-6] 아지르 Q/E/R 은 항상 600+ 거리 시전 가정. 소환수(병사) 피해는 발동 안 함(Wiki),
+    증폭은 병사 피해 포함 전 피해에 적용."""
+    AMP = 0.10
+    DURATION = 6.0
+    TRIGGER_SOURCES = ("q", "e", "r")
+
+    def __init__(self):
+        super().__init__("Horizon Focus", ap=75, cdr=25)
+        self.cost = 2700
+        self.amp_until = -1.0
+
+    def on_spell_effect(self, target, champion, time, source):
+        if source in self.TRIGGER_SOURCES:
+            self.amp_until = time + self.DURATION
+        return 0.0
+
+    def get_damage_modifier(self, target, champion):
+        t = getattr(champion, "_combat_time", 0.0)
+        return self.AMP if t <= self.amp_until else 0.0
+
+
+class CosmicDrive(Item):
+    """우주의 추진력: AP70/HP350/AH25. 이속(4% + 마법의 춤)은 DPS 무관 → 미모델."""
+    def __init__(self):
+        super().__init__("Cosmic Drive", ap=70, hp=350, cdr=25)
+        self.cost = 3000
+
+
+class Riftmaker(Item):
+    """균열 생성기. 공허의 부패: 전투 중 매초 2% 피해 증가(최대 8%, 4초), 최대 시 옴니뱀프(원거리 6%).
+    공허의 마력: 추가 체력 2% AP. 옴니뱀프는 조건부 지속력 지표(get_conditional_omnivamp)로만."""
+    PER_SEC = 0.02
+    MAX = 0.08
+    RANGED_OMNIVAMP = 0.06
+    HP_TO_AP = 0.02
+
+    def __init__(self):
+        super().__init__("Riftmaker", ap=70, hp=350, cdr=15)
+        self.cost = 3100
+
+    def get_damage_modifier(self, target, champion):
+        t = getattr(champion, "_combat_time", 0.0)
+        return min(self.MAX, self.PER_SEC * int(t))
+
+    def get_bonus_ap(self, champion):
+        return self.HP_TO_AP * getattr(champion, "bonus_hp", 0.0)
+
+    def get_conditional_omnivamp(self, champion):
+        return self.RANGED_OMNIVAMP

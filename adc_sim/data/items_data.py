@@ -24,6 +24,7 @@ STAT_KEYS = (
     "ad", "ap", "as", "crit", "add_crit_damage",
     "armor_pen_percent", "lethality", "magic_pen_flat", "magic_pen_percent", "cdr", "mana",
     "mr", "armor", "hp", "ms", "lifesteal", "omnivamp", "tenacity",
+    "mana_regen",   # 5초당 마나재생(MP5). champion.mana_regen_per_sec 가 읽는다(도란의 반지). 기존 아이템 0.
 )
 
 CATALOG_STAT_KEYS = frozenset({
@@ -34,7 +35,8 @@ CATALOG_STAT_KEYS = frozenset({
 
 # 관통 배타 — 게임 규칙(챔피언 무관): 방관 1개 + 마관 1개, terminus 는 양쪽 겸비.
 ARMOR_PEN_EXCLUSIVE = frozenset({"ldr", "mortal", "terminus"})
-MAGIC_PEN_EXCLUSIVE = frozenset({"void", "terminus"})
+# 마관: 공허의 지팡이 착용 시 무덤꽃(역병의 보석 계열) 구매 불가 → cryptbloom 도 배타 [나무위키 item_legendary 5.18]
+MAGIC_PEN_EXCLUSIVE = frozenset({"void", "terminus", "cryptbloom"})
 
 
 def pen_rule_ok(keys):
@@ -56,11 +58,25 @@ DORAN_SHORT = {"doranblade": "Blade", "doranbow": "Bow"}
 #   B = 도란활 + Gluttonous(피흡신) + 민첩함(공속룬) → 피흡=신발, 공속=도란활+룬
 # Ashe/Yunara/KaiSa 최고 빌드 탐색은 이 둘 중 빌드별 우수 패키지를 선택(2배 평가).
 BLOODLINE_LIFESTEAL = 0.0675
+# ── 신발+전설룬 정배 규칙 (프로젝트 기본, 사용자 확정 2026-08-31) ──────────────
+# 실전 유효(viable) 조합 = 피흡 소스(피흡신발 또는 핏빛길 룬) ≥ 1.
+# **광전사+민첩함(피흡 0)은 non-viable — 어떤 스윕/랭킹에도 넣지 않는다.**
+# ADC_PACKAGES(A/B)는 기존 소비처 보존용 2조합(둘 다 유효 규칙 충족).
+# 신발·전설룬 축 스윕은 ADC_PACKAGES_VIABLE(4조합)을 쓴다 — 판금/피흡신+핏빛길 포함.
 ADC_PACKAGES = (
     {"key": "A", "label": "Bld+Zerk", "doran": "doranblade", "boots": "berserker", "rune_as": 0.0,
      "bloodline_lifesteal": BLOODLINE_LIFESTEAL},
     {"key": "B", "label": "Bow+Glut", "doran": "doranbow",   "boots": "glutton",   "rune_as": 0.18,
      "bloodline_lifesteal": 0.0},
+)
+
+# 신발·전설룬 축 스윕용 유효 조합 전체(피흡 소스 ≥1). DPS 스탯만 보면 C/D는 A/B에 지배되지만
+# (핏빛길·판금은 DPS 0), 생존/유틸 트레이드오프 비교를 위해 축으로 유지한다.
+ADC_PACKAGES_VIABLE = ADC_PACKAGES + (
+    {"key": "C", "label": "Bow+Glut+핏빛길", "doran": "doranbow", "boots": "glutton", "rune_as": 0.0,
+     "bloodline_lifesteal": BLOODLINE_LIFESTEAL},
+    {"key": "D", "label": "Bld+Plated+핏빛길", "doran": "doranblade", "boots": "plated", "rune_as": 0.0,
+     "bloodline_lifesteal": BLOODLINE_LIFESTEAL},
 )
 
 ITEMS = {
@@ -129,6 +145,37 @@ ITEMS = {
     # AD 45 / 체력 400 / 스킬가속 20, 3300골드. 체력은 STAT_KEYS 에 있으나 DPS 모델엔 무영향(보존만).
     # 깎아내기(방어력 6% 감소 ×5중첩)는 BlackCleaver 클래스가 처리. 열정(이속)은 DPS 무관 → 미모델.
     "cleaver":     {"name": "Black Cleaver",            "cost": 3000, "behavior": "BlackCleaver",        "stats": {"ad": 45, "hp": 400, "cdr": 20}, "tags": ("defense",)},
+
+    # ── AP(마법사) 계열 — Azir 추가(2026-08-27). 수치: CDragon items.json(latest) × 나무위키 item_legendary
+    # (2026-07-30) 교차. 차이는 CDragon 채택(벨트 AP60/HP350, 주문투척자 마관20, 건메탈 AS45%).
+    # 동작 세부는 spec docs/superpowers/specs/2026-08-27-azir-design.md §4.
+    "doranring":   {"name": "Doran's Ring",             "cost": 400,  "behavior": "DoransRing",          "stats": {"ap": 18, "hp": 90, "mana_regen": 10}},  # 흡수: 전투 중 2마나/s = MP5 10
+    "sorcerer":    {"name": "Sorcerer's Shoes",         "cost": 1100, "behavior": "SorcererShoes",       "stats": {"magic_pen_flat": 12, "ms": 45}},
+    # 3티어(미드 퀘스트 무료 승급) — 가격은 2티어 그대로(승급 비용 0).
+    "spellslinger":{"name": "Spellslinger's Shoes",     "cost": 1100, "behavior": "SpellslingerShoes",   "stats": {"magic_pen_flat": 20, "magic_pen_percent": 0.08, "ms": 45}},
+    "ionian":      {"name": "Ionian Boots of Lucidity", "cost": 900,  "behavior": "IoniaGreaves",        "stats": {"cdr": 10, "ms": 45}},
+    "crimson":     {"name": "Crimson Lucidity",         "cost": 900,  "behavior": "CrimsonLucidity",     "stats": {"cdr": 20, "ms": 45}},
+    "gunmetal":    {"name": "Gunmetal Greaves",         "cost": 1100, "behavior": "GunmetalGreaves",     "stats": {"as": 0.45, "ms": 45, "lifesteal": 0.05}},
+    "swift":       {"name": "Boots of Swiftness",       "cost": 1000, "behavior": "BootsofSwiftness",    "stats": {"ms": 55}},
+    # 신속행진: 녹서스의 열광 = 전체 이속 5% 만큼 적응형(아지르=AP). Swiftmarch.get_bonus_ap 가 계산.
+    "swiftmarch":  {"name": "Swiftmarch",               "cost": 1000, "behavior": "Swiftmarch",          "stats": {"ms": 65}},
+    "liandry":     {"name": "Liandry's Torment",        "cost": 3000, "behavior": "LiandrysTorment",     "stats": {"ap": 60, "hp": 300}},
+    "lichbane":    {"name": "Lich Bane",                "cost": 2900, "behavior": "LichBane",            "stats": {"ap": 100, "cdr": 10}},   # 이속 6% 미모델
+    "cryptbloom":  {"name": "Cryptbloom",               "cost": 3000, "behavior": "Cryptbloom",          "stats": {"ap": 75, "magic_pen_percent": 0.30, "cdr": 20}},
+    "bloodletter": {"name": "Bloodletter's Curse",      "cost": 2500, "behavior": "BloodlettersCurse",   "stats": {"ap": 60, "hp": 350, "cdr": 15}},
+    "stormsurge":  {"name": "Stormsurge",               "cost": 2800, "behavior": "Stormsurge",          "stats": {"ap": 90, "magic_pen_flat": 15}},  # 이속 6% 미모델
+    "ludens":      {"name": "Luden's Echo",             "cost": 2750, "behavior": "LudensEcho",          "stats": {"ap": 100, "mana": 600, "cdr": 10}},
+    "blackfire":   {"name": "Blackfire Torch",          "cost": 2800, "behavior": "BlackfireTorch",      "stats": {"ap": 80, "mana": 600, "cdr": 20}},
+    "malignance":  {"name": "Malignance",               "cost": 2700, "behavior": "Malignance",          "stats": {"ap": 90, "mana": 600, "cdr": 15}},
+    # 대천사(구매 코어) / 세라핀(다음 코어부터, 마나 1000) — 마나무네/무라마나와 같은 resolved-key 규약.
+    "archangel":   {"name": "Archangel's Staff",        "cost": 2900, "behavior": "ArchangelsStaff",     "stats": {"ap": 70, "mana": 600, "cdr": 25}},
+    "seraph":      {"name": "Seraph's Embrace",         "cost": 2900, "behavior": "SeraphsEmbrace",      "stats": {"ap": 70, "mana": 1000, "cdr": 25}},
+    "rylai":       {"name": "Rylai's Crystal Scepter",  "cost": 2600, "behavior": "RylaisCrystalScepter","stats": {"ap": 65, "hp": 400}},   # 둔화 미모델
+    "belt":        {"name": "Hextech Rocketbelt",       "cost": 2650, "behavior": "HextechRocketbelt",   "stats": {"ap": 60, "hp": 350, "cdr": 20}},
+    "banshee":     {"name": "Banshee's Veil",           "cost": 3000, "behavior": "BansheesVeil",        "stats": {"ap": 105, "mr": 40}, "tags": ("defense",)},
+    "horizon":     {"name": "Horizon Focus",            "cost": 2700, "behavior": "HorizonFocus",        "stats": {"ap": 75, "cdr": 25}},
+    "cosmic":      {"name": "Cosmic Drive",             "cost": 3000, "behavior": "CosmicDrive",         "stats": {"ap": 70, "hp": 350, "cdr": 25}},   # 이속 미모델
+    "riftmaker":   {"name": "Riftmaker",                "cost": 3100, "behavior": "Riftmaker",           "stats": {"ap": 70, "hp": 350, "cdr": 15}},
 }
 
 # ── 아이템 태그 — 분류의 단일 출처 ────────────────────────────────────────
@@ -172,6 +219,11 @@ ITEM_CATALOG_NAMES = {
     "wit": "마법사의 최후", "navori": "나보리 명멸검", "collector": "징수의 총",
     "umbral": "그림자 검",
     "rfc": "고속 연사포", "yuntal": "윤 탈 야생화살", "yuntal25": "윤 탈 야생화살",
+    "liandry": "리안드리의 고통", "lichbane": "리치베인", "cryptbloom": "무덤꽃", "bloodletter": "핏빛 저주",
+    "stormsurge": "폭풍 쇄도", "ludens": "루덴의 메아리", "blackfire": "어둠불꽃 횃불", "malignance": "악의",
+    "archangel": "대천사의 지팡이", "seraph": "대천사의 지팡이", "rylai": "라일라이의 수정홀",
+    "belt": "마법공학 로켓 벨트", "banshee": "밴시의 장막", "horizon": "지평선의 초점",
+    "cosmic": "우주의 추진력", "riftmaker": "균열 생성기", "zhonya": "존야의 모래시계",
 }
 
 CATALOG_SOURCE_MODIFIED_AT = {'item_basic': '2026-06-19 18:37:42',

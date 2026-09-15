@@ -2619,3 +2619,486 @@ class Vayne(Champion):
         self.r_end_time = time + self.R_DURATION[idx]
         self.cooldowns_remaining["r"] = self.apply_haste_to_cooldown(self.R_CD[idx])
         self.cast_spell(time); self.cast_ultimate(time)
+
+
+class Azir(Champion):
+    """Azir — 모래 병사(W) 기본 공격 대체형 AP 지속 딜러. [Hypothesis 다수 — spec 2026-08-27 §9]
+
+    풀킷: 병사 공격(평타 대체, 마법·온힛 50%·추가 병사 25%) + W 충전/수명 이벤트 추적 + Q(마법 넛지, 쿨마다)
+    + E(돌진 마법 넛지 + 병사 충전 +1) + R(t=0 1회 마법 버스트). 마나는 Phase 0 엔진으로 하드 바운드.
+    수치 출처: spec §2 (나무위키 2026-08-27 + LoL Wiki V26.16 + CDragon bin 3소스 일치).
+
+    베이스 대비 차이(전부 이 클래스 안에서만 처리 — 베이스/엔진 무수정):
+      · get_one_hit_damage 완전 오버라이드: phys_base=0, magic_base=W 병사 피해 × (1+0.25(n−1)),
+        아이템 온힛(내셔·리치베인) ×0.5, PtA 폭발 ×1.0, LT 온힛 ×0.5 (전부 사용자 확정 2026-08-27).
+      · 스킬 효과 훅 `_apply_spell_effects` — 병사 타격·Q·E·R·벨트 액티브마다 아이템 on_spell_effect 호출
+        (루덴 즉시피해, 리안드리/어둠불꽃/악의 DoT 등록, 핏빛 저주 마저 감소, 지평선 증폭).
+      · DoT 는 0.5s 틱 스킬 이벤트(is_skill_hit=True)로 방출 → 엔진이 마저 경감·누적. 스킬/DoT 에도
+        대미지증폭(PtA/CutDown/리안드리 고난 등) 과 그림자불꽃(≤40%) 적용 [H-AZIR-8].
+      · total_ap = (bonus_ap + Σ item.get_bonus_ap) × 라바돈 1.3 × 미드 퀘스트 1.08 × Π item.get_ap_multiplier.
+    """
+
+    # ── W 일어나라! (bin AzirW DataValues idx1..5) ───────────────────────────
+    W_BASE = [50.0, 65.0, 80.0, 95.0, 110.0]
+    W_AP = [0.35, 0.425, 0.50, 0.575, 0.65]
+    W_LEVEL_BONUS_START = 10       # 레벨 10부터 +8/레벨 (lv18 = 72) — bin TotalDamage breakpoint
+    W_LEVEL_BONUS_PER = 8.0
+    W_ONHIT_MULT = 0.5             # bin OnHitMultiplier
+    W_EXTRA_SOLDIER_RATIO = 0.25   # bin SubsequentDamageMod (2번째 병사부터 25%)
+    W_DURATION = 10.0              # bin SoldierDuration
+    W_RECHARGE = [12.0, 10.5, 9.0, 7.5, 6.0]   # bin mAmmoRechargeTime
+    W_MAX_CHARGES = 2
+    W_CD = 1.5
+    W_MANA = [40.0, 35.0, 30.0, 25.0, 20.0]
+    W_CAST_TIME = 0.25
+    # ── Q 사막의 맹습 ──
+    Q_BASE = [75.0, 95.0, 115.0, 135.0, 155.0]
+    Q_AP = [0.35, 0.40, 0.45, 0.50, 0.55]
+    Q_CD = [14.0, 12.0, 10.0, 8.0, 6.0]
+    Q_MANA = [70.0, 80.0, 90.0, 100.0, 110.0]
+    Q_CAST_TIME = 0.25
+    # ── E 신기루 ──
+    E_BASE = [70.0, 110.0, 150.0, 190.0, 230.0]
+    E_AP = 0.60
+    E_CD = [22.0, 20.5, 19.0, 17.5, 16.0]
+    E_MANA = 60.0
+    E_DASH_TIME = 0.3              # [H-AZIR-3] 돌진 중 평타 불가(흡수형)
+    # ── R 황제의 진영 ──
+    R_BASE = [200.0, 400.0, 600.0]
+    R_AP = 0.75
+    R_CD = [120.0, 105.0, 90.0]
+    R_MANA = 100.0
+    R_CAST_TIME = 0.5
+    # ── 룬 온힛 배율 — **사용자 확정 2026-08-27**: PtA 3타 폭발=100%(온어택), LT 풀스택 온힛=50%,
+    #    아이템 온힛(내셔·리치베인 등)=50%. 미등록 룬은 50%.
+    RUNE_ONHIT_FACTOR = {"Lethal Tempo": 0.5, "Press the Attack": 1.0}
+    # ── 미드 퀘스트 보상 [H-AZIR-4] (Wiki V26.11: 총AP 8% + 추가AD 8%)
+    QUEST_AP_MULT = 1.08
+    QUEST_BONUS_AD_MULT = 1.08
+    SHADOWFLAME_PET_DOT_BONUS = 0.20   # 그림자불꽃: 소환수/지속 피해는 고정 +20%
+
+    def __init__(self, level=1, q_level=5, w_level=5, e_level=5, r_level=3,
+                 quest_complete=False, fixed_soldiers=None):
+        """quest_complete: 미드 퀘스트 완료(AP/추가AD ×1.08). fixed_soldiers: None=이벤트 기반(기본),
+        정수면 항상 그 수의 병사가 있다고 가정(W 자동시전 끔 — 검증/AB용)."""
+        super().__init__(
+            name="Azir", base_ad=56, base_as=0.625, as_ratio=0.694,
+            as_growth=5.0, base_range=525, level=level, ad_growth=3.5,
+        )
+        # EHP 전용 방어 스탯 (bin+DDragon 16.17.1)
+        self.base_hp = 575; self.hp_growth = 108
+        self.base_armor = 25; self.armor_growth = 5
+        self.base_mr = 30; self.mr_growth = 1.3
+        self.base_move_speed = 330.0   # 신속행진 적응형 환산용
+        # 마나 (bin primaryAbilityResource)
+        self.base_mana = 320; self.mana_growth = 40
+        self.base_mp5 = 8.0; self.mp5_growth = 0.8
+
+        self.q_level = q_level; self.w_level = w_level
+        self.e_level = e_level; self.r_level = r_level
+        self.quest_complete = quest_complete
+        self.fixed_soldiers = fixed_soldiers
+
+        self.mana_cost = {
+            "q": self.Q_MANA[q_level - 1], "w": self.W_MANA[w_level - 1],
+            "e": self.E_MANA, "r": self.R_MANA, "belt": 0.0,
+        }
+        self.cooldowns_remaining = {"q": 0.0, "w": 0.0, "e": 0.0, "r": 0.0, "belt": 0.0}
+        self.manual_skill_casts = []
+        self.manual_skill_index = 0
+        self.auto_skill_enabled = {"q": True, "w": True, "e": True, "r": False}
+        self.auto_skill_order = ["w", "e", "r", "q"]
+        self.soldiers = []            # 병사 만료 시각 리스트
+        self.w_charges = self.W_MAX_CHARGES
+        self.w_charge_ready_at = None
+        self.dots = {}                # name → {"fn","interval","end","next"}
+        self.mr_debuffs = {}          # name → {"target","amount","end"}
+        self.pending_skill_damage = []   # (time, name, magic) — 질풍 등 지연 피해
+        self._dmg_window = []         # (time, drop) — 폭풍 쇄도 판정용
+        self._last_target_hp = None
+
+    # ── 동적 스탯 ──────────────────────────────────────────────────────────
+    @property
+    def total_ap(self):
+        base = self.bonus_ap
+        for item in self.inventory:
+            if hasattr(item, "get_bonus_ap"):
+                base += item.get_bonus_ap(self)
+        mult = 1.30 if any(item.name == "Rabadon's Deathcap" for item in self.inventory) else 1.0
+        if self.quest_complete:
+            mult *= self.QUEST_AP_MULT
+        for item in self.inventory:
+            if hasattr(item, "get_ap_multiplier"):
+                mult *= item.get_ap_multiplier(self)
+        return base * mult
+
+    @property
+    def total_ad(self):
+        """미드 퀘스트: 추가AD ×1.08 (기본AD 제외). 병사 피해엔 무관(리치베인은 기본AD 참조)."""
+        base = self.base_attack_ad
+        bonus = super().total_ad - base
+        return base + bonus * (self.QUEST_BONUS_AD_MULT if self.quest_complete else 1.0)
+
+    def get_total_bonus_as_percent(self):
+        total = super().get_total_bonus_as_percent()
+        for item in self.inventory:
+            if hasattr(item, "get_bonus_as"):
+                total += item.get_bonus_as(self)
+        return total
+
+    # ── 병사 ────────────────────────────────────────────────────────────────
+    def soldier_count(self):
+        if self.fixed_soldiers is not None:
+            return self.fixed_soldiers
+        return len(self.soldiers)
+
+    def w_damage(self, n_soldiers=None):
+        """병사 공격 마법 피해(증폭 전). n 병사: ×(1 + 0.25(n−1))."""
+        idx = self.w_level - 1
+        lvl_bonus = self.W_LEVEL_BONUS_PER * max(0, self.level - self.W_LEVEL_BONUS_START + 1)
+        single = self.W_BASE[idx] + lvl_bonus + self.W_AP[idx] * self.total_ap
+        n = self.soldier_count() if n_soldiers is None else n_soldiers
+        return single * (1.0 + self.W_EXTRA_SOLDIER_RATIO * max(0, n - 1))
+
+    def _spawn_soldier(self, time):
+        self.soldiers.append(time + self.W_DURATION)
+
+    def _use_charge(self, time):
+        self.w_charges -= 1
+        if self.w_charge_ready_at is None:
+            self.w_charge_ready_at = time + self.apply_haste_to_cooldown(self.W_RECHARGE[self.w_level - 1])
+
+    def _gain_charge(self, time):
+        self.w_charges = min(self.W_MAX_CHARGES, self.w_charges + 1)
+        if self.w_charges >= self.W_MAX_CHARGES:
+            self.w_charge_ready_at = None
+
+    # ── 대미지 증폭 / 그림자불꽃 (스킬·DoT 용; 병사 평타는 get_one_hit_damage 안에서 동일 계산) ──
+    def _damage_amp(self, target):
+        mod = 1.0
+        for item in self.inventory:
+            if hasattr(item, "get_damage_modifier") and item.name != "Hextech Scope C44":
+                mod *= (1.0 + item.get_damage_modifier(target, self))
+        if self.rune:
+            mod *= (1.0 + self.rune.get_damage_modifier(target, self))
+        if self.sub_rune:
+            mod *= (1.0 + self.sub_rune.get_damage_modifier(target, self))
+        return mod
+
+    def _shadowflame_mult(self, target):
+        has_sf = any(item.name == "Shadowflame" for item in self.inventory)
+        if has_sf and target.max_hp > 0 and target.current_hp / target.max_hp <= 0.40:
+            return 1.0 + self.SHADOWFLAME_PET_DOT_BONUS
+        return 1.0
+
+    # ── 스킬 효과(아이템) ───────────────────────────────────────────────────
+    def _apply_spell_effects(self, target, time, source):
+        """스킬/병사 피해 1회당 아이템 on_spell_effect 를 호출, 즉시 추가 마법 피해 합을 반환(증폭 전)."""
+        extra = 0.0
+        for item in self.inventory:
+            if hasattr(item, "on_spell_effect"):
+                extra += item.on_spell_effect(target, self, time, source)
+        return extra
+
+    def apply_dot(self, name, tick_fn, interval, duration, time):
+        """DoT 등록/갱신. tick_fn(target, champion) → 틱당 마법 피해(증폭 전). 갱신 시 남은 틱 스케줄 유지."""
+        dot = self.dots.get(name)
+        if dot is None:
+            self.dots[name] = {"fn": tick_fn, "interval": interval, "end": time + duration,
+                               "next": time + interval}
+        else:
+            dot["fn"] = tick_fn
+            dot["end"] = time + duration
+
+    def apply_mr_debuff(self, name, target, amount, duration, time):
+        deb = self.mr_debuffs.get(name)
+        if deb is None:
+            target.magic_resist -= amount
+            self.mr_debuffs[name] = {"target": target, "amount": amount, "end": time + duration}
+        else:
+            deb["end"] = time + duration
+
+    def _expire_mr_debuffs(self, time):
+        for name in list(self.mr_debuffs):
+            deb = self.mr_debuffs[name]
+            if time >= deb["end"]:
+                deb["target"].magic_resist += deb["amount"]
+                del self.mr_debuffs[name]
+
+    def get_on_skill_hit_damage(self, target, time=0.0):
+        """스킬 적중 아이템 효과는 _apply_spell_effects 가 처리(이벤트 피해에 포함) → 엔진 훅은 0."""
+        return 0.0, 0.0, 0.0
+
+    # ── 엔진 인터페이스 ─────────────────────────────────────────────────────
+    def init_combat_state(self, skill_plan=None):
+        super().init_combat_state(skill_plan)
+        self.cooldowns_remaining = {"q": 0.0, "w": 0.0, "e": 0.0, "r": 0.0, "belt": 0.0}
+        self.soldiers = []
+        self.w_charges = self.W_MAX_CHARGES
+        self.w_charge_ready_at = None
+        self.dots = {}
+        self.mr_debuffs = {}
+        self.pending_skill_damage = []
+        self._dmg_window = []
+        self._last_target_hp = None
+        plan = skill_plan or {}
+        auto_cfg = plan.get("auto_cast", {})
+        _defaults = {"q": True, "w": self.fixed_soldiers is None, "e": True, "r": False}
+        self.auto_skill_enabled = {k: auto_cfg.get(k, _defaults[k]) for k in ("q", "w", "e", "r")}
+        self.auto_skill_order = list(plan.get("auto_order", ["w", "e", "r", "q"]))
+        self.manual_skill_casts = sorted(list(plan.get("manual_casts", [])), key=lambda x: x[0])
+        self.manual_skill_index = 0
+
+    def advance_combat_time(self, delta_time, current_time, target):
+        super().advance_combat_time(delta_time, current_time, target)
+        if delta_time > 0:
+            for k in self.cooldowns_remaining:
+                self.cooldowns_remaining[k] = max(0.0, self.cooldowns_remaining[k] - delta_time)
+        eps = 1e-9
+        # 병사 만료
+        self.soldiers = [t for t in self.soldiers if t > current_time + eps]
+        # W 충전
+        while self.w_charge_ready_at is not None and current_time + eps >= self.w_charge_ready_at:
+            ready_at = self.w_charge_ready_at
+            self.w_charges = min(self.W_MAX_CHARGES, self.w_charges + 1)
+            if self.w_charges >= self.W_MAX_CHARGES:
+                self.w_charge_ready_at = None
+            else:
+                self.w_charge_ready_at = ready_at + self.apply_haste_to_cooldown(self.W_RECHARGE[self.w_level - 1])
+        # 마저 디버프 만료
+        self._expire_mr_debuffs(current_time)
+        # 폭풍 쇄도 피해 창(최근 WINDOW 초 동안 대상 체력 감소량) — 리스폰(체력 증가) 시 리셋
+        hp = target.current_hp
+        if self._last_target_hp is not None:
+            drop = self._last_target_hp - hp
+            if drop > 0:
+                self._dmg_window.append((current_time, drop))
+            elif drop < 0:
+                self._dmg_window = []
+        self._last_target_hp = hp
+        for item in self.inventory:
+            if hasattr(item, "try_stormraider") and target.max_hp > 0:
+                window = item.WINDOW
+                self._dmg_window = [(t, d) for (t, d) in self._dmg_window if current_time - t <= window]
+                frac = sum(d for _, d in self._dmg_window) / target.max_hp
+                dmg = item.try_stormraider(self, current_time, frac)
+                if dmg is not None:
+                    self.pending_skill_damage.append((current_time + item.DELAY, "squall", dmg))
+                    self._dmg_window = []
+
+    def get_time_to_next_state_event(self, current_time):
+        cands = [t - current_time for t in self.soldiers]
+        if self.w_charge_ready_at is not None:
+            cands.append(self.w_charge_ready_at - current_time)
+        cands += [d["end"] - current_time for d in self.mr_debuffs.values()]
+        cands = [max(0.0, c) for c in cands]
+        return min(cands) if cands else float("inf")
+
+    def _cost(self, name):
+        return self.mana_cost.get(name, 0.0)
+
+    def _can_cast_skill(self, name):
+        """쿨·충전·마나 + **시전 락아웃**: 직전 스킬의 시전/돌진 시간이 끝나야 다음 스킬 시전 가능
+        (W 0.25 → E 0.3 → R 0.5 → Q 0.25 순차; t=0 동시 시전 금지) [H-AZIR-3]."""
+        eps = 1e-9
+        if self._combat_time + eps < self.cast_lockout_until:
+            return False
+        if self.cooldowns_remaining.get(name, float("inf")) > eps:
+            return False
+        if name == "w" and self.w_charges < 1:
+            return False
+        if name == "e" and not self.soldiers and self.fixed_soldiers is None:
+            return False          # E 는 병사가 있어야 시전 가능
+        if name == "belt" and not any(hasattr(it, "active_damage") for it in self.inventory):
+            return False
+        return self.can_afford(self._cost(name))
+
+    def get_time_to_next_skill_event(self, current_time):
+        eps = 1e-9
+        cands = []
+        if self.manual_skill_index < len(self.manual_skill_casts):
+            t, _ = self.manual_skill_casts[self.manual_skill_index]
+            cands.append(max(0.0, t - current_time))
+        lockout_wait = max(0.0, self.cast_lockout_until - current_time)
+        if self.manual_skill_index < len(self.manual_skill_casts):
+            cands[-1] = max(cands[-1], lockout_wait)
+        for name, enabled in self.auto_skill_enabled.items():
+            if not enabled:
+                continue
+            wait = max(lockout_wait, self.cooldowns_remaining.get(name, 0.0), self._afford_in(self._cost(name)))
+            if name == "w" and self.w_charges < 1:
+                if self.w_charge_ready_at is None:
+                    continue
+                wait = max(wait, self.w_charge_ready_at - current_time)
+            if name == "e" and not self.soldiers and self.fixed_soldiers is None:
+                continue
+            cands.append(wait)
+        for d in self.dots.values():
+            if d["next"] <= d["end"] + eps:
+                cands.append(max(0.0, d["next"] - current_time))
+        for t, _, _ in self.pending_skill_damage:
+            cands.append(max(0.0, t - current_time))
+        valid = [c for c in cands if c >= -eps]
+        return max(0.0, min(valid)) if valid else float("inf")
+
+    def pop_due_skill_events(self, current_time, target):
+        eps = 1e-9
+        events = []
+        self._combat_time = current_time
+        # 1) 수동 시전(R t=0, 벨트 액티브) — 락아웃 중이면 소비하지 않고 대기(다음 이벤트에서 재시도)
+        while self.manual_skill_index < len(self.manual_skill_casts):
+            t, name = self.manual_skill_casts[self.manual_skill_index]
+            if t > current_time + eps:
+                break
+            if current_time + eps < self.cast_lockout_until:
+                break
+            self.manual_skill_index += 1
+            if self._can_cast_skill(name):
+                events.append(self._cast_skill(name, target, current_time))
+        # 2) 자동 시전(우선순위 순)
+        for name in self.auto_skill_order:
+            if self.auto_skill_enabled.get(name, False) and self._can_cast_skill(name):
+                events.append(self._cast_skill(name, target, current_time))
+        # 3) DoT 틱 — 아이템 지속 피해(스킬 효과 재발동 없음, 증폭·그림자불꽃 적용)
+        for name, d in list(self.dots.items()):
+            while d["next"] <= current_time + eps and d["next"] <= d["end"] + eps:
+                raw = d["fn"](target, self) * self._damage_amp(target) * self._shadowflame_mult(target)
+                events.append((name, 0.0, raw, True))
+                d["next"] += d["interval"]
+            if d["next"] > d["end"] + eps:
+                del self.dots[name]
+        # 4) 지연 피해(질풍)
+        remaining = []
+        for t, name, dmg in self.pending_skill_damage:
+            if t <= current_time + eps:
+                events.append((name, 0.0, dmg * self._damage_amp(target) * self._shadowflame_mult(target), True))
+            else:
+                remaining.append((t, name, dmg))
+        self.pending_skill_damage = remaining
+        return events
+
+    def _cast_skill(self, name, target, time):
+        """스킬 시전 → 엔진 이벤트 (name, phys, magic, is_skill_hit). 피해는 증폭·그림자불꽃 적용 후 raw 마법."""
+        self._combat_time = time
+        self.spend_mana(self._cost(name))
+        if name == "w":
+            self._cast_w(time)
+            return ("w", 0.0, 0.0, False)
+        if name == "q":
+            base = self._cast_q(time)
+        elif name == "e":
+            base = self._cast_e(time)
+        elif name == "r":
+            base = self._cast_r(time)
+        elif name == "belt":
+            base = self._cast_belt(time)
+        else:
+            return (name, 0.0, 0.0, False)
+        # 스킬 효과(루덴 즉시피해·DoT·마저감소·지평선) — 지평선은 이번 스킬에도 증폭 적용(Wiki)
+        extra = self._apply_spell_effects(target, time, name)
+        magic = (base + extra) * self._damage_amp(target) * self._shadowflame_mult(target)
+        return (name, 0.0, magic, True)
+
+    def _cast_w(self, time):
+        """병사 소환: 충전 −1, 수명 10s, 쿨 1.5s, 시전 0.25s(흡수형). 주문검(리치베인/황혼) arm."""
+        self._use_charge(time)
+        self._spawn_soldier(time)
+        self.cooldowns_remaining["w"] = self.W_CD
+        self.cast_lockout_until = max(self.cast_lockout_until, time + self.W_CAST_TIME)
+        self.cast_spell(time)
+
+    def _cast_q(self, time):
+        idx = self.q_level - 1
+        self.cooldowns_remaining["q"] = self.apply_haste_to_cooldown(self.Q_CD[idx])
+        self.cast_lockout_until = max(self.cast_lockout_until, time + self.Q_CAST_TIME)
+        self.cast_spell(time)
+        return self.Q_BASE[idx] + self.Q_AP[idx] * self.total_ap
+
+    def _cast_e(self, time):
+        """E 돌진: 마법 피해 + 챔피언 충돌 가정 → 병사 충전 +1 [H-AZIR-3]. 돌진 0.3s 평타 불가."""
+        idx = self.e_level - 1
+        self.cooldowns_remaining["e"] = self.apply_haste_to_cooldown(self.E_CD[idx])
+        self.cast_lockout_until = max(self.cast_lockout_until, time + self.E_DASH_TIME)
+        self._gain_charge(time)
+        self.cast_spell(time)
+        return self.E_BASE[idx] + self.E_AP * self.total_ap
+
+    def _cast_r(self, time):
+        idx = self.r_level - 1
+        self.cooldowns_remaining["r"] = self.apply_haste_to_cooldown(self.R_CD[idx])
+        self.cast_lockout_until = max(self.cast_lockout_until, time + self.R_CAST_TIME)
+        self.cast_spell(time); self.cast_ultimate(time)
+        return self.R_BASE[idx] + self.R_AP * self.total_ap
+
+    def _cast_belt(self, time):
+        dmg = 0.0
+        for it in self.inventory:
+            if hasattr(it, "active_damage"):
+                dmg += it.active_damage(self)
+        self.cooldowns_remaining["belt"] = 40.0
+        self.cast_spell(time)
+        return dmg
+
+    # ── 병사 공격(평타 대체) ────────────────────────────────────────────────
+    def get_one_hit_damage(self, target, time=0):
+        """병사 공격 1회: (0, W마법×병사배율, 물리온힛, 마법온힛, 0, 고정온힛). 온힛 50% [W_ONHIT_MULT].
+        병사가 없으면(이론상 마나 고갈 등) 아지르 본체 평타로 폴백(베이스)."""
+        self._combat_time = time
+        if self.soldier_count() <= 0:
+            return super().get_one_hit_damage(target, time)
+
+        if self.rune:
+            self.rune.on_attack(self)
+        if self.sub_rune:
+            self.sub_rune.on_attack(self)
+
+        magic_base = self.w_damage()
+
+        def get_all_onhit():
+            p_sum = m_sum = pt_base = pt_onhit = 0.0
+            for item in self.inventory:
+                p, m, pb, po = item.on_hit(target, self)
+                p_sum += p * self.W_ONHIT_MULT
+                m_sum += m * self.W_ONHIT_MULT
+                pt_base += pb * self.W_ONHIT_MULT
+                pt_onhit += po * self.W_ONHIT_MULT
+            if self.rune:
+                rp, rm = self.rune.get_on_hit_damage(target, self)
+                f = self.RUNE_ONHIT_FACTOR.get(self.rune.name, self.W_ONHIT_MULT)
+                p_sum += rp * f
+                m_sum += rm * f
+            cp, cm = self.get_champion_onhit(target)
+            return p_sum + cp, m_sum + cm, pt_base, pt_onhit
+
+        proc_count = 1
+        for item in self.inventory:
+            if hasattr(item, "get_onhit_proc_count"):
+                proc_count = max(proc_count, item.get_onhit_proc_count(self))
+        extra_applications = 0
+        for item in self.inventory:
+            if hasattr(item, "get_extra_onhit_applications"):
+                extra_applications += item.get_extra_onhit_applications(self)
+        total_applications = proc_count + extra_applications
+        self._last_onhit_applications = total_applications
+
+        phys_onhit = magic_onhit = true_base = true_onhit = 0.0
+        for _ in range(total_applications):
+            p, m, pb, po = get_all_onhit()
+            phys_onhit += p; magic_onhit += m; true_base += pb; true_onhit += po
+
+        # 스킬 효과(병사 타격 = 스킬 판정: 루덴/리안드리/어둠불꽃/핏빛저주). 지평선은 병사로 발동 안 함.
+        magic_base += self._apply_spell_effects(target, time, "soldier")
+
+        mod_factor = self._damage_amp(target)
+        self._last_damage_amp = mod_factor
+        magic_base *= mod_factor
+        phys_onhit *= mod_factor
+        magic_onhit *= mod_factor
+
+        sf = self._shadowflame_mult(target)
+        magic_base *= sf
+        magic_onhit *= sf
+
+        self.hit_count += 1
+        self._last_botrk_onhit_raw = (0.0, 0.0, 0.0)
+        return 0.0, magic_base, phys_onhit, magic_onhit, true_base, true_onhit

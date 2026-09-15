@@ -37,7 +37,12 @@ from adc_sim.simulations.jinx import (
     build_jinx_core_report_meta,
     JINX_RANKING_Q_MODE,
 )
-from adc_sim.runes import LethalTempo
+from adc_sim.simulations.azir import (
+    simulate_azir_core_path,
+    get_azir_powercompare_builds,
+    build_azir_core_report_meta,
+)
+from adc_sim.runes import LethalTempo, PressTheAttack
 from adc_sim.data.items_data import DORAN_SHORT, ADC_PACKAGES
 
 
@@ -100,6 +105,15 @@ def _simulate_compare_stat(champ_name, cfg, core_tier):
         dps, gold = simulate_jinx_core_path(cfg["path"], core_tier, q_mode=q_mode, **pkg_kw)
         meta = build_jinx_core_report_meta(cfg["path"], core_tier, q_mode=q_mode)
         choice = f"{cfg.get('pkg_label', 'Bld+Zerk')}/{q_mode}"
+    elif champ_name == "Azir":
+        # 아지르: 룬 의존(PtA/LT) — cfg.keystone_cls. 시작 = 도란링+마관신(코어2부터 3티어 승급, simulate 내부).
+        azir_keystone = cfg.get("keystone_cls", PressTheAttack)
+        dps, gold = simulate_azir_core_path(cfg["path"], core_tier, keystone_cls=azir_keystone,
+                                            doran_key=cfg.get("doran", "doranring"),
+                                            boots_key=cfg.get("boots", "sorcerer"),
+                                            rune_as_bonus=cfg.get("rune_as", 0.0))
+        meta = build_azir_core_report_meta(cfg["path"], core_tier)
+        choice = f"{cfg.get('pkg_label', 'Ring+Sorc')}/{cfg.get('rune_label', 'PtA')}"
     else:
         raise ValueError(f"Unknown champion config: {champ_name}")
 
@@ -250,6 +264,7 @@ def _plot_combined_compare(top1_rows, basic_rows):
         "CogMaw": "#17becf",
         "Vayne": "#d62728",
         "Jinx": "#e377c2",
+        "Azir": "#bcbd22",
     }
 
     plt.figure(figsize=(13, 8))
@@ -258,7 +273,7 @@ def _plot_combined_compare(top1_rows, basic_rows):
         (top1_rows, "Top1", "-", "o", 0.95),
         (basic_rows, "Basic", "--", "s", 0.9),
     ]:
-        for champ in ("Ashe", "Yunara", "KaiSa", "Corki", "CogMaw", "Vayne", "Jinx"):
+        for champ in ("Ashe", "Yunara", "KaiSa", "Corki", "CogMaw", "Vayne", "Jinx", "Azir"):
             xs = [row["stats"][champ]["gold"] for row in rows]
             ys = [row["stats"][champ]["dps"] for row in rows]
             # 선택된 옵션(패키지 A/B 또는 코르키 도란) — variant 내 챔프당 고정이라 첫 행에서 취득
@@ -393,6 +408,8 @@ def compare_builds():
     vayne_best, vayne_meta = get_vayne_powercompare_builds()
     print("[Info] Loading Jinx top1/meta from simulation_jinx (can take some time)...")
     jinx_best, jinx_meta = get_jinx_powercompare_builds()
+    print("[Info] Loading Azir top1/meta from simulation_azir (PtA·LT 4코어 전수, can take some time)...")
+    azir_best, azir_meta = get_azir_powercompare_builds()
 
     print("\n=== Cross-Champion Power Compare (1~4 Core) ===")
     print("Configured Top1 builds (Ashe/Yunara/KaiSa: 정배 패키지 A=Bld+Zerk+핏빛길 / B=Bow+Glut+민첩함 중 최적):")
@@ -423,7 +440,9 @@ def compare_builds():
     )
     print(
         f"- Jinx   : [{jinx_best.get('pkg_label','?')}] {'-'.join(jinx_best['path'])} / LT+CutDown "
-        f"(long-range Fishbones + W nuke; top1 by weighted DPS)"
+        f"(long-range Fishbones + W nuke; top1 by weighted DPS)\n"
+        f"- Azir   : [{azir_best.get('pkg_label','?')}] {'-'.join(azir_best['path'])} / {azir_best['rune_label']}+CutDown "
+        f"(sand-soldier AA + Q/E/R; top1 by weighted DPG, 룬 무관 최강)"
     )
     print()
 
@@ -455,6 +474,9 @@ def compare_builds():
                   **_pkg_cfg(vayne_best, {"keystone_cls": vayne_best["keystone_cls"], "rune_label": vayne_best["rune_label"]})},
         # 징크스 = 장거리 Fishbones 조건의 절대 weighted-DPS top1; Get Excited OFF
         "Jinx": {"path": jinx_best["path"], **_pkg_cfg(jinx_best)},
+        # 아지르 = 룬 무관 최강 빌드(PtA·LT 중 우위). 도란링+마관신.
+        "Azir": {"path": azir_best["path"],
+                 **_pkg_cfg(azir_best, {"keystone_cls": azir_best["keystone_cls"], "rune_label": azir_best["rune_label"]})},
     }
     top1_rows = _print_compare_section("Cross-Champion Top1 Compare (1~4 Core)", top1_configs)
 
@@ -479,6 +501,9 @@ def compare_builds():
                   **_pkg_cfg(vayne_meta, {"keystone_cls": vayne_meta["keystone_cls"], "rune_label": vayne_meta["rune_label"]})},
         # 징크스 = Fishbones 컨트롤(kraken-pd-ie-ldr, DPS 최적 패키지)
         "Jinx": {"path": jinx_meta["path"], **_pkg_cfg(jinx_meta)},
+        # 아지르 = 컨트롤(nashor-shadowflame-rabadon-void, 26.17 메타) under 집중공격(PtA)
+        "Azir": {"path": azir_meta["path"],
+                 **_pkg_cfg(azir_meta, {"keystone_cls": azir_meta["keystone_cls"], "rune_label": azir_meta["rune_label"]})},
     }
 
     print("Configured Basic builds (Ashe/Yunara/KaiSa: 정배 A/B 중 최적 — 개별 파일 기준과 일치):")
@@ -490,6 +515,7 @@ def compare_builds():
     print(f"- CogMaw : {'-'.join(cogmaw_meta['path'])} + {cogmaw_meta.get('boots','glutton')} / {cogmaw_meta['rune_label']}+CutDown (실전 메타 빌드 / 치속)")
     print(f"- Vayne  : [{vayne_meta.get('pkg_label','?')}] {'-'.join(vayne_meta['path'])} + {vayne_meta.get('boots','berserker')} / {vayne_meta['rune_label']}+CutDown (control botrk-guinsoo-terminus-pd)")
     print(f"- Jinx   : [{jinx_meta.get('pkg_label','?')}] {'-'.join(jinx_meta['path'])} + {jinx_meta.get('boots','berserker')} / LT+CutDown (Fishbones control kraken-pd-ie-ldr)")
+    print(f"- Azir   : [{azir_meta.get('pkg_label','?')}] {'-'.join(azir_meta['path'])} + {azir_meta.get('boots','sorcerer')}(→3티어) / {azir_meta['rune_label']}+CutDown (control nashor-shadowflame-rabadon-void)")
     print()
     basic_rows = _print_compare_section("Cross-Champion Basic Build Compare (1~4 Core)", basic_configs)
 

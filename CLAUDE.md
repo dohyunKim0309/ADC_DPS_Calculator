@@ -19,6 +19,7 @@
   - `… adc_sim.simulations.vayne pta-alacrity-subs [gamma]` — 집공·민첩함 고정 후 최후의 일격/체력차 극복 receding-horizon 비교.
   - `… adc_sim.simulations.vayne_rune_compare [top_n]` — LT vs PtA 룬 비교(top_n 기본 10 + 컨트롤, 코어 타이밍별 DPS/DPG 나열). 두 룬 전수 랭킹 소요 ≈1분.
   - `… adc_sim.simulations.jinx` — 징크스 4코어 랭킹(미니건+W, Get Excited OFF, Ashe 크리풀·컨트롤 kraken-pd-ie-ldr 재사용)
+  - `… adc_sim.simulations.azir [gamma | legacy-ranking]` — **아지르**(미드 AP) 1~5코어 receding-horizon(기본, PtA·LT 룬별 궤적 + 컨트롤 레퍼런스) / `legacy-ranking` 4코어 전수(집합 메모이즈, 룬별 표 2개). 표만 출력(헤드리스 안전). 전수 ≈ 98k 경로지만 고유 집합 시뮬만 돌아 수 분.
   - `… adc_sim.simulations.power_compare` — 챔피언 간 Top1/Basic 비교
   - `… adc_sim.simulations.case_ranking ["케이스필터"]` — **애쉬 케이스 기반 빌드 랭킹**(비-방어 전 아이템 전수조사, 14케이스). 표만 출력(그래프/`plt.show()` 없음)이라 **헤드리스 안전**. 인자로 케이스명 부분일치 필터(예: `"alldps/nohc"`). 전체 ~45초.
 - 각 시뮬 모듈은 `if __name__ == "__main__"` 진입점을 가진다. (`case_ranking` 제외) 실행 끝에 `plt.show()`가 **블로킹**으로 창을 띄운다(헤드리스/자동화 시 유의). import만으로는 안 뜸 — 실행 코드가 main 가드 안에 있어 import 스모크 테스트는 안전.
@@ -33,7 +34,7 @@ adc_sim/                  ← 소스 패키지 (코어 모듈끼리는 서로 im
   champion.py ─ Target(더미), Champion 베이스(데미지 모델·스탯·이벤트 인터페이스) + 챔피언 서브클래스
   engine.py   ─ run_simulation(): 이벤트 루프 / calculate_mitigation(): 방저·관통 적용
   simulations/
-    ashe.py · yunara.py · kaisa.py · corki.py · ezreal.py · cogmaw.py · vayne.py · jinx.py ─ 빌드 탐색·랭킹·리포트·그래프 (챔피언별)
+    ashe.py · yunara.py · kaisa.py · corki.py · ezreal.py · cogmaw.py · vayne.py · jinx.py · azir.py ─ 빌드 탐색·랭킹·리포트·그래프 (챔피언별)
     power_compare.py ─ 각 챔피언 Top1을 모아 교차 비교 (simulations만 `adc_sim.*` import)
     sim_settings.py ─ 케이스랭킹 '모델' 설정 데이터(가중 프로파일/축/제약/풀 제외세트/컨트롤 오프닝). 순수 설정·헬퍼(코어 import 안 함)
     case_ranking.py ─ 케이스 기반 빌드 랭킹 엔진(집합 메모이즈 시뮬 + 14케이스 전수). 현재 Ashe 전용(레벨표/타깃은 ashe.py 재사용)
@@ -136,6 +137,28 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 - **전용 sim**: vayne.py 미러. Ashe 크리풀(`_build_ashe_4core_all_paths`)·컨트롤 `kraken-pd-ie-ldr` 재사용,
   스킬 선마 로컬 계산(Q선마). power_compare 7번째 챔프 연동(best=RelDPG top1, meta=컨트롤). Top1=`윤탈-C44-LDR-무한`(Ashe와 동일 크리코어).
 
+### Azir (`champion.py` Azir + `simulations/azir.py`) [수치 3소스 일치(나무위키 2026-08-27·LoL Wiki V26.16·CDragon bin)·가설은 spec 2026-08-27 §9]
+- **모래 병사(W) 평타 대체형 AP 지속딜러**. `get_one_hit_damage` **완전 오버라이드**: `phys_base=0`,
+  `magic_base = W(50~110 + lv≥10 부터 +8/lv(0~72) + 0.35~0.65AP) × (1+0.25(n−1))`(병사 n, bin `SubsequentDamageMod`),
+  **아이템 온힛(내셔·리치베인) ×0.5, 치속 풀스택 온힛 ×0.5, 집중공격 3타 폭발 ×1.0 — 사용자 확정 2026-08-27**(bin `OnHitMultiplier`; 구인수 팬텀히트·황혼 가산도 0.5, `RUNE_ONHIT_FACTOR`). **온힛·스킬효과(루덴/리안드리)는 병사 수와 무관하게 공격당 1회** — 병사 배율은 W 기본 피해에만.
+  치명타 없음. base AD 56(+3.5, DDragon raw=0 은 데이터버그), AS 0.625(**ratio 0.694**, +5%/lvl), 마나 320(+40)/mp5 8(+0.8).
+- **병사 이벤트 모델**(사용자 확정): W 2충전·재충전 12→6s(**스킬가속 적용** [H-AZIR-1])·수명 10s 를 상태이벤트로 추적.
+  W(0) → E(0.25, 항상 챔피언 충돌 가정 → 충전 +1 [H-AZIR-3]) → R(0.55) → Q(1.05) **시전 락아웃 순차**(동시 시전 금지), 이후 쿨마다; 충전 생기는 대로 W(병사 최대 유지). 마나 하드 바운드.
+  시전 시간 Q/W 0.25s, R 0.5s, E 돌진 0.3s = 전부 **흡수형** `cast_lockout_until`. `fixed_soldiers=n` 으로 상수 병사(검증용).
+- **스킬 효과 훅**: 병사 타격·Q·E·R·벨트마다 `_apply_spell_effects` → 아이템 `on_spell_effect`(루덴 즉시피해, 리안드리/어둠불꽃/악의 DoT `apply_dot`,
+  핏빛저주 마저 −7.5%×4 [H-AZIR-5], 지평선 +10% 6s [H-AZIR-6: Q/E/R 만 발동, 병사 제외]). DoT 는 0.5s 틱 스킬 이벤트로 방출(엔진 무수정).
+  **스킬·DoT 에도 대미지증폭(PtA/CutDown/고난/균열)과 그림자불꽃 ≤40% +20% 적용** [H-AZIR-8] — 코그모 스킬(SF 미적용)과 규약 차이 있음.
+- **미드 퀘스트** [H-AZIR-4]: 코어 1 = 2티어 신발·퀘스트 미완, **코어 ≥2 = 3티어 신발 무료 승급(`TIER3_BOOTS`) + 총AP ×1.08 + 추가AD ×1.08**(`quest_complete`).
+  `Azir.total_ap = (bonus_ap + Σ item.get_bonus_ap) × 라바돈1.3 × 퀘스트1.08 × Π get_ap_multiplier(어둠불꽃 1.04)`.
+- **전용 sim**: cogmaw.py 미러. 시작 **도란의 반지 + 마법사의 신발 고정**(ADC A/B 미사용, `AZIR_PACKAGES` 단일). 룬 PtA·LT(보조 CutDown).
+  **컨트롤 `nashor-shadowflame-rabadon-void`**(26.17 메타; 풀 필수). 후보: 딜 아이템 전 슬롯, 유틸(zhonya/banshee/rylai/belt/cosmic)은 3코어부터.
+  `archangel` 은 구매 코어=대천사, 다음 코어부터 세라핀(마나무네 규약; `SimCache` 키에 마지막코어 여부 포함). 레벨 9/11/13/15/17, W>Q>E 선마.
+  power_compare 8번째 챔프(best=PtA·LT 절대 weighted-DPG 우위, meta=컨트롤 under PtA). 테스트 `tests/test_azir.py`.
+- **신규 AP 아이템**(items_data, CDragon latest × 나무위키 7/30 교차): liandry/lichbane/cryptbloom(**마관 배타 void 와 공존불가**)/bloodletter/stormsurge/
+  ludens/blackfire/malignance/archangel·seraph/rylai/belt/banshee/horizon/cosmic/riftmaker + doranring(`mana_regen` STAT_KEY 신설)/sorcerer/spellslinger/
+  ionian/crimson/gunmetal/swift/swiftmarch. 선택적 훅(`on_spell_effect`/`apply_dot`/`get_bonus_ap`/`get_ap_multiplier`/`get_bonus_as`/`try_stormraider`/`active_damage`)은
+  **Azir 만 호출** — 타 챔피언이 끼면 스탯만. 미반영 목록은 `docs/unmodeled.md` §2.
+
 ## 패치마다 갱신 (이 프로젝트의 일상)
 새 패치가 나오면 보통 아래를 손본 뒤 시뮬을 다시 돌려 랭킹을 갱신한다. **변경 전 `AGENTS.md`의 승인 절차를 따른다.**
 1. **아이템 스탯/가격 변경** → `adc_sim/data/items_data.py`의 `ITEMS[key]`(`stats`/`cost`). 숫자의 단일 출처.
@@ -162,7 +185,7 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
 - **방어구 관통**은 `add_item`에서 곱연산으로 합치지만 주석상 "단순화" 영역 — 정밀화하려면 모델 가정부터 합의.
 - **가설은 가설로 표시**: 새 메커니즘은 `AGENTS.md` 4장대로 `Hypothesis/Experimental/Unsupported`로 명시하고 단정하지 말 것. (유나라 SF 재귀 증폭은 2026-08-02 사용자 확정으로 가설→확정 승격됨.)
 - **Jinx 전용 시뮬 `simulations/jinx.py` 있음**(미니건+W, §Jinx 참조). `ashe.py` 안의 옛 `simulate_jinx_reference_path`(Ashe 대비 그래프용)도 잔존하나, 랭킹/파워비교 정본은 `jinx.py`.
-- 정의돼 있는 챔피언: Ashe / Jinx / Yunara / KaiSa / Corki / Ezreal / Cog'Maw / **Vayne**. 룬: LethalTempo / PressTheAttack / CoupDeGrace / CutDown / Conqueror. **LT·PtA 온힛 보너스는 적응형**(`runes._adaptive_split`: bonus AP>bonus AD 면 마법, 아니면 물리) — AP 빌드(코그모 등)는 마법으로 들어가 마저 경감·마관(공허/그불)·Shadowflame 증폭 경로를 탄다. 물리 ADC는 그대로 물리.
+- 정의돼 있는 챔피언: Ashe / Jinx / Yunara / KaiSa / Corki / Ezreal / Cog'Maw / Vayne / **Azir**(미드 AP, §Azir). 룬: LethalTempo / PressTheAttack / CoupDeGrace / CutDown / Conqueror. **LT·PtA 온힛 보너스는 적응형**(`runes._adaptive_split`: bonus AP>bonus AD 면 마법, 아니면 물리) — AP 빌드(코그모 등)는 마법으로 들어가 마저 경감·마관(공허/그불)·Shadowflame 증폭 경로를 탄다. 물리 ADC는 그대로 물리.
 
 ## 거버넌스
 - 변경 절차·승인은 **`AGENTS.md`** 가 정본(특히: 최소 변경·무단 리팩터 금지, 가정/구조 변경 시 사전 승인).

@@ -13,6 +13,8 @@ adc_sim/
     items_registry.py     Item-key-to-runtime-instance creation interface
   simulations/
     vayne.py              Vayne combat model, candidate pools, and default 1–5 core search
+    azir.py               Azir combat setup (sand-soldier AA, mid-quest boots/AP), candidate pools,
+                          default 1–5 core receding-horizon search, legacy 4-core ranking
     ranking_core.py       Preserved weighted exhaustive-ranking helper
 ```
 
@@ -77,3 +79,17 @@ results. This label records an implementation boundary, not a claim about the ga
   the user explicitly approved deleting `adc_sim/simulations/vayne_sequential_greedy.py`.
 - Verification prerequisite: direct imports and CLI documentation were migrated to `vayne.py`
   before deletion; the focused and full suites are run again after removal.
+
+### 2026-08-27 — Add Azir (mid AP) champion module and AP item catalog
+
+- Reason: first mage-style champion. Sand-soldier attacks replace basic attacks (magic, 50% on-hit,
+  ability effects), so the champion owns a full `get_one_hit_damage` override plus item hooks
+  (`on_spell_effect`, `apply_dot`, `get_bonus_ap`, `get_bonus_as`, `try_stormraider`, `active_damage`)
+  that only Azir consumes — existing champions and the engine are unchanged.
+- New files: `adc_sim/simulations/azir.py`, `tests/test_azir.py`,
+  `docs/superpowers/specs/2026-08-27-azir-design.md`. Extended: `items_data.py` (AP legendaries,
+  tier-3 boots, `mana_regen` stat key, `cryptbloom` in `MAGIC_PEN_EXCLUSIVE`), `core_items.py`,
+  `utility_items.py`, `champion.py` (`Azir` class appended), `power_compare.py` (Azir branch).
+- Search: receding-horizon default per rule 8; `legacy-ranking` 4-core exhaustive kept as a mode.
+- User approval justification: the user requested the addition and confirmed the modeling
+  decisions (soldier event model, W+Q+E+R, item scope, PtA·LT + control build) on 2026-08-27.

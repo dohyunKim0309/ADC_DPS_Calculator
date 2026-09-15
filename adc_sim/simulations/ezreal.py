@@ -9,11 +9,12 @@ import random
 
 
 CORE_TARGET_STATS = {
-    1: {"hp": 1700, "armor": 50, "mr": 25},
-    2: {"hp": 1900, "armor": 70, "mr": 30},
-    3: {"hp": 2400, "armor": 100, "mr": 50},
-    4: {"hp": 2600, "armor": 120, "mr": 70},
-    5: {"hp": 3000, "armor": 150, "mr": 90},
+    # 마저 +5 일괄 상향(25/30/50/70/90 → 30/35/55/75/95) — 원딜 마저 버프 반영, 사용자 확정 2026-08-31.
+    1: {"hp": 1700, "armor": 50, "mr": 30},
+    2: {"hp": 1900, "armor": 70, "mr": 35},
+    3: {"hp": 2400, "armor": 100, "mr": 55},
+    4: {"hp": 2600, "armor": 120, "mr": 75},
+    5: {"hp": 3000, "armor": 150, "mr": 95},
 }
 
 CORE_LEVELS = {
@@ -34,7 +35,7 @@ EZREAL_SKILL_LEVELS = {
 
 def build_target_for_core(core_tier):
     s = CORE_TARGET_STATS[core_tier]
-    return Target(hp=s["hp"], armor=s["armor"], magic_resist=s["mr"], bonus_hp=max(0, s["hp"] - 1500))
+    return Target(hp=s["hp"], armor=s["armor"], magic_resist=s["mr"], bonus_hp=max(0, s["hp"] - 1600))
 
 
 def short_name(item_key):
