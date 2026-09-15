@@ -142,3 +142,31 @@ def test_yunara_half_combo_score_is_incremental_and_skips_last_half(monkeypatch)
     # 2C 완성 (300-100)/1.0 = 200       × γ^1.5 = 70.7107
     expected = 100.0 + 0.5 ** 0.5 * 100.0 + 0.5 ** 1.5 * 200.0
     assert score == pytest.approx(expected)
+
+
+def test_yunara_late_yuntal_scenario_moves_yuntal_out_of_first_core():
+    """`late-yuntal` 은 1코어 윤탈만 막고 2코어는 그대로 둔다(라인전 난항 케이스)."""
+    try:
+        assert "yuntal25" in yunara.CANDIDATES_BY_SLOT[1]
+
+        yunara.set_yuntal_min_slot(2)
+
+        assert "yuntal25" not in yunara.CANDIDATES_BY_SLOT[1]
+        assert "yuntal25" in yunara.CANDIDATES_BY_SLOT[2]
+        assert "yuntal25" not in yunara.CANDIDATES_BY_SLOT[3]
+    finally:
+        yunara.set_yuntal_min_slot(1)
+
+
+def test_yunara_cli_late_yuntal_flag_combines_with_half5(monkeypatch):
+    """`late-yuntal half5` 처럼 플래그를 겹쳐 써도 둘 다 적용된다."""
+    called = []
+    monkeypatch.setattr(yunara, "main",
+                        lambda gamma=None, include_last_half=None: called.append(include_last_half))
+    try:
+        yunara.run_cli(["late-yuntal", "half5"])
+
+        assert called == [True]
+        assert "yuntal25" not in yunara.CANDIDATES_BY_SLOT[1]
+    finally:
+        yunara.set_yuntal_min_slot(1)

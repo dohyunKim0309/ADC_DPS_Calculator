@@ -378,18 +378,30 @@ CORE_POOL = [
     "statikk", "pd", "runaan", "shadowflame", "ie", "ldr", "rabadon", "mortal", "void",
 ]
 YUNTAL_MAX_SLOT = 2
+# 윤탈 구매 가능 최소 슬롯. 기본 1. 라인전이 힘들어 1코어 윤탈이 불가능한 판을 보려면
+# 2 로 올린다(`late-yuntal` CLI 인자 / set_yuntal_min_slot). 윤탈은 스택 아이템이라
+# 구매 코어의 치명타가 약하게 평가되므로, 늦게 살수록 그 손해를 늦게 치른다.
+YUNTAL_MIN_SLOT = 1
 CORE1_EXCLUDED = frozenset({"rabadon", "shadowflame", "void", "ldr", "mortal"})
 
 
 def _slot_candidates(slot):
     """슬롯 제약만 적용한 후보 목록 (pen 배타는 탐색 쪽에서 별도 검사)."""
-    keys = [k for k in CORE_POOL if not (k == "yuntal25" and slot > YUNTAL_MAX_SLOT)]
+    keys = [k for k in CORE_POOL
+            if not (k == "yuntal25" and not YUNTAL_MIN_SLOT <= slot <= YUNTAL_MAX_SLOT)]
     if slot == 1:
         keys = [k for k in keys if k not in CORE1_EXCLUDED]
     return keys
 
 
 CANDIDATES_BY_SLOT = {slot: _slot_candidates(slot) for slot in range(1, HORIZON + 1)}
+
+
+def set_yuntal_min_slot(slot):
+    """윤탈 최소 구매 슬롯을 바꾸고 후보 맵을 다시 만든다(시나리오 전환용)."""
+    global YUNTAL_MIN_SLOT
+    YUNTAL_MIN_SLOT = slot
+    CANDIDATES_BY_SLOT.update({s: _slot_candidates(s) for s in range(1, HORIZON + 1)})
 
 
 class SimCache:
@@ -708,13 +720,18 @@ def main(gamma=None, include_last_half=None):
 
 
 def run_cli(args=None):
-    """유나라 CLI — 인자 없으면 기본 스윕, `half5` 면 5코어 하프까지 포함, 숫자면 γ 지정."""
+    """유나라 CLI — 인자 없으면 기본 스윕. `half5`=5코어 하프 포함,
+    `late-yuntal`=1코어 윤탈 금지(라인전 난항 케이스), 숫자=γ 지정. 조합 가능."""
     import sys
 
     cli_args = list(sys.argv[1:] if args is None else args)
     include_last_half = False
-    if cli_args and cli_args[0] == "half5":
-        include_last_half = True
+    while cli_args and cli_args[0] in ("half5", "late-yuntal"):
+        if cli_args[0] == "half5":
+            include_last_half = True
+        else:
+            set_yuntal_min_slot(2)
+            print("[scenario] 1코어 윤탈 금지 — 윤탈은 2코어에서만 구매 가능")
         cli_args = cli_args[1:]
     gamma = GAMMA
     if cli_args:
