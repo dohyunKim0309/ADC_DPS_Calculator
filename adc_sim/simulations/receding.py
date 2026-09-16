@@ -128,16 +128,51 @@ def score_combo(spec, cache, fixed, combo, from_slot, dps_prev, gold_prev, horiz
     return score
 
 
-def solve(spec, cache, horizon=None, top_alt=3):
-    """매 슬롯에서 미래(하프+완성) 할인 마지널 DPG 를 재탐색해 궤적과 상세를 반환한다."""
+def _marginal(dps_now, dps_prev, gold_now, gold_prev):
+    """직전 완성 상태 대비 마지널 DPG(1000골드당 DPS 증가). 골드 증가가 없으면 0."""
+    delta_gold = gold_now - gold_prev
+    return (dps_now - dps_prev) / (delta_gold / 1000.0) if delta_gold > 0 else 0.0
+
+
+def solve(spec, cache, horizon=None, top_alt=3, initial_fixed=(), slot_lookahead=None):
+    """매 슬롯에서 미래(하프+완성) 할인 마지널 DPG 를 재탐색해 궤적과 상세를 반환한다.
+
+    initial_fixed: 앞쪽 코어를 강제로 고정한 뒤 나머지만 탐색한다("1코어 X 강제" 분석용).
+        고정 구간도 steps 에 실려 나오며 `fixed_by_user=True` 로 표시된다.
+    slot_lookahead: {슬롯: 그 슬롯 선택에만 쓸 lookahead 끝 코어}. 지정 안 한 슬롯은
+        전체 horizon 까지 본다. 초반 선택의 근시안 정도를 재는 실험용이다.
+    """
     horizon = spec.horizon if horizon is None else horizon
-    fixed, steps = [], []
+    slot_lookahead = dict(slot_lookahead or {})
+    for slot, end in slot_lookahead.items():
+        if not slot <= end <= horizon:
+            raise ValueError(f"slot_lookahead[{slot}]={end} must be within {slot}..{horizon}")
+    fixed, steps = list(initial_fixed), []
     dps_prev, gold_prev = 0.0, 0.0
-    for slot in range(1, horizon + 1):
+
+    for index, item_key in enumerate(fixed, start=1):
+        dps_now, gold_now = cache.sim(tuple(fixed[:index]))
+        if half_enabled_for_slot(spec, index, horizon):
+            h_dps, h_gold, h_comps = select_half(spec, cache, tuple(fixed[:index - 1]), item_key)
+        else:
+            h_dps, h_gold, h_comps = None, None, ()
+        steps.append({
+            "slot": index, "item": item_key, "score": None,
+            "half_dps": h_dps, "half_gold": h_gold, "half_comps": h_comps,
+            "dps": dps_now, "gold": gold_now, "alternatives": [],
+            "future_path_winner": tuple(fixed[index - 1:]),
+            "marginal_dpg": _marginal(dps_now, dps_prev, gold_now, gold_prev),
+            "baseline_dps_prev": dps_prev, "baseline_gold_prev": gold_prev,
+            "fixed_by_user": True,
+        })
+        dps_prev, gold_prev = dps_now, gold_now
+
+    for slot in range(len(fixed) + 1, horizon + 1):
+        lookahead = slot_lookahead.get(slot, horizon)
         best_score, best_combo = None, None
         alternatives_by_item, alternatives_path = {}, {}
-        for combo in enumerate_future_combos(spec, fixed, slot, horizon):
-            value = score_combo(spec, cache, fixed, combo, slot, dps_prev, gold_prev, horizon)
+        for combo in enumerate_future_combos(spec, fixed, slot, lookahead):
+            value = score_combo(spec, cache, fixed, combo, slot, dps_prev, gold_prev, lookahead)
             item_key = combo[0]
             if item_key not in alternatives_by_item or value > alternatives_by_item[item_key]:
                 alternatives_by_item[item_key], alternatives_path[item_key] = value, combo
@@ -157,6 +192,9 @@ def solve(spec, cache, horizon=None, top_alt=3):
             "slot": slot, "item": nxt, "score": best_score,
             "half_dps": h_dps, "half_gold": h_gold, "half_comps": h_comps,
             "dps": dps_now, "gold": gold_now,
+            "future_path_winner": best_combo,
+            "marginal_dpg": _marginal(dps_now, dps_prev, gold_now, gold_prev),
+            "baseline_dps_prev": dps_prev, "baseline_gold_prev": gold_prev,
             "alternatives": [{"item": k, "score": v, "future_path": alternatives_path[k]}
                              for k, v in ranked],
         })
