@@ -2,7 +2,9 @@ from adc_sim.champion import CogMaw, Target
 import matplotlib.pyplot as plt
 from adc_sim.runes import LethalTempo, PressTheAttack, CutDown
 from adc_sim.engine import run_simulation
-from adc_sim.data.items_registry import create_item_from_key
+from adc_sim.data.items_registry import create_item_from_key, create_catalog_item
+from adc_sim.data.recipe_states import half_core_candidates
+from adc_sim.simulations import receding
 from adc_sim.data.items_data import ADC_PACKAGES, pen_rule_ok
 from adc_sim.settings import CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL, DEFAULT_DISCOUNT_GAMMA
 
@@ -441,14 +443,28 @@ def _run_cogmaw_ranking(keystone_cls, keystone_label, all_paths, item_short, ctr
 GAMMA = DEFAULT_DISCOUNT_GAMMA
 HORIZON = 5
 # 기존 코그모 순차 탐색에서 승인된 규칙: 5코어는 1~4코어 후보 합집합을 사용한다.
-CORE5_CANDIDATES = sorted(set().union(*COGMAW_CORE_CANDIDATES.values()))
-CANDIDATES_BY_SLOT = {
-    1: COGMAW_CORE_CANDIDATES[1],
-    2: COGMAW_CORE_CANDIDATES[2],
-    3: COGMAW_CORE_CANDIDATES[3],
-    4: COGMAW_CORE_CANDIDATES[4],
-    5: CORE5_CANDIDATES,
-}
+# ── 코어 후보 풀 (유나라·베인 규칙 미러, 2026-09-16) ────────────────────────
+# 1~5코어가 같은 합집합 풀을 쓰고 예외는 둘뿐이다. 슬롯별 손코딩 리스트
+# (COGMAW_CORE_CANDIDATES)는 4코어 전수 랭킹 전용으로만 남는다.
+#   · 윤탈: 스택 아이템이라 1~2코어에서만 (statikk·storm·rfc 는 스택이 아니라 전 슬롯 허용)
+#   · 1코어 제외: void/ldr/mortal/rabadon — 관통·증폭이 의미를 가지려면 딜 기반이 먼저다.
+#     shadowflame 은 1코어에도 남긴다(CLAUDE.md §Cog'Maw 의 기존 판단 유지).
+CORE_POOL = sorted(set().union(*COGMAW_CORE_CANDIDATES.values()))
+YUNTAL_MAX_SLOT = 2
+CORE1_EXCLUDED = frozenset({"void", "ldr", "mortal", "rabadon"})
+
+
+def _slot_candidates(slot):
+    """슬롯 제약만 적용한 후보 목록 (pen 배타는 탐색 쪽에서 별도 검사)."""
+    keys = [k for k in CORE_POOL if not (k == "yuntal" and slot > YUNTAL_MAX_SLOT)]
+    if slot == 1:
+        keys = [k for k in keys if k not in CORE1_EXCLUDED]
+    return keys
+
+
+CANDIDATES_BY_SLOT = {slot: _slot_candidates(slot) for slot in range(1, HORIZON + 1)}
+# 5코어 하프는 기본 생략(유나라·베인과 같은 근거).
+HALF_INCLUDE_LAST_SLOT = False
 ITEM_SHORT = {
     "guinsoo": "Gui", "kraken": "Krk", "nashor": "Nashor", "terminus": "Terminus",
     "bot": "BotRK", "rfc": "RFC", "statikk": "Statikk", "storm": "Storm",
@@ -456,6 +472,80 @@ ITEM_SHORT = {
     "shadowflame": "ShadowFlame", "mortal": "Mortal", "void": "Void", "dawn": "D&D",
     "navori": "Navori", "wit": "Wit's", "c44": "C44",
 }
+
+
+# ── 하프 코어(아이템 사이 구간) — 유나라 규칙 미러 ─────────────────────────
+COGMAW_HALF_TIER_LEVELS = {1: 8, 2: 10, 3: 12, 4: 14, 5: 16}
+
+
+def _half_tier_target(k):
+    """코어 k 직전 하프 티어 타깃: 인접 코어 스탯 선형 보간(0.5코어는 코어1 그대로)."""
+    if k <= 1:
+        stats = CORE_TARGET_STATS[1]
+        hp, armor, mr = stats["hp"], stats["armor"], stats["mr"]
+    else:
+        a, b = CORE_TARGET_STATS[k - 1], CORE_TARGET_STATS[min(5, k)]
+        hp = (a["hp"] + b["hp"]) / 2.0
+        armor = (a["armor"] + b["armor"]) / 2.0
+        mr = (a["mr"] + b["mr"]) / 2.0
+    return Target(hp=hp, armor=armor, magic_resist=mr, bonus_hp=max(0, hp - 1600))
+
+
+def _half_component_options(next_key):
+    """다음 코어의 하프 후보 구성들 — recipe_states 의 창 규칙 결과(재료 이름 튜플들)."""
+    return tuple(names for _cost, names in half_core_candidates(next_key))
+
+
+def simulate_cogmaw_half_tier(done_keys, next_key, comp_names, doran_key="doranblade",
+                              boots_key="berserker", rune_as_bonus=0.0,
+                              keystone_cls=LethalTempo):
+    """코어 done_keys 완성 + next_key 의 하위템 comp_names 를 든 하프 티어 DPS·총 골드.
+
+    레벨은 짝수 보간(8/10/12/14/16), 스킬 포인트는 다음 코어 표를 쓰되 R 만 레벨로 가드한다.
+    """
+    k = min(HORIZON, len(done_keys) + 1)
+    level = COGMAW_HALF_TIER_LEVELS[k]
+    q, w, e, _r = _skill_levels_for_core(k)
+    r = 1 if level < 11 else (2 if level < 16 else 3)
+    cog = CogMaw(level=level, q_level=q, w_level=w, e_level=e, r_level=r)
+    cog.set_rune(keystone_cls())
+    cog.set_sub_rune(CutDown())
+
+    items = ([create_item_from_key(doran_key)] if doran_key else []) + [create_item_from_key(boots_key)]
+    for key in done_keys:
+        items.append(create_item_from_key(key))
+    for name in comp_names:
+        items.append(create_catalog_item(name, allow_unsupported=True))
+
+    total_cost = 0
+    for item in items:
+        total_cost += item.cost
+        cog.add_item(item)
+    cog.bonus_as_percent += rune_as_bonus
+
+    skill_plan = {
+        "manual_casts": [(0.0, "w")],
+        "auto_cast": {"q": True, "w": True, "e": True, "r": True},
+        "auto_order": ["w", "q", "e", "r"],
+    }
+    _, dps, _ = run_simulation(cog, _half_tier_target(k), verbose=False,
+                               skill_plan=skill_plan, respawn_to_full_kills=2)
+    return dps, total_cost
+
+
+def build_spec(gamma=None, horizon=None, include_last_half=None):
+    """현재 모듈 설정을 담은 공통 엔진용 RecedingSpec (탐색 로직은 receding.py)."""
+    return receding.RecedingSpec(
+        title="Cog'Maw · 하프 티어 포함",
+        candidates_by_slot=CANDIDATES_BY_SLOT,
+        pen_rule_ok=pen_rule_ok,
+        half_options=_half_component_options,
+        gamma=GAMMA if gamma is None else gamma,
+        item_short=ITEM_SHORT,
+        horizon=HORIZON if horizon is None else horizon,
+        include_last_half=(HALF_INCLUDE_LAST_SLOT if include_last_half is None
+                           else include_last_half),
+    )
 
 
 class SimCache:
@@ -473,6 +563,10 @@ class SimCache:
         self.hits = 0
         self.misses = 0
 
+    def sim_half(self, done_tuple, next_key, comp_names):
+        """하프 티어(next_key 의 하위템 comp_names 보유) DPS·총 골드."""
+        return simulate_cogmaw_half_tier(list(done_tuple), next_key, comp_names, **self.kw)
+
     def sim(self, items_tuple):
         """완성 코어 집합의 현재 티어 DPS와 총 골드를 반환한다."""
         key = tuple(sorted(items_tuple))
@@ -485,105 +579,17 @@ class SimCache:
         return result
 
 
-def _enumerate_future_combos(fixed, from_slot, horizon=HORIZON):
-    """확정 코어 뒤에서 중복·관통 제약을 만족하는 코그모 미래 조합을 생성한다."""
-    remaining = list(range(from_slot, horizon + 1))
-
-    def rec(index, current):
-        """현재 슬롯 이후의 합법적인 아이템 조합을 재귀 생성한다."""
-        if index == len(remaining):
-            yield tuple(current)
-            return
-        for item_key in CANDIDATES_BY_SLOT[remaining[index]]:
-            if item_key in fixed or item_key in current:
-                continue
-            candidate = tuple(fixed) + tuple(current) + (item_key,)
-            if not pen_rule_ok(candidate):
-                continue
-            current.append(item_key)
-            yield from rec(index + 1, current)
-            current.pop()
-
-    yield from rec(0, [])
-
-
-def _score_combo(cache, fixed, combo, from_slot, dps_prev, gold_prev, gamma, horizon):
-    """미래 코어별 마지널 DPG 할인합을 계산해 조합 점수로 반환한다."""
-    full_path = list(fixed) + list(combo)
-    score = 0.0
-    for offset, tier in enumerate(range(from_slot, horizon + 1)):
-        dps, gold = cache.sim(tuple(full_path[:tier]))
-        delta_gold = gold - gold_prev
-        marginal_dpg = (dps - dps_prev) / (delta_gold / 1000.0) if delta_gold > 0 else 0.0
-        score += (gamma ** offset) * marginal_dpg
-    return score
-
-
-def solve_greedy(cache, gamma=None, horizon=HORIZON, top_alt=3):
-    """매 슬롯에서 미래 할인 마지널 DPG를 재탐색해 코그모 1~5코어 궤적을 반환한다."""
-    if gamma is None:
-        gamma = GAMMA
-    fixed, steps = [], []
-    dps_prev, gold_prev = 0.0, 0.0
-    for slot in range(1, horizon + 1):
-        best_score, best_combo = None, None
-        alternatives_by_item, alternatives_path = {}, {}
-        for combo in _enumerate_future_combos(fixed, slot, horizon):
-            score = _score_combo(cache, fixed, combo, slot, dps_prev, gold_prev, gamma, horizon)
-            item_key = combo[0]
-            if item_key not in alternatives_by_item or score > alternatives_by_item[item_key]:
-                alternatives_by_item[item_key], alternatives_path[item_key] = score, combo
-            if best_score is None or score > best_score:
-                best_score, best_combo = score, combo
-        if best_combo is None:
-            break
-        fixed.append(best_combo[0])
-        dps_now, gold_now = cache.sim(tuple(fixed))
-        delta_gold = gold_now - gold_prev
-        marginal_dpg = (dps_now - dps_prev) / (delta_gold / 1000.0) if delta_gold > 0 else 0.0
-        ranked = sorted(alternatives_by_item.items(), key=lambda pair: pair[1], reverse=True)[:top_alt]
-        steps.append({
-            "slot": slot, "item": best_combo[0], "score": best_score,
-            "dps": dps_now, "gold": gold_now, "marginal_dpg": marginal_dpg,
-            "future_path_winner": best_combo,
-            "alternatives": [
-                {"item": key, "score": score, "future_path": alternatives_path[key]}
-                for key, score in ranked
-            ],
-        })
-        dps_prev, gold_prev = dps_now, gold_now
-    return {"trajectory": fixed, "steps": steps}
-
-
-def print_receding_scenario(label, out, cache, gamma=None):
-    """코그모 receding-horizon 최종 궤적과 슬롯별 선택·대안을 출력한다."""
-    if gamma is None:
-        gamma = GAMMA
-    print(f"\n{'=' * 22}  Cog'Maw · {label}  {'=' * 22}")
-    print(f"γ={gamma}, horizon={HORIZON} | 최종 궤적: "
-          f"{' → '.join(ITEM_SHORT.get(key, key) for key in out['trajectory'])}")
-    print(f"시뮬 캐시: {cache.hits} hits / {cache.misses} misses")
-    for step in out["steps"]:
-        alternatives = " / ".join(
-            f"{ITEM_SHORT.get(alt['item'], alt['item'])}:{alt['score']:.1f}"
-            for alt in step["alternatives"]
-        )
-        print(
-            f"  {step['slot']}C → {ITEM_SHORT.get(step['item'], step['item']):<10} | "
-            f"DPS {step['dps']:>7.1f} | Gold {step['gold']:>5.0f} | "
-            f"MarginalDPG {step['marginal_dpg']:>7.2f} | Score {step['score']:>7.2f} | {alternatives}"
-        )
-
-
 def main(gamma=None):
     """코그모의 두 키스톤·두 ADC 패키지를 베인식 receding-horizon으로 탐색한다."""
     if gamma is None:
         gamma = GAMMA
+    spec = build_spec(gamma=gamma)
     for keystone_cls, rune_label in ((LethalTempo, "LT"), (PressTheAttack, "PtA")):
         for package in ADC_PACKAGES:
             cache = SimCache(package, keystone_cls)
-            label = f"{rune_label}+{package['label']}"
-            print_receding_scenario(label, solve_greedy(cache, gamma=gamma), cache, gamma=gamma)
+            out = receding.solve(spec, cache)
+            receding.print_scenario(spec, f"{rune_label}+{package['label']}", out)
+            print(f"시뮬 캐시: {cache.hits} hits / {cache.misses} misses")
 
 
 def main_legacy_ranking():

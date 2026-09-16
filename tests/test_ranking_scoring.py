@@ -1,6 +1,6 @@
 import pytest
 
-from adc_sim.simulations import ashe, cogmaw, corki, ezreal, jinx, receding, yunara
+from adc_sim.simulations import ashe, cogmaw, corki, ezreal, jinx, receding, vayne, yunara
 from adc_sim.settings import (
     RANKING_SCORING, derive_core_weights, CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL,
 )
@@ -9,8 +9,11 @@ from adc_sim.settings import (
 # 앵커 누적 점수식 + legacy-ranking 호환 모드를 그대로 쓰는 챔피언들.
 # 유나라는 2026-09-15 에 하프 티어 포함 경로로 교체되면서 이 계약에서 빠졌다
 # (기본 CLI 는 그대로 main, legacy-ranking 모드와 _score_combo 는 _to_delete/ 로 이동).
-RECEDING_MODULES = (ashe, corki, ezreal, cogmaw, jinx)
-SLOT_MAP_MODULES = RECEDING_MODULES + (yunara,)
+RECEDING_MODULES = (ashe, corki, ezreal, jinx)
+# 공통 엔진(receding.py)으로 이관 완료된 챔피언 — 앵커 누적 계약에서 빠지고
+# 아래 전용 계약(하프 포함 증분 점수식)을 대신 검증한다.
+PORTED_MODULES = (yunara, vayne, cogmaw)
+SLOT_MAP_MODULES = RECEDING_MODULES + PORTED_MODULES
 
 
 def test_weighted_mode_derivation():
@@ -176,3 +179,17 @@ def test_yunara_cli_late_yuntal_flag_combines_with_half5(monkeypatch):
         assert "yuntal25" not in yunara.CANDIDATES_BY_SLOT[1]
     finally:
         yunara.set_yuntal_min_slot(1)
+
+
+@pytest.mark.parametrize("module", PORTED_MODULES)
+def test_ported_champions_expose_build_spec_and_half_options(module):
+    """이관된 챔피언은 공통 엔진 어댑터(build_spec + 하프 후보 열거)를 갖춘다."""
+    spec = module.build_spec()
+
+    assert isinstance(spec, receding.RecedingSpec)
+    assert spec.horizon == 5
+    assert set(spec.candidates_by_slot) == {1, 2, 3, 4, 5}
+    assert spec.include_last_half is False, "5코어 하프는 기본 생략"
+    # 후보 아무 아이템이나 하나 골라 하프 구성이 나오는지 (조합식 있는 키여야 한다)
+    sample = next(k for k in spec.candidates_by_slot[2] if spec.half_options(k))
+    assert all(isinstance(names, tuple) for names in spec.half_options(sample))
