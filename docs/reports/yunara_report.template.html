@@ -1,4 +1,4 @@
-<title>유나라 템트리 파워 곡선</title>
+<title>유나라 코어 결정 탐색기</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@500;700;900&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
   :root{
@@ -113,6 +113,14 @@
   .pick{background:var(--panel-2); border-radius:12px; padding:14px 16px; display:flex;
         flex-direction:column; gap:10px;}
   .pick .pick-head{font-size:12px; color:var(--muted);}
+  .chain-col{display:flex; flex-direction:column; gap:14px; min-width:0;}
+  .state{display:flex; flex-wrap:wrap; gap:6px 20px; padding:12px 14px; border-radius:12px;
+         background:var(--panel-2); border:1px solid var(--line-soft);}
+  .state div{display:flex; flex-direction:column; gap:2px;}
+  .state dt{font-size:11px; color:var(--muted);}
+  .state dd{margin:0; font-family:var(--mono); font-size:15px; font-weight:600;
+            font-variant-numeric:tabular-nums;}
+  .state .hint{font-size:12px; color:var(--muted); line-height:1.6; flex:1 1 180px;}
   .chain{display:flex; flex-wrap:wrap; gap:6px; align-items:center;}
   .chain .node{display:flex; flex-direction:column; gap:1px; background:var(--panel);
         border:1px solid var(--line); border-radius:10px; padding:6px 11px;}
@@ -133,250 +141,409 @@
   code{font-family:var(--mono); font-size:11.5px; background:var(--panel-2); padding:1px 5px;
        border-radius:5px; color:var(--ink-2);}
   @media (prefers-reduced-motion: reduce){ *{transition:none !important;} }
-</style>
 
+  /* ── 탐색기 ───────────────────────────────────────────── */
+  .head{display:flex; flex-direction:column; gap:8px;}
+  .switches{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:12px;}
+  .sw-group{display:flex; flex-direction:column; gap:6px;}
+  .sw-label{font-size:11px; letter-spacing:.12em; text-transform:uppercase;
+            color:var(--muted); font-weight:600;}
+
+  .explorer{gap:16px;}
+  .board{display:grid; grid-template-columns:minmax(0,1fr) minmax(250px,300px); gap:16px;
+         align-items:start;}
+  @media (max-width:760px){ .board{grid-template-columns:minmax(0,1fr);} }
+
+  .chain-col{display:flex; flex-direction:column; gap:14px; min-width:0;}
+  .state{display:flex; flex-wrap:wrap; gap:6px 20px; padding:12px 14px; border-radius:12px;
+         background:var(--panel-2); border:1px solid var(--line-soft);}
+  .state div{display:flex; flex-direction:column; gap:2px;}
+  .state dt{font-size:11px; color:var(--muted);}
+  .state dd{margin:0; font-family:var(--mono); font-size:15px; font-weight:600;
+            font-variant-numeric:tabular-nums;}
+  .state .hint{font-size:12px; color:var(--muted); line-height:1.6; flex:1 1 180px;}
+  .chain{display:flex; flex-wrap:wrap; align-content:flex-start; gap:6px; align-items:stretch;}
+  .step{display:flex; align-items:center; gap:6px;}
+  .step-btn{display:flex; flex-direction:column; gap:1px; text-align:left; cursor:pointer;
+        background:var(--panel-2); border:1px solid var(--line); border-radius:10px;
+        padding:8px 12px; font-family:var(--body); color:var(--ink);
+        transition:border-color .15s, background .15s;}
+  .step-btn:hover{border-color:var(--accent);}
+  .step-btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+  .step-btn b{font-family:var(--display); font-size:14px; font-weight:700;}
+  .step-btn small{font-family:var(--mono); font-size:10.5px; color:var(--muted);
+        font-variant-numeric:tabular-nums;}
+  .step-btn.root{background:transparent; border-style:dashed;}
+  .step .sep{color:var(--muted); font-size:14px;}
+  .chain-empty{font-size:12.5px; color:var(--muted); align-self:center;}
+
+  .cands{display:flex; flex-direction:column; gap:8px;}
+  .cands-head{font-size:11px; letter-spacing:.12em; text-transform:uppercase;
+              color:var(--muted); font-weight:600;}
+  .cand{display:grid; grid-template-columns:auto 1fr auto; gap:2px 10px; align-items:baseline;
+        width:100%; text-align:left; cursor:pointer; font-family:var(--body); color:var(--ink);
+        background:var(--panel); border:1px solid var(--line); border-radius:12px;
+        padding:10px 12px; transition:border-color .15s, box-shadow .15s, transform .08s;}
+  .cand:hover{border-color:var(--accent); transform:translateX(1px);}
+  .cand:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+  .cand.lead{border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset;}
+  .cand .rank{font-family:var(--mono); font-size:11px; color:var(--muted); grid-row:span 2;}
+  .cand .name{font-family:var(--display); font-size:15px; font-weight:700;}
+  .cand .score{font-family:var(--mono); font-size:17px; font-weight:600; letter-spacing:-.01em;
+        font-variant-numeric:tabular-nums; text-align:right;}
+  .cand .sub{grid-column:2; font-family:var(--mono); font-size:11px; color:var(--muted);
+        font-variant-numeric:tabular-nums;}
+  .cand .rel{grid-column:3; font-family:var(--mono); font-size:11px; text-align:right;
+        color:var(--muted); font-variant-numeric:tabular-nums;}
+  .tie{display:inline-block; font-family:var(--mono); font-size:10.5px; color:var(--accent-ink);
+       border:1px solid var(--accent); border-radius:5px; padding:0 4px; margin-left:5px;}
+  .cands .done{border:1px dashed var(--line); border-radius:12px; padding:14px;
+       font-size:12.5px; color:var(--muted); text-align:center;}
+
+  .minor-title{margin-top:2px; color:var(--ink-2);}
+  .minor-title span{font-family:var(--mono); font-size:11.5px; color:var(--muted); font-weight:400;}
+  #minorTable{min-width:520px;}
+  #minorTable td, #minorTable th{text-align:right;}
+  #minorTable td:first-child, #minorTable th:first-child{text-align:left;}
+  #minorTable tbody td:first-child{font-family:var(--body);}
+  .unverified{font-family:var(--mono); font-size:10.5px; color:var(--muted);
+        border:1px dashed var(--line); border-radius:5px; padding:1px 5px;}
+
+  .rules{display:flex; flex-direction:column; gap:10px;}
+  .rule-item{display:grid; grid-template-columns:auto 1fr; gap:12px; align-items:start;}
+  .rule-tag{font-family:var(--mono); font-size:11px; font-weight:600; color:var(--accent);
+        border:1px solid var(--accent); border-radius:6px; padding:1px 8px; white-space:nowrap;}
+  .rule-item p{font-size:13px; color:var(--ink-2); line-height:1.7;}
+
+  /* ── 접이식 섹션 ──────────────────────────────────────── */
+  .fold{background:var(--panel); border:1px solid var(--line); border-radius:14px;
+        box-shadow:var(--shadow); overflow:hidden;}
+  .fold > summary{cursor:pointer; padding:14px 18px; display:flex; flex-wrap:wrap; gap:4px 10px;
+        align-items:baseline; font-family:var(--display); font-size:15px; color:var(--ink);
+        list-style:none;}
+  .fold > summary::-webkit-details-marker{display:none;}
+  .fold > summary::before{content:"▸"; color:var(--muted); font-size:11px; margin-right:2px;}
+  .fold[open] > summary::before{content:"▾";}
+  .fold > summary span{font-family:var(--body); font-size:12.5px; font-weight:400; color:var(--muted);}
+  .fold > summary:focus-visible{outline:2px solid var(--accent); outline-offset:-2px;}
+  .fold-body{padding:0 18px 18px; display:flex; flex-direction:column; gap:14px;}
+</style>
 <div class="wrap">
 
-  <header style="display:flex; flex-direction:column; gap:10px;">
-    <span class="eyebrow">ADC DPS Calculator · 유나라 빌드 리포트</span>
-    <h1>유나라 템트리 파워 곡선</h1>
-    <p class="lede">순차 탐색(receding-horizon)이 뽑은 신규 템트리를 기존 정석 트리와 <b>하프 코어</b>(아이템 사이 하위템 구간)까지 포함해 누적 골드축에서 비교한다. 1코어 윤탈이 가능한 판과 <b>라인전이 막혀 불가능한 판</b>을 따로 보고, 상대가 <b>딜러냐 브루저냐 탱커냐</b>에 따라 타깃 표도 갈아 끼운다. 세로축은 DPS(절대 파워)와 DPG(1000골드당 DPS, 골드효율) 둘 다.</p>
-    <div class="meta" id="meta"></div>
+  <header class="head">
+    <span class="eyebrow">ADC DPS Calculator · 유나라</span>
+    <h1>유나라 코어 결정 탐색기</h1>
+    <p class="lede">지금까지 산 코어에서 <b>다음 한 칸</b>으로 뭘 올릴지, 상대 타깃과 교전 적 수에 따라 후보 전부의 점수를 비교한다.</p>
   </header>
 
-  <section class="card guide">
+  <section class="switches">
+    <div class="sw-group">
+      <span class="sw-label">상대 타깃</span>
+      <div class="switch" id="archSwitch" role="group" aria-label="상대 타깃 선택"></div>
+    </div>
+    <div class="sw-group">
+      <span class="sw-label">교전 적 수</span>
+      <div class="switch" id="scenSwitch" role="group" aria-label="교전 적 수 선택"></div>
+    </div>
+  </section>
+
+  <section class="card explorer">
     <div class="card-head">
-      <h2>결론 — 이렇게 간다</h2>
-      <p class="card-note">아래 세 스위치를 바꾸면 이 칸도 같이 바뀐다. 기준은 5코어 골드효율(DPG), 동률이면 3코어가 센 쪽.</p>
+      <h2>경로</h2>
+      <p class="card-note" id="exNote"></p>
     </div>
-    <div class="rules">
-      <div class="rule-row"><span class="rule-n">1코어</span><p><b>윤탈.</b> 라인전이 막혀 못 서면 크라켄으로 열고 <b>윤탈을 2코어로 미룬다</b> — 포기하지 않는다. 대가는 2코어 타이밍 한 구간뿐.</p></div>
-      <div class="rule-row"><span class="rule-n">2코어</span><p><b>남은 하나</b>(윤탈로 열었으면 크라켄, 크라켄으로 열었으면 윤탈). 2코어 루난은 어느 조건에서도 이기지 못한다.</p></div>
-      <div class="rule-row"><span class="rule-n">3코어</span><p><b>적 수로 갈린다.</b> 순수 1:1 구도에서만 도미닉이고, 적이 둘만 돼도 루난이 앞선다 — 한타까지 섞은 1:1:1 혼합에서는 타깃 종류와 무관하게 루난이 3코어다. 상대가 딜러뿐인 1:1이면 도미닉 대신 무한도 성립한다.</p></div>
-      <div class="rule-row"><span class="rule-n">4~5코어</span><p><b>3코어에서 안 간 쪽 + 무한.</b> 무한은 어느 조건에서도 4코어 이후 자리고, 3코어 무한은 전 시나리오에서 밀린다. 단일 지향이면 C44가 무한 앞에 낀다.</p></div>
+
+    <div class="board">
+      <div class="chain-col">
+        <div class="chain" id="chain"></div>
+        <div class="state" id="stateBox"></div>
+      </div>
+      <div class="cands" id="cands"></div>
     </div>
-    <div class="pick" id="pick"></div>
-    <div>
-      <h3 style="margin-bottom:8px;">조건별 추천 — <span id="matrixGroup"></span></h3>
-      <div class="tablewrap"><table id="matrix"></table></div>
-    </div>
-  </section>
 
-  <section style="display:flex; flex-direction:column; gap:10px;">
-    <h2>교전 시나리오</h2>
-    <div class="switch" id="switch" role="group" aria-label="교전 시나리오 선택"></div>
-    <p class="card-note" id="scenNote"></p>
-  </section>
-
-  <section style="display:flex; flex-direction:column; gap:10px;">
-    <h2>상대 타깃</h2>
-    <div class="switch" id="archSwitch" role="group" aria-label="타깃 아키타입 선택"></div>
-    <p class="card-note" id="archNote"></p>
-    <div class="meta" id="archTiers"></div>
-  </section>
-
-  <section style="display:flex; flex-direction:column; gap:10px;">
-    <h2>1코어 계열</h2>
-    <div class="switch" id="groupSwitch" role="group" aria-label="1코어 계열 선택"></div>
-    <p class="card-note" id="groupNote"></p>
-  </section>
-
-  <section class="kpis" id="kpis"></section>
-
-  <section class="card">
-    <div class="card-head">
-      <h2>절대 파워 · DPS</h2>
-      <p class="card-note">선택한 계열의 네 트리. 가로축 = 누적 골드(도란활·신발 포함). ● 완성 코어, ○ 하프 코어.</p>
-    </div>
-    <div class="legend" id="legend1"></div>
-    <div class="plot" id="plotDps"><div class="tip" id="tipDps"></div></div>
-  </section>
-
-  <section class="card">
-    <div class="card-head">
-      <h2>골드효율 · DPG</h2>
-      <p class="card-note">DPG = DPS ÷ (누적 골드/1000). 곡선이 위에 있을수록 같은 돈으로 더 많은 딜을 산다.</p>
-    </div>
-    <div class="legend" id="legend2"></div>
-    <div class="plot" id="plotDpg"><div class="tip" id="tipDpg"></div></div>
-  </section>
-
-  <section class="card">
-    <div class="card-head">
-      <h2>5코어 시점 비교</h2>
-      <p class="card-note">두 계열 일곱 트리 전부. 계열을 바꿔도 이 막대와 아래 표는 그대로 전부 보여준다.</p>
-    </div>
-    <div class="bars">
-      <div class="plot" id="barDps"><div class="tip" id="tipBarDps"></div></div>
-      <div class="plot" id="barDpg"><div class="tip" id="tipBarDpg"></div></div>
+    <div id="minorWrap">
+      <h3 class="minor-title">나머지 후보 <span id="minorCount"></span></h3>
+      <div class="tablewrap"><table id="minorTable"></table></div>
     </div>
   </section>
 
   <section class="card">
     <div class="card-head">
-      <h2>수치 표</h2>
-      <p class="card-note">선택한 시나리오의 전 구간. 회색 행이 하프 코어, 진한 행이 완성 코어다.</p>
+      <h2>타이밍별 규칙</h2>
+      <p class="card-note">같은 앞 아이템을 공유하는 후보끼리만 비교한 사실이다. 수치는 브루저 · 혼합 1:1:1 기준.</p>
     </div>
-    <div class="tablewrap"><table id="tbl"></table></div>
+    <div class="rules" id="rules"></div>
   </section>
 
-  <hr class="rule">
+  <details class="fold">
+    <summary><b>KPI</b> <span>다섯 아이템을 다 갖췄을 때의 절대 파워와 골드효율</span></summary>
+    <div class="fold-body"><div class="kpis" id="kpis"></div></div>
+  </details>
 
-  <section style="display:flex; flex-direction:column; gap:12px;">
-    <h2>읽는 법과 한계</h2>
-    <div class="notes">
-      <div class="note">
-        <h3>1코어 윤탈 계열</h3>
-        <p>트리 이름은 <b>초반 3코어</b>다 — 4~5코어는 같은 아이템 집합으로 수렴하는 경우가 많아, 승부는 앞 세 칸에서 갈린다.</p>
-        <ul>
-          <li><b>윤탈-무한-도미닉</b> → C44 → 크라켄. 1:1·솔로킬 지향.</li>
-          <li><b>윤탈-크라켄-도미닉</b> → 루난 → 무한. 루난을 4코어로 미룬 판.</li>
-          <li><b>윤탈-크라켄-루난</b> → 도미닉 → 무한. 같은 다섯 아이템을 루난 먼저로 당긴 판. 5코어 값은 위와 같고, 갈리는 건 3~4코어 구간뿐이다.</li>
-          <li><b>윤탈-루난-무한</b> → 도미닉 → C44. <b>기존</b> 정석 트리이자 이 계열의 비교 기준(컨트롤).</li>
-        </ul>
-      </div>
-      <div class="note">
-        <h3>1코어 윤탈 불가 계열</h3>
-        <ul>
-          <li><b>크라켄-윤탈-도미닉</b> → 무한 → C44.</li>
-          <li><b>크라켄-윤탈-루난</b> → 도미닉 → C44.</li>
-          <li><b>크라켄-루난-무한</b> → 도미닉 → C44. <b>기존</b> 정석 트리이자 이 계열의 컨트롤.</li>
-        </ul>
-        <p>라인전이 막혀도 윤탈을 <b>포기하는 게 아니라 2코어로 미룬다</b>. 대가는 2코어 타이밍 한 구간뿐이고(위 KPI 타일), 3코어부터는 1코어 윤탈 계열과 값이 붙는다.</p>
-      </div>
-      <div class="note">
-        <h3>3코어 루난이냐 도미닉이냐</h3>
-        <p>이 리포트의 갈림길. 판단 축은 적 수다 — 같은 3코어 시점에서 루난은 윤탈-도미닉 대비 적1 <b>−19.7%</b>, 적2 <b>+1.3%</b>, 적3 <b>+36.6%</b>. 적이 하나뿐인 구도면 도미닉, 둘이면 동률, 셋이면 루난이 압도한다. <b>무한은 어느 계열에서도 4~5코어 자리</b>고, 3코어 무한은 전 시나리오에서 밀린다.</p>
-      </div>
-      <div class="note">
-        <h3>하프 코어</h3>
-        <p>아이템 완성 전 하위템만 든 구간. 목표 아이템 가격의 절반 근처(예산창 <code>[올림100(가격/2), +100]</code>)에서 마지널 DPG가 가장 높은 조합을 고른다. 5코어 하프는 프로젝트 기본대로 생략 — 실전에서 계획대로 사는 일이 드물어서다.</p>
-      </div>
-      <div class="note">
-        <h3>상대 타깃 세 가지</h3>
-        <p><b>딜러</b>는 유나라 본인의 성장 능력치(체력 590+110 / 방어 25+4.4 / 마저 33+1.1, 라이엇 성장 곡선)에 도란템 체력 80만 얹은 값 — 즉 "거울 상대". <b>브루저</b>와 <b>탱커</b>는 체력·방어를 쌓는 상대고, 탱커 마저는 레벨당 +4(코어 사이 +8)로 올라간다. 코어별 스탯은 스위치 아래 칩 그대로다. 도미닉의 거인 학살자 증폭이 타깃 추가 체력에 비례하므로 딜러 상대에선 1~2코어에 증폭이 거의 0이고, 탱커 상대에선 4코어부터 15% 캡에 닿는다.</p>
-      </div>
-      <div class="note">
-        <h3>측정 조건</h3>
-        <p>레벨은 코어 1~5에서 9/11/13/15/17, 하프에서 8/10/12/14/16. 타깃은 위에서 고른 아키타입 표를 쓰고, 하프는 인접 코어 선형 보간이다. DPS는 같은 체력바를 2회 처치하는 지속딜(K=2). 기존 A·B는 원래 4아이템 트리라, 5코어 비교를 맞추려 C44를 다섯 번째로 붙였다.</p>
-      </div>
-      <div class="note">
-        <h3>믿으면 안 되는 것</h3>
-        <ul>
-          <li>적 2·3 값은 확산딜을 1차 대상 기록에 합산한 <b>유효 DPS</b>다. 단일 처치 속도가 아니다.</li>
-          <li>윤탈 치명타는 <b>구매 코어 0% → 다음 코어 25%</b> 가정. 1~2코어 결론을 직접 지배한다.</li>
-          <li>K=2 처치 타이밍 양자화로 ±2%p 잡음이 있다. 그 안의 차이는 동률로 읽어야 한다.</li>
-          <li>라인 클리어·생존력·사거리 가치는 모델 밖이다.</li>
-        </ul>
+  <details class="fold">
+    <summary><b>파워 곡선</b> <span>누적 골드에 따른 DPS·DPG 변화 — 네 트리 비교</span></summary>
+    <div class="fold-body">
+      <div class="legend" id="legend1"></div>
+      <div class="plot" id="plotDps"><div class="tip" id="tipDps"></div></div>
+      <div class="legend" id="legend2"></div>
+      <div class="plot" id="plotDpg"><div class="tip" id="tipDpg"></div></div>
+    </div>
+  </details>
+
+  <details class="fold">
+    <summary><b>5코어 시점 비교</b> <span>일곱 트리의 완성 시점 DPS·DPG 순위</span></summary>
+    <div class="fold-body">
+      <div class="bars">
+        <div class="plot" id="barDps"><div class="tip" id="tipBarDps"></div></div>
+        <div class="plot" id="barDpg"><div class="tip" id="tipBarDpg"></div></div>
       </div>
     </div>
-  </section>
+  </details>
+
+  <details class="fold">
+    <summary><b>수치 표</b> <span>하프 코어까지 포함한 구간별 DPS와 DPG</span></summary>
+    <div class="fold-body"><div class="tablewrap"><table id="tbl"></table></div></div>
+  </details>
+
+  <details class="fold">
+    <summary><b>측정 조건과 한계</b> <span>무엇을 어떻게 쟀고, 어디까지 믿을 수 있는지</span></summary>
+    <div class="fold-body">
+      <div class="meta" id="meta"></div>
+      <div class="notes">
+        <div class="note">
+          <h3>두 지표</h3>
+          <p><b>score</b> 는 이 아이템을 사고 5코어까지 최적으로 이어갔을 때의 <b>γ-할인 마지널 DPG 합</b>이다(γ=0.8, 하프 구간 √γ). 미래까지 본 값이라 정렬 기준으로 쓴다.</p>
+          <p><b>mDPG</b> 는 이 한 칸의 값이다 — (늘어난 DPS) ÷ (이 칸에 쓴 골드/1000). 미래를 보지 않는다. 둘이 엇갈리는 칸이 판단이 갈리는 지점이다.</p>
+          <p>아이템 사이 <b>하프 구간</b>(하위템만 든 상태)은 score 에 이미 녹아 있어 따로 표기하지 않는다. 목표 아이템 가격의 절반 근처에서 마지널 DPG 가 가장 높은 하위템 조합을 고른다.</p>
+        </div>
+        <div class="note">
+          <h3>상대 타깃</h3>
+          <p id="archNote"></p>
+          <div class="meta" id="archTiers"></div>
+          <p>도미닉의 거인 학살자 증폭이 타깃 추가 체력(최대체력 − 1600)에 비례하므로, 물렁한 상대일수록 도미닉이 약해지고 무한·C44 가 유리해진다.</p>
+        </div>
+        <div class="note">
+          <h3>측정 방식</h3>
+          <p>유나라 레벨은 하프 8/10/12/14/16 · 완성 9/11/13/15/17. DPS 는 같은 체력바를 2회 처치하는 지속딜(K=2). 시작은 도란활 + 탐욕의 군화 + 민첩함, 룬은 치명적 속도 + 체력차 극복, 파편은 공속 10% + 적응형 AD 5.4.</p>
+          <p>후보 풀은 17종이며 관통 배타(방관·마관 각 1개)를 지킨다. 윤탈은 1~2코어에서만 살 수 있다.</p>
+        </div>
+        <div class="note">
+          <h3>믿으면 안 되는 것</h3>
+          <ul>
+            <li>적 2·3 값은 <b>메인 타깃에 꽂히는 DPS</b>다. 루난 볼트가 서브 타깃에 준 피해는 집계하지 않고, Q 확산이 메인으로 되돌린 분량만 더한다.</li>
+            <li>윤탈 치명타는 <b>구매 코어 0% → 다음 코어 25%</b> 가정이다. 1~2코어 순서 결론을 직접 지배한다.</li>
+            <li>K=2 처치 타이밍 양자화로 ±2%p 잡음이 있다. score 차 0.5% 안쪽은 동률(<span class="tie">≈</span>)로 표시한다.</li>
+            <li>각 노드에서 <b>상위 3개만</b> 다음 단계로 전개했다. 나머지는 점수만 있고 그 뒤 가지는 <b>미검증</b>이다.</li>
+            <li>라인 클리어·생존력·사거리 가치는 모델 밖이다.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </details>
 </div>
 
 <script type="application/json" id="curves">__CURVES_JSON__</script>
+<script type="application/json" id="explorer">__EXPLORER_JSON__</script>
 <script>
 (function(){
   "use strict";
   var DATA = JSON.parse(document.getElementById("curves").textContent);
-  // 트리 이름 = 초반 3코어 (사용자 확정) — 4~5코어는 같은 집합으로 수렴하는 경우가 많아
-  // 앞 세 칸이 트리의 정체를 가른다. 기존 정석 트리는 TAG 로 따로 표시한다.
+  var EX = JSON.parse(document.getElementById("explorer").textContent);
+  var ITEM = EX.items;
+  var TIE = 0.5;   // score 차가 이 % 안쪽이면 동률 — K=2 잡음(±2%p)보다 작은 차이는 세우지 않는다
+
+  // 접이식 섹션(구 리포트)이 쓰는 고정 트리 — 탐색기와 달리 완성 트리 비교용이다.
   var SHORT = {
     opt_solo:"윤탈-무한-도미닉", opt_fight:"윤탈-크라켄-도미닉", opt_run3:"윤탈-크라켄-루난",
-    meta_yun:"윤탈-루난-무한",
-    late_solo:"크라켄-윤탈-도미닉", late_run:"크라켄-윤탈-루난", meta_krk:"크라켄-루난-무한"
+    meta_yun:"윤탈-루난-무한", late_solo:"크라켄-윤탈-도미닉", late_run:"크라켄-윤탈-루난",
+    meta_krk:"크라켄-루난-무한"
   };
   var TAG = {meta_yun:"기존", meta_krk:"기존"};
-  function tagHtml(id){
-    return TAG[id] ? ' <span style="font-size:10.5px; color:var(--muted);">기존</span>' : '';
-  }
-  // 1코어 계열별 패널 — 색은 슬롯(역할)에 고정, 두 계열은 동시에 표시되지 않는다.
-  var GROUPS = [
-    {id:"yun", label:"1코어 윤탈", ids:["opt_solo","opt_fight","opt_run3","meta_yun"],
-     note:"라인전이 풀려 윤탈을 1코어로 세울 수 있는 판. 신규 트리 셋과 기존 B(윤탈-루난-무한-도미닉)의 비교다."},
-    {id:"krk", label:"1코어 윤탈 불가", ids:["late_solo","late_run","meta_krk"],
-     note:"라인전 난항으로 1코어를 크라켄으로 가는 판. 윤탈은 2코어로 밀리고, 기존 A(이 계열의 컨트롤)와 같은 조건에서 붙는다."}
-  ];
+  var LINE_IDS = ["opt_fight", "opt_run3", "meta_yun", "meta_krk"];
   var SLOT = ["var(--s1)","var(--s2)","var(--s3)","var(--s4)"];
   var BAR_IDS = ["opt_solo","opt_fight","opt_run3","late_solo","late_run","meta_krk","meta_yun"];
-  var SCEN = [
-    {id:"tc1", label:"적 1명", note:"순수 단일 대상. 솔로킬·사이드 스플릿 구도."},
-    {id:"tc2", label:"적 2명", note:"둘이 붙은 교전. 크라켄 처형 가속과 루난 확산이 살아난다."},
-    {id:"mix", label:"혼합 1:1:1", note:"적 1·2·3명을 같은 비중으로 섞은 통합 지표. 라인전·소규모 교전·한타를 한 판에 다 겪는다는 전제다."},
-    {id:"tc3", label:"적 3명", note:"루난 서브타겟 캡(2명)이 꽉 차는 한타 전제."}
-  ];
+  var SCEN_LABEL = {tc1:"적 1명", tc2:"적 2명", tc3:"적 3명", mix:"혼합 1:1:1"};
+  var SCEN_NOTE = {
+    tc1:"순수 단일 대상. 솔로킬·사이드 구도.",
+    tc2:"둘이 붙은 교전. 크라켄 처형 가속과 루난 확산이 살아난다.",
+    tc3:"루난 서브타겟 캡(2명)이 꽉 차는 한타 전제.",
+    mix:"적 1·2·3명을 같은 비중으로 섞은 통합 지표."
+  };
+
   var byId = {}; DATA.builds.forEach(function(b){ byId[b.id] = b; });
-  var state = {scen:"mix", group:"yun", arch:"bruiser"};
+  var state = {arch:"bruiser", scen:"mix", path:[]};
 
   function el(id){ return document.getElementById(id); }
   function fmt(n, d){ return Number(n).toFixed(d === undefined ? 0 : d); }
   function gold(g){ return (g/1000).toFixed(2).replace(/0$/,"") + "k"; }
   function pct(a, b){ return (a/b - 1) * 100; }
   function deltaHtml(v){
-    var cls = v >= 0 ? "up" : "down";
-    return '<span class="delta ' + cls + '">' + (v >= 0 ? "+" : "") + v.toFixed(1) + '%</span>';
+    return '<span class="delta ' + (v >= 0 ? "up" : "down") + '">' +
+      (v >= 0 ? "+" : "") + v.toFixed(1) + '%</span>';
   }
   function cssVar(name){
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
-  function group(){ return GROUPS.filter(function(g){ return g.id === state.group; })[0]; }
+  function group(){ return {id:"all", ids:LINE_IDS}; }
   function slotVar(id){
-    var i = group().ids.indexOf(id);
+    var i = LINE_IDS.indexOf(id);
     return i > -1 ? SLOT[i] : "var(--muted)";
   }
   function colorOf(id){ return cssVar(slotVar(id).slice(4, -1)); }
+  function tagHtml(id){
+    return TAG[id] ? ' <span style="font-size:10.5px; color:var(--muted);">기존</span>' : '';
+  }
+  function arch(){
+    return EX.archetypes.filter(function(a){ return a.id === state.arch; })[0];
+  }
 
-  /* ---------- meta chips ---------- */
-  [DATA.package, DATA.rune, "파편 " + DATA.shard, "K=2 지속딜", "γ=0.8 순차 탐색", "레벨 8~17"]
+  /* ---------- 스위치 ---------- */
+  function buildSwitch(host, options, key){
+    options.forEach(function(opt){
+      var b = document.createElement("button");
+      b.type = "button"; b.textContent = opt.label; b.dataset.value = opt.id;
+      b.setAttribute("aria-pressed", String(opt.id === state[key]));
+      b.addEventListener("click", function(){
+        state[key] = opt.id;
+        state.path = [];        // 상황이 바뀌면 경로는 처음부터
+        Array.prototype.forEach.call(host.children, function(c){
+          c.setAttribute("aria-pressed", String(c.dataset.value === state[key]));
+        });
+        render();
+      });
+      host.appendChild(b);
+    });
+  }
+  buildSwitch(el("archSwitch"), EX.archetypes.map(function(a){
+    return {id:a.id, label:a.label};
+  }), "arch");
+  buildSwitch(el("scenSwitch"), EX.scenarios.map(function(s){
+    return {id:s, label:SCEN_LABEL[s]};
+  }), "scen");
+
+  /* ---------- 탐색기 ---------- */
+  function nodes(){ return EX.nodes[state.arch + "|" + state.scen] || {}; }
+  function nodeAt(path){ return nodes()[path.join("-")]; }
+
+  function renderChain(){
+    var host = el("chain"); host.innerHTML = "";
+    var root = document.createElement("div"); root.className = "step";
+    var rb = document.createElement("button");
+    rb.type = "button"; rb.className = "step-btn root";
+    rb.innerHTML = '<b>시작</b><small>0g</small>';
+    rb.title = "처음부터 다시 고르기";
+    rb.addEventListener("click", function(){ state.path = []; render(); });
+    root.appendChild(rb);
+    host.appendChild(root);
+
+    state.path.forEach(function(item, i){
+      var parent = nodeAt(state.path.slice(0, i));
+      var info = parent ? parent[item] : null;
+      var step = document.createElement("div"); step.className = "step";
+      var sep = document.createElement("span"); sep.className = "sep"; sep.textContent = "→";
+      var b = document.createElement("button");
+      b.type = "button"; b.className = "step-btn";
+      b.innerHTML = '<b>' + (ITEM[item] || item) + '</b><small>' +
+        (info ? info.gold + "g · " + fmt(info.dps) + " DPS" : "") + '</small>';
+      b.title = (i + 1) + "코어까지 되감기";
+      b.addEventListener("click", function(){ state.path = state.path.slice(0, i + 1); render(); });
+      step.appendChild(sep); step.appendChild(b);
+      host.appendChild(step);
+    });
+  }
+
+  function renderCandidates(){
+    var host = el("cands"); host.innerHTML = "";
+    var node = nodeAt(state.path);
+    var head = document.createElement("div");
+    head.className = "cands-head";
+    head.textContent = (state.path.length + 1) + "코어 후보";
+    if (!node || !Object.keys(node).length){
+      host.innerHTML = '<div class="done">다섯 코어를 다 채웠다.<br>경로의 아이템을 눌러 되감을 수 있다.</div>';
+      el("minorWrap").hidden = true;
+      return;
+    }
+    host.appendChild(head);
+    var rows = Object.keys(node).map(function(k){ var r = node[k]; r.item = k; return r; })
+      .sort(function(a, b){ return b.score - a.score; });
+    var mains = rows.filter(function(r){ return r.tier === "main"; });
+    var minors = rows.filter(function(r){ return r.tier !== "main"; });
+
+    mains.forEach(function(r, i){
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "cand" + (i === 0 ? " lead" : "");
+      var tie = (i > 0 && r.rel > -TIE) ? '<span class="tie">≈ 동률</span>' : '';
+      b.innerHTML =
+        '<span class="rank">' + (i + 1) + '</span>' +
+        '<span class="name">' + (ITEM[r.item] || r.item) + tie + '</span>' +
+        '<span class="score">' + fmt(r.score, 1) + '</span>' +
+        '<span class="sub">누적 ' + r.gold + 'g · mDPG ' + fmt(r.mdpg, 1) + '<br>' +
+          'DPS ' + fmt(r.dps) + ' · DPG ' + fmt(r.dpg, 1) + '</span>' +
+        '<span class="rel">' + (i === 0 ? "score 1위" : fmt(r.rel, 1) + "%") + '</span>';
+      b.addEventListener("click", function(){
+        state.path = state.path.concat([r.item]);
+        render();
+      });
+      host.appendChild(b);
+    });
+
+    el("minorWrap").hidden = minors.length === 0;
+    el("minorCount").textContent = minors.length ? "(" + minors.length + "종 · 전개 없음)" : "";
+    el("minorTable").innerHTML =
+      '<thead><tr><th>아이템</th><th>score</th><th>1위 대비</th><th>mDPG</th>' +
+      '<th>DPS</th><th>DPG</th><th>상태</th></tr></thead><tbody>' +
+      minors.map(function(r){
+        return '<tr><td>' + (ITEM[r.item] || r.item) + '</td><td>' + fmt(r.score, 1) + '</td>' +
+          '<td>' + fmt(r.rel, 1) + '%</td><td>' + fmt(r.mdpg, 1) + '</td>' +
+          '<td>' + fmt(r.dps) + '</td><td>' + fmt(r.dpg, 1) + '</td>' +
+          '<td><span class="unverified">미검증</span></td></tr>';
+      }).join("") + '</tbody>';
+  }
+
+  function renderState(){
+    var host = el("stateBox");
+    if (!state.path.length){
+      host.innerHTML = '<p class="hint">아직 아무것도 안 샀다. 오른쪽 1코어 후보에서 하나를 고르면 ' +
+        '그 선택을 전제로 다음 칸 후보가 다시 계산된다.</p>';
+      return;
+    }
+    var parent = nodeAt(state.path.slice(0, -1));
+    var cur = parent ? parent[state.path[state.path.length - 1]] : null;
+    if (!cur){ host.innerHTML = ""; return; }
+    host.innerHTML =
+      '<div><dt>' + state.path.length + '코어 시점 DPS</dt><dd>' + fmt(cur.dps) + '</dd></div>' +
+      '<div><dt>누적 골드</dt><dd>' + cur.gold + '</dd></div>' +
+      '<div><dt>DPG</dt><dd>' + fmt(cur.dpg, 1) + '</dd></div>' +
+      '<div><dt>이 칸의 mDPG</dt><dd>' + fmt(cur.mdpg, 1) + '</dd></div>' +
+      '<p class="hint">이 칸에 ' + cur.cost + '골드를 써서 DPS 가 ' + fmt(cur.ddps, 1) +
+      ' 늘었다.</p>';
+  }
+
+  function renderExplorerNote(){
+    el("exNote").textContent = arch().label + " 상대 · " + SCEN_LABEL[state.scen] +
+      " — " + SCEN_NOTE[state.scen] + " 후보를 누르면 그다음 칸으로 넘어간다.";
+  }
+
+  /* ---------- 타이밍별 규칙 (score 기준, 브루저·혼합) ---------- */
+  var RULES = [
+    ["2코어", "<b>윤탈과 크라켄을 앞 두 칸에 나눠 담는다.</b> 1코어만 보면 크라켄 673.5 vs 윤탈 670.0 으로 <b>0.5% 차 동률</b>인데, 윤탈로 열면 2코어 크라켄이 <b>684.5</b> 로 올라와 앞 칸의 손해를 되받는다(크라켄으로 열면 2코어 윤탈 635.3). 윤탈의 mDPG 가 1코어에서 67.8 로 낮은 건 <b>산 코어에서 치명타 0%, 다음 코어부터 25%</b> 가정 탓이고, 그래서 윤탈 뒤 크라켄의 mDPG 가 100.1 로 튄다. 이 가정이 앞 두 칸의 순서를 직접 지배한다."],
+    ["3코어", "<b>루난이냐 도미닉이냐 — 두 지표가 갈리는 대표 칸이다.</b> 윤탈-크라켄 뒤에서 도미닉 618.8, 루난 616.1 로 score 는 <b>0.4% 차 동률</b>인데, 이 한 칸의 mDPG 는 루난 145.9 vs 도미닉 90.7 로 루난이 압도한다. score 는 미래 코어까지 할인해 보고 mDPG 는 지금만 본다 — 지금 당장 교전이 잦으면 루난, 뒤를 보면 도미닉이다. 무한은 여기서 535.3(−13.5%)으로 minor 다."],
+    ["4코어", "<b>3코어에서 안 간 쪽이 그대로 1위로 온다.</b> 루난을 먼저 갔으면 도미닉이 417.0(mDPG 154.9), 도미닉을 먼저 갔으면 루난이 555.8(mDPG 226.0)로 1위다. 두 경로는 5코어에서 같은 아이템 집합으로 만나므로, 갈리는 건 <b>3~4코어 두 칸의 순서뿐</b>이다. 무한은 두 경우 모두 2위(−19% 안팎)."],
+    ["5코어", "<b>후보 비교가 사실상 무의미해지는 칸이다.</b> γ=0.8 할인이 네 번 곱해져 score 기여가 0.41 배로 줄고, 남은 아이템도 두세 개뿐이라 순위가 거의 고정된다. 여기서는 score 보다 그 칸의 mDPG 를 보는 편이 낫다."]
+  ];
+
+  el("rules").innerHTML = RULES.map(function(r){
+    return '<div class="rule-item"><span class="rule-tag">' + r[0] + '</span><p>' + r[1] + '</p></div>';
+  }).join("");
+
+  /* ---------- 측정 조건 칩 ---------- */
+  [EX.meta.package, EX.meta.rune, "파편 " + EX.meta.shard,
+   "K=2 지속딜", "γ=" + EX.meta.gamma, "상위 " + EX.meta.main_top_n + "개만 전개"]
     .forEach(function(t){
       var s = document.createElement("span"); s.className = "chip"; s.textContent = t;
       el("meta").appendChild(s);
     });
-
-  /* ---------- target archetype switch ---------- */
-  function arch(){ return DATA.archetypes.filter(function(a){ return a.id === state.arch; })[0]; }
-  DATA.archetypes.forEach(function(a){
-    var b = document.createElement("button");
-    b.type = "button"; b.textContent = a.label; b.dataset.arch = a.id;
-    b.setAttribute("aria-pressed", String(a.id === state.arch));
-    b.addEventListener("click", function(){
-      state.arch = a.id;
-      Array.prototype.forEach.call(el("archSwitch").children, function(c){
-        c.setAttribute("aria-pressed", String(c.dataset.arch === state.arch));
-      });
-      render();
-    });
-    el("archSwitch").appendChild(b);
-  });
-
-  /* ---------- group switch ---------- */
-  GROUPS.forEach(function(g){
-    var b = document.createElement("button");
-    b.type = "button"; b.textContent = g.label; b.dataset.group = g.id;
-    b.setAttribute("aria-pressed", String(g.id === state.group));
-    b.addEventListener("click", function(){
-      state.group = g.id;
-      Array.prototype.forEach.call(el("groupSwitch").children, function(c){
-        c.setAttribute("aria-pressed", String(c.dataset.group === state.group));
-      });
-      render();
-    });
-    el("groupSwitch").appendChild(b);
-  });
-
-  /* ---------- scenario switch ---------- */
-  SCEN.forEach(function(s){
-    var b = document.createElement("button");
-    b.type = "button"; b.textContent = s.label; b.dataset.scen = s.id;
-    b.setAttribute("aria-pressed", String(s.id === state.scen));
-    b.addEventListener("click", function(){
-      state.scen = s.id;
-      Array.prototype.forEach.call(el("switch").children, function(c){
-        c.setAttribute("aria-pressed", String(c.dataset.scen === state.scen));
-      });
-      render();
-    });
-    el("switch").appendChild(b);
-  });
 
   /* ---------- svg helpers ---------- */
   var NS = "http://www.w3.org/2000/svg";
@@ -399,7 +566,7 @@
     var W = Math.max(300, host.clientWidth || 640);
     var compact = W < 560;
     var H = compact ? 300 : 360;
-    var padL = compact ? 40 : 48, padR = compact ? 12 : 104, padT = 14, padB = 34;
+    var padL = compact ? 40 : 48, padR = compact ? 12 : 152, padT = 14, padB = 34;
     var series = group().ids.map(function(id){
       return {id:id, name:SHORT[id], color:colorOf(id), pts:byId[id].series[state.arch][state.scen]};
     });
@@ -461,7 +628,7 @@
       endLabels.forEach(function(l){
         svg.appendChild(svgEl("rect", {x:W - padR + 8, y:l.y - 5, width:9, height:9, rx:2, fill:l.color}));
         svg.appendChild(Object.assign(svgEl("text", {x:W - padR + 21, y:l.y + 4,
-          "font-size":12, fill:ink2, "font-family":"var(--body)"}), {textContent:l.name}));
+          "font-size":11, fill:ink2, "font-family":"var(--body)"}), {textContent:l.name}));
       });
     }
 
@@ -544,100 +711,48 @@
     });
   }
 
-  function renderKpis(){
-    var host = el("kpis"); host.innerHTML = "";
-    var base = byId[metaOf(state.group)].series[state.arch][state.scen];
-    var baseEnd = base[base.length - 1];
-    // 지금 고른 계열 안에서 고른다 — 계열·시나리오·타깃을 바꾸면 이 타일도 따라 바뀐다.
-    // 5코어 집합이 같은 트리(예: 신규 교전 / 루난 3코어)는 DPG 가 동률이라
-    // bestOf 의 3코어 타이브레이크가 갈라준다. 단순 정렬이면 배열 순서에 고정돼 버린다.
-    var best = bestOf(group().ids, state.arch, state.scen);
-    var bestB = byId[best.id];
-    var mid = best.mid;
-    var baseMid = base.filter(function(p){ return p.step === "3C"; })[0];
 
-    function tile(label, value, sub, lead){
-      var d = document.createElement("div");
-      d.className = "kpi" + (lead ? " lead" : "");
-      d.innerHTML = '<span class="k-label">' + label + '</span>' +
-        '<span class="k-value">' + value + '</span><span class="k-sub">' + sub + '</span>';
+
+  function renderLegend(host){
+    host.innerHTML = "";
+    LINE_IDS.forEach(function(id){
+      var b = byId[id];
+      var d = document.createElement("span"); d.className = "lg";
+      d.innerHTML = '<i style="background:' + slotVar(id) + '"></i>' + SHORT[id] + tagHtml(id) +
+        ' <small>→' + b.path_ko.slice(3).join("-") + '</small>';
       host.appendChild(d);
-    }
-    tile("이 시나리오 최고 골드효율", SHORT[best.id] + tagHtml(best.id),
-         "전체 " + bestB.path_ko.join(" → "), true);
-    var y2 = byId.opt_fight.series[state.arch][state.scen].filter(function(p){ return p.step === "2C"; })[0];
-    var k2 = byId.late_run.series[state.arch][state.scen].filter(function(p){ return p.step === "2C"; })[0];
-    tile("5코어 DPS", fmt(best.end.dps),
-         SHORT[metaOf(state.group)] + " 대비 " + deltaHtml(pct(best.end.dps, baseEnd.dps)));
-    tile("5코어 DPG", fmt(best.end.dpg, 1),
-         SHORT[metaOf(state.group)] + " 대비 " + deltaHtml(pct(best.end.dpg, baseEnd.dpg)));
-    tile("3코어 DPS", fmt(mid.dps),
-         SHORT[metaOf(state.group)] + " 대비 " + deltaHtml(pct(mid.dps, baseMid.dps)));
-    tile("1코어 윤탈 불가의 대가", deltaHtml(pct(k2.dps, y2.dps)),
-         "2코어 시점 DPS · " + fmt(k2.dps) + " vs " + fmt(y2.dps));
+    });
   }
 
-  /* ---------- 추천 계산 ---------- */
-  // 5코어 DPG 최대, 0.15% 안쪽 동률이면 3코어 DPG 로 가른다(같은 집합·다른 순서를 구분).
-  function bestOf(ids, archId, scenId){
-    var rows = ids.map(function(id){
-      var pts = byId[id].series[archId][scenId];
-      var mid = pts.filter(function(p){ return p.step === "3C"; })[0];
-      return {id:id, end:pts[pts.length - 1], mid:mid};
+  function renderKpis(){
+    var host = el("kpis"); host.innerHTML = "";
+    var base = byId.meta_krk.series[state.arch][state.scen];
+    var baseEnd = base[base.length - 1];
+    var rows = BAR_IDS.map(function(id){
+      var pts = byId[id].series[state.arch][state.scen];
+      return {id:id, end:pts[pts.length - 1],
+              mid:pts.filter(function(p){ return p.step === "3C"; })[0]};
     }).sort(function(a, b){ return b.end.dpg - a.end.dpg; });
     var top = rows[0];
     rows.forEach(function(r){
       if (r.end.dpg >= top.end.dpg * 0.9985 && r.mid.dpg > top.mid.dpg) top = r;
     });
-    return top;
-  }
-  function metaOf(groupId){ return groupId === "yun" ? "meta_yun" : "meta_krk"; }
-
-  function renderPick(){
-    var g = group();
-    var best = bestOf(g.ids, state.arch, state.scen);
-    var base = byId[metaOf(g.id)].series[state.arch][state.scen];
-    var baseEnd = base[base.length - 1];
-    var b = byId[best.id];
-    var pts = b.series[state.arch][state.scen].filter(function(p){ return p.step.indexOf("half") < 0; });
-    var chain = pts.map(function(p, i){
-      return '<span class="node"><b>' + b.path_ko[i] + '</b><small>' + p.gold + 'g · ' +
-             fmt(p.dps) + ' DPS</small></span>';
-    }).join('<span class="arrow">→</span>');
-    el("pick").innerHTML =
-      '<div class="pick-head">' + arch().label + ' 상대 · ' +
-      SCEN.filter(function(x){ return x.id === state.scen; })[0].label + ' · ' + g.label +
-      ' 에서는</div><div class="chain">' + chain + '</div>' +
-      (best.id === metaOf(g.id)
-        ? '<div class="why"><b>' + SHORT[best.id] + '</b> — 이 조건에서는 기존 트리가 최고다.</div>'
-        : '<div class="why"><b>' + SHORT[best.id] + '</b> — ' + SHORT[metaOf(g.id)] + '(이 계열의 기존 트리) 대비 ' +
-      '5코어 DPS ' + deltaHtml(pct(best.end.dps, baseEnd.dps)) + ' · DPG ' +
-      deltaHtml(pct(best.end.dpg, baseEnd.dpg)) + ' · 3코어 DPS ' +
-      deltaHtml(pct(best.mid.dps, base.filter(function(p){ return p.step === "3C"; })[0].dps)) + '</div>');
-  }
-
-  function renderMatrix(){
-    var g = group();
-    el("matrixGroup").textContent = g.label;
-    var head = '<thead><tr><th>타깃 \\ 적 수</th>' + SCEN.map(function(sc){
-      return '<th>' + sc.label + '</th>';
-    }).join("") + '</tr></thead>';
-    var body = DATA.archetypes.map(function(a){
-      var cells = SCEN.map(function(sc){
-        var best = bestOf(g.ids, a.id, sc.id);
-        var base = byId[metaOf(g.id)].series[a.id][sc.id];
-        var d = pct(best.end.dpg, base[base.length - 1].dpg);
-        var on = (a.id === state.arch && sc.id === state.scen);
-        return '<td' + (on ? ' style="background:var(--panel-2); font-weight:600;"' : '') + '>' +
-          '<span class="swatch" style="background:' + slotVar(best.id) + '"></span>' +
-          SHORT[best.id] + tagHtml(best.id) + '<br><span style="font-size:11px; color:var(--muted); font-family:var(--mono)">' +
-          (d >= 0 ? "+" : "") + d.toFixed(1) + '%</span></td>';
-      }).join("");
-      return '<tr><td>' + a.label + '</td>' + cells + '</tr>';
-    }).join("");
-    el("matrix").innerHTML = head + '<tbody>' + body + '</tbody>' +
-      '<tfoot><tr><td colspan="5" style="text-align:left; color:var(--muted); font-size:11.5px; border:0; padding-top:10px;">' +
-      '칸 = 그 조건의 최적 트리와, 이 계열 기존 트리 대비 5코어 DPG 차이. 진한 칸이 지금 고른 조건이다.</td></tr></tfoot>';
+    function tile(label, value, sub, lead){
+      var d = document.createElement("div");
+      d.className = "kpi" + (lead ? " lead" : "");
+      d.innerHTML = '<span class="k-label">' + label + '</span><span class="k-value">' + value +
+        '</span><span class="k-sub">' + sub + '</span>';
+      host.appendChild(d);
+    }
+    tile("이 조건 최고 골드효율", SHORT[top.id] + tagHtml(top.id),
+         "전체 " + byId[top.id].path_ko.join(" → "), true);
+    tile("5코어 DPS", fmt(top.end.dps),
+         SHORT.meta_krk + " 대비 " + deltaHtml(pct(top.end.dps, baseEnd.dps)));
+    tile("5코어 DPG", fmt(top.end.dpg, 1),
+         SHORT.meta_krk + " 대비 " + deltaHtml(pct(top.end.dpg, baseEnd.dpg)));
+    tile("3코어 DPS", fmt(top.mid.dps),
+         SHORT.meta_krk + " 대비 " + deltaHtml(pct(top.mid.dps,
+           base.filter(function(p){ return p.step === "3C"; })[0].dps)));
   }
 
   function renderTable(){
@@ -662,19 +777,24 @@
       '<tfoot><tr><td colspan="8" style="text-align:left; color:var(--muted); font-size:11.5px; border:0; padding-top:10px;">각 칸 = DPS / DPG. 빌드마다 같은 구간이라도 아이템이 달라 누적 골드가 다르다 — 정확한 골드는 곡선 위 점에 올려 확인.</td></tr></tfoot>';
   }
 
-  function render(){
-    var s = SCEN.filter(function(x){ return x.id === state.scen; })[0];
-    el("scenNote").textContent = s.note;
-    el("groupNote").textContent = group().note;
+
+
+  function renderArchNote(){
     var a = arch();
     el("archNote").textContent = a.desc;
-    el("archTiers").innerHTML = [1, 2, 3, 4, 5].map(function(t){
+    el("archTiers").innerHTML = ["1","2","3","4","5"].map(function(t){
       var v = a.tiers[t];
       return '<span class="chip">' + t + '코어 ' + v[0] + 'HP · 방' + v[1] + ' · 마저' + v[2] + '</span>';
     }).join("");
+  }
+
+  function render(){
+    renderExplorerNote();
+    renderChain();
+    renderState();
+    renderCandidates();
+    renderArchNote();
     renderKpis();
-    renderPick();
-    renderMatrix();
     renderLegend(el("legend1"));
     renderLegend(el("legend2"));
     drawLines(el("plotDps"), el("tipDps"), "dps", "DPS");
@@ -688,10 +808,13 @@
   window.addEventListener("resize", function(){
     clearTimeout(rt); rt = setTimeout(render, 160);
   });
-  if (window.matchMedia) {
+  if (window.matchMedia){
     var mq = window.matchMedia("(prefers-color-scheme: dark)");
     if (mq.addEventListener) mq.addEventListener("change", render);
   }
+  document.querySelectorAll("details.fold").forEach(function(d){
+    d.addEventListener("toggle", function(){ if (d.open) render(); });
+  });
   render();
 })();
 </script>
