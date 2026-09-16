@@ -87,3 +87,26 @@ def test_yunara_defaults():
     weights = dict(Y.TARGET_MIX_WEIGHTS)
     assert set(weights) == {1, 2, 3}
     assert all(w == pytest.approx(1 / 3) for w in weights.values())
+
+
+# ── 루난 Q 확산 반환 계수 [H-YUN-RUNAAN-RETURN-1] ───────────────────────────
+# 서브 타겟 피해는 집계하지 않는다. 메인 타겟에 가산되는 건 볼트→Q확산 반환분뿐이다.
+
+def test_runaan_return_multipliers():
+    from adc_sim.champion import (
+        RUNAAN_BOLT_AD_RATIO, YUNARA_Q_SPLASH_BASE_RETURN, YUNARA_Q_SPLASH_ONHIT_RETURN,
+    )
+    assert RUNAAN_BOLT_AD_RATIO == 0.65        # 2026-08-11 버프(0.55→0.65). 위키 덤프는 버프 전 값
+    assert YUNARA_Q_SPLASH_BASE_RETURN == 0.30
+    assert YUNARA_Q_SPLASH_ONHIT_RETURN == 0.30
+    # 서브 1명 기준 기본딜 반환 = 19.5%
+    assert RUNAAN_BOLT_AD_RATIO * YUNARA_Q_SPLASH_BASE_RETURN == pytest.approx(0.195)
+
+
+def test_runaan_uplift_only_with_two_plus_targets():
+    """적1 에서는 루난이 DPS 에 1도 기여하지 않는다(볼트가 때릴 서브 타겟이 없다)."""
+    from adc_sim.simulations.yunara import simulate_yunara_core_path
+    kw = dict(doran_key="doranbow", boots_key="glutton", rune_as_bonus=0.18)
+    solo_runaan = simulate_yunara_core_path(["kraken", "runaan"], 2, target_count=1, **kw)[0]
+    duo_runaan = simulate_yunara_core_path(["kraken", "runaan"], 2, target_count=2, **kw)[0]
+    assert duo_runaan > solo_runaan, "서브 타겟이 생겨도 Q 확산 반환이 안 붙는다"
