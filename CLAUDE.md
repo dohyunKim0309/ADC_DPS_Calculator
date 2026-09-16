@@ -17,7 +17,10 @@
     receding-horizon(하프 코어 포함, §Yunara 빌드 탐색). 32표(패키지 4 × 파편 2 × TC1/2/3+MIX),
     표만 출력이라 **헤드리스 안전**(matplotlib 비의존). 전체 ≈15분.
   - `… adc_sim.simulations.kaisa` / `.corki` / `.ezreal` / `.cogmaw`
-  - `… adc_sim.simulations.vayne [gamma]` — **기본** 베인 1~5코어 receding-horizon 탐색(마지널 DPG 미래 할인합, γ 기본 0.8, 베인 DPS 측정 K=2). 8시나리오(치속/집공 × 핏빛길/민첩함 × 체력차 극복/최후의 일격), 도란활+탐식 고정. 출력 순서도 이 축 순서를 따른다.
+  - `… adc_sim.simulations.vayne [gamma]` — **기본** 베인 1~5코어 receding-horizon 탐색
+    (**하프 코어 포함**, 공통 엔진 `simulations/receding.py`; γ 기본 0.8, K=2). 8시나리오
+    (치속/집공 × 핏빛길/민첩함 × 체력차 극복/최후의 일격), 도란활+탐식 고정. 전체 ≈2.5분.
+    출력 순서도 이 축 순서를 따르며, 표에 EHP·회복 3축 열과 슬롯별 하프 구간이 같이 나온다.
   - `… adc_sim.simulations.vayne legacy-ranking` — 보존된 기존 1~4코어 전수 랭킹(온힛+크리 풀, 컨트롤 botrk-guinsoo-terminus-pd).
   - `… adc_sim.simulations.vayne pta-alacrity-subs [gamma]` — 집공·민첩함 고정 후 최후의 일격/체력차 극복 receding-horizon 비교.
   - `… adc_sim.simulations.vayne_rune_compare [top_n]` — LT vs PtA 룬 비교(top_n 기본 10 + 컨트롤, 코어 타이밍별 DPS/DPG 나열). 두 룬 전수 랭킹 소요 ≈1분.
@@ -42,6 +45,8 @@ adc_sim/                  ← 소스 패키지 (코어 모듈끼리는 서로 im
     sim_settings.py ─ 케이스랭킹 '모델' 설정 데이터(가중 프로파일/축/제약/풀 제외세트/컨트롤 오프닝). 순수 설정·헬퍼(코어 import 안 함)
     case_ranking.py ─ 케이스 기반 빌드 랭킹 엔진(집합 메모이즈 시뮬 + 14케이스 전수). 현재 Ashe 전용(레벨표/타깃은 ashe.py 재사용)
     ranking_core.py ─ 공통 랭킹 러너(rank_builds; Phase1 vayne 이관, cogmaw/jinx 예정)
+    receding.py ─ **하프 코어 포함 receding-horizon 공통 엔진**(RecedingSpec + solve/select_half/score_combo).
+                  챔피언은 슬롯 후보·하프 후보 열거·캐시(sim/sim_half)만 넘긴다. 현재 소비자: yunara·vayne
   data/
     items_data.py ─ 아이템 스탯/가격 데이터(숫자의 단일 출처)   ← 패치마다 가장 자주 바뀜
     items_registry.py ─ 키→인스턴스 통합 create_item_from_key(데이터 주입; 시뮬별 복제 제거)
@@ -125,6 +130,27 @@ _to_delete/ ─ 교체돼 쓰이지 않는 코드 보관(어디서도 import 안
   `total_ad × ratio × _last_damage_amp` 로 별도 가산(**대미지증가는 적용, 크리·C44 는 미적용 = 실 LoL 동작**).
   온힛은 미증폭(강화평타도 온힛 1회). R 은 t=0 매뉴얼 시전(마나80): `bonus_ad += R_BONUS_AD`,
   Q쿨 `×(1-R_Q_CDR)`, 지속 만료 시 원복(짧은 버스트라 상시).
+- **빌드 탐색 [2026-09-16 교체]**: 기본 모드가 **하프 코어 포함 receding-horizon**(공통 엔진
+  `simulations/receding.py`)으로 바뀌었다. 규칙은 유나라와 동일 — 증분 마지널 DPG, γ^(step/2),
+  아이템별 예산창 `[ceil100(가격/2), +100]`(하단만 완화), 5코어 하프 기본 생략.
+  베인 고유 처리 둘: `VAYNE_HALF_TIER_LEVELS`(8/10/12/14/16)와, **하프 시점은 코어 완성 전이라
+  스킬 포인트가 하나 적어 E(=DPS 미모델)에서 뺀다**(Q/W 선마 순서 보존).
+  - **코어 풀**: `CORE_POOL` 17종을 1~5코어가 공유. 예외는 윤탈 1~2코어(스택)와 **1코어 제외 `ldr`**
+    뿐이다. IE 는 1코어에도 남긴다(치확 소스 없이도 후보로 두고 모델이 판정 — 유나라와 같은 판단).
+    `statikk` 은 스택 아이템이 **아니므로** 전 슬롯 허용. 옛 슬롯 리스트의 "몰락 1~2코어 한정",
+    "3코어 공속·치확템 제외", "statikk 3코어만 제외"는 전부 근거가 없어 폐기했다.
+  - ⚠️ **풀이 두 개다**: 기본 모드는 `CORE_POOL`, 4코어 전수 랭킹(power_compare·`legacy-ranking`)은
+    `LEGACY_CORE1~4_CANDIDATES`. **새 아이템은 양쪽 모두에 넣어야 한다.**
+  - **스윕 결론** [8시나리오, 도란활+탐식]: `윤탈 → C44 → 도미닉 → 무한 → 구인수`가 8/8 중 1~4코어
+    동일, 5코어만 구인수 6 / 크라켄 2 로 갈린다. **룬 축(치속·집공 × 핏빛길·민첩함 × 체력차·최후)이
+    궤적을 거의 안 바꾼다** — 유나라에서 적 수(tc)가 궤적을 세 갈래로 가른 것과 대조적이다.
+  - **신뢰도**: 1~3코어 선택 여유가 1% 안팎(2코어는 0.28%)으로 윤탈·IE·C44·도미닉이 뭉쳐 있다.
+    4코어 7.0%, 5코어 11.5% 로 후반이 오히려 견고하다. 유나라와 같은 패턴이며 윤탈 스택 가정이
+    1코어 결론을 지배한다.
+  - 이관 전후 비교: 치속+핏빛길+체력차 `Yun-Krk-LDR-C44-PD`(1535.4/G16150) →
+    `Yun-C44-LDR-IE-Gui`(1672.0/G17000). 집공+민첩함+체력차는 **집합이 동일하고 순서만 교체**
+    (크라켄↔C44)라 5코어 DPS 가 1796.8 로 일치한다. 풀 확장·증분 점수식·하프 구간이 동시에
+    들어간 결과라 단일 원인으로 귀속하지 말 것.
 - **전용 sim**: cogmaw.py 이중-키스톤(치속·집공) 미러. 온힛+크리 풀, 컨트롤 **`botrk-guinsoo-terminus-pd`**
   (탐색공간 필수·없으면 RuntimeError). 설정 파생 가중 RelDPG, ADC_PACKAGES A/B, K=2.
   `simulate_vayne_core_path(..., keystone_cls=LethalTempo|PressTheAttack)`, 보조룬 CutDown 고정
@@ -139,6 +165,8 @@ _to_delete/ ─ 교체돼 쓰이지 않는 코드 보관(어디서도 import 안
 - **기본 모드 = 1~5코어 receding-horizon, 아이템 사이 구간(하프 코어)까지 채점.** 옛 4코어 전수
   랭킹의 표/그래프/리포트 출력과, 앵커 누적 점수식을 쓰던 비-하프 경로는 `_to_delete/`로 보냈다.
   랭킹 엔진(`rank_yunara_4core_paths`/`get_yunara_4core_top1_build`)만 power_compare·ashe 용으로 남음.
+- **탐색 로직은 공통 엔진 `simulations/receding.py`** (2026-09-16 이관, 출력 바이트 동일 검증).
+  유나라·베인이 같은 엔진을 쓰며 챔피언은 `build_spec()` + 캐시의 `sim`/`sim_half` 만 제공한다.
 - **점수식(증분)**: `V(S) = max_x [ γ^(s/2)·m_half(S,x) + γ^((s+1)/2)·m_full(S,x) + … ]`,
   `m_half = (D(S+재료)−D(S)) / (재료비/1000)`, `m_full = (D(S+x)−D(S+재료)) / ((가격−재료비)/1000)`.
   **스텝마다 기준을 직전 상태로 갱신**한다(타 챔프 `_score_combo`의 앵커 누적과 다름 — 그쪽은
@@ -214,7 +242,7 @@ _to_delete/ ─ 교체돼 쓰이지 않는 코드 보관(어디서도 import 안
 새 패치가 나오면 보통 아래를 손본 뒤 시뮬을 다시 돌려 랭킹을 갱신한다. **변경 전 `AGENTS.md`의 승인 절차를 따른다.**
 1. **아이템 스탯/가격 변경** → `adc_sim/data/items_data.py`의 `ITEMS[key]`(`stats`/`cost`). 숫자의 단일 출처.
 2. **신규 아이템** → `adc_sim/data/items_data.py`의 `ITEMS`에 키 추가(name/cost/stats/behavior). 특수 메커니즘이 있을 때만 `adc_sim/items.py`에 동작 클래스를 추가해 `behavior`로 지정. 생성은 **통합 `create_item_from_key`**(`adc_sim/data/items_registry.py`) 하나가 처리 — 시뮬별 복제 없음(윤탈 crit 은 런타임 파라미터 `yuntal_crit`).
-   - 새 키를 **탐색 후보 풀**에 넣어야 실제 랭킹에 등장한다. **유나라는 자체 풀 `_build_yunara_4core_all_paths`(yunara.py, AP 아이템 포함)**, 애쉬는 `ashe.py`의 `_build_ashe_4core_all_paths`, kaisa/corki는 대응 풀. **pen 배타(챔피언 무관 필수)**: 방관 `{ldr, mortal, terminus}` 한 빌드 1개 + 마관 `{void, terminus}` 한 빌드 1개(terminus는 양쪽 겸비 → 공허와도 공존 불가). 구현은 items_data.pen_rule_ok(방관≤1 AND 마관≤1) 중앙화 — 시뮬별 로컬 상수 금지.
+   - 새 키를 **탐색 후보 풀**에 넣어야 실제 랭킹에 등장한다. **유나라·베인은 풀이 두 개다** — 기본 모드(receding-horizon)는 `CORE_POOL`, power_compare 용 4코어 전수 랭킹은 옛 풀(유나라 `_build_yunara_4core_all_paths`, 베인 `LEGACY_CORE1~4_CANDIDATES`)이라 **둘 다 갱신해야 한다**. , 애쉬는 `ashe.py`의 `_build_ashe_4core_all_paths`, kaisa/corki는 대응 풀. **pen 배타(챔피언 무관 필수)**: 방관 `{ldr, mortal, terminus}` 한 빌드 1개 + 마관 `{void, terminus}` 한 빌드 1개(terminus는 양쪽 겸비 → 공허와도 공존 불가). 구현은 items_data.pen_rule_ok(방관≤1 AND 마관≤1) 중앙화 — 시뮬별 로컬 상수 금지.
    - **%마법관통** 스탯은 `magic_pen_percent`(STAT_KEYS 포함, `add_item`에서 곱연산). 예: 공허의 지팡이(`void`, AP95/마관40%).
 3. **챔피언 기본 스탯/스킬 계수 변경** → `adc_sim/champion.py`의 해당 서브클래스. 코어별 레벨표(`CORE_*_LEVELS`)·타깃 스탯(`CORE_TARGET_STATS`)도 패치 메타에 맞게 점검.
 4. **룬 변경** → `adc_sim/runes.py`.
