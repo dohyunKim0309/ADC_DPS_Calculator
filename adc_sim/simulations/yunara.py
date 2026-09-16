@@ -4,6 +4,9 @@ from adc_sim.engine import run_simulation
 from adc_sim.data.items_registry import create_item_from_key
 from adc_sim.data.recipe_states import half_core_candidates
 from adc_sim.data.items_data import ADC_PACKAGES, ADC_PACKAGES_VIABLE, pen_rule_ok
+from adc_sim.simulations.target_archetypes import (
+    DEFAULT_ARCHETYPE, TARGET_ARCHETYPES, bonus_hp, core_target_stats, half_target_stats,
+)
 
 
 def _build_yunara_4core_all_paths():
@@ -72,15 +75,28 @@ def build_ashe_like_core_report_meta(champion_name, full_path, core_tier):
 
 
 # === 유나라 전용 시뮬 설정 (애쉬 파일에서 분리; Ashe 가정에 의존하지 않음) ===
-# 코어 단계별 고정 타깃 스탯 (유나라 자체 보유)
-CORE_TARGET_STATS = {
-    # 마저 +5 일괄 상향(25/30/50/70/90 → 30/35/55/75/95) — 원딜 마저 버프 반영, 사용자 확정 2026-08-31.
-    1: {"hp": 1700, "armor": 50, "mr": 30},
-    2: {"hp": 1900, "armor": 70, "mr": 35},
-    3: {"hp": 2400, "armor": 100, "mr": 55},
-    4: {"hp": 2600, "armor": 120, "mr": 75},
-    5: {"hp": 3000, "armor": 150, "mr": 95},
-}
+# 코어 단계별 고정 타깃 스탯 — 아키타입 모듈에서 파생(사용자 확정 2026-09-16).
+#   딜러 / 브루저 / 탱커 3종을 `simulations/target_archetypes.py` 가 들고 있고,
+#   여기서는 활성 아키타입 한 벌을 CORE_TARGET_STATS 로 펼쳐 쓴다(기존 소비처 모양 유지).
+#   바꾸려면 `set_target_archetype("dealer"|"bruiser"|"tank")` 또는 CLI `target=<이름>`.
+#   ⚠️ 타 챔피언 시뮬은 아직 각자 표를 쓴다 — 확장 시 그 모듈을 쓸 것(모듈 독스트링 참조).
+ACTIVE_ARCHETYPE = DEFAULT_ARCHETYPE
+CORE_TARGET_STATS = core_target_stats(ACTIVE_ARCHETYPE)
+
+
+def set_target_archetype(name):
+    """활성 타깃 아키타입 교체 — CORE_TARGET_STATS 를 제자리 갱신한다.
+
+    완성 코어(build_target_for_core)와 하프 구간(_half_tier_target) 이 같은 표를 읽으므로
+    이 함수 하나로 두 경로가 함께 바뀐다.
+    """
+    global ACTIVE_ARCHETYPE
+    stats = core_target_stats(name)      # 미지의 이름이면 여기서 ValueError
+    ACTIVE_ARCHETYPE = name
+    CORE_TARGET_STATS.clear()
+    CORE_TARGET_STATS.update(stats)
+    return ACTIVE_ARCHETYPE
+
 
 # 코어 타이밍별 유나라 레벨/스킬 레벨 (Ashe 레벨표 참조 제거 — 자체 정의)
 # [Hypothesis] 스킬오더: Q 선마 → W 차선마 → E, 궁(R) 6/11/16.
@@ -119,7 +135,7 @@ def build_target_for_core(core_tier):
         hp=stats["hp"],
         armor=stats["armor"],
         magic_resist=stats["mr"],
-        bonus_hp=max(0, stats["hp"] - 1600),
+        bonus_hp=bonus_hp(stats["hp"]),
     )
 
 
@@ -321,12 +337,14 @@ def rank_yunara_4core_paths(target_count=1):
     }
 
 
-# ── 적 수 혼합 랭킹 — 사용자 확정 2026-08-31 ─────────────────────────────────
+# ── 적 수 혼합 랭킹 ──────────────────────────────────────────────────────────
 # 템트리 선택 지표를 단일 tc 가 아니라 교전 시나리오 혼합으로: DPS_mix = Σ w·DPS_tc.
-# 기본 = 적1 0.5 : 적2 0.5 (사용자 변경 2026-08-31, 최초 0.6:0.4 에서 조정.
-# w = 교전 중 두 번째 적이 붙어 있는 시간 비중 해석).
-# 적3(루난 서브타겟 풀활용)은 한타 한정이라 혼합에서 제외(별도 참고 표).
-TARGET_MIX_WEIGHTS = ((1, 0.5), (2, 0.5))
+# **기본 = 적1 : 적2 : 적3 = 1 : 1 : 1** (사용자 변경 2026-09-16).
+#   한 판에서 라인전(적1)·소규모 교전(적2)·한타(적3)를 모두 겪는다는 해석이라, 적3을
+#   빼던 이전 규약(적1 0.5 : 적2 0.5, 2026-08-31)보다 통합 지표로 맞다는 판단.
+#   ⚠️ 이 가중이 3코어 결론을 직접 지배한다 — 적3이 들어오면서 3코어 추천이
+#   도미닉에서 루난으로 바뀌었다(적1 단독일 때만 도미닉).
+TARGET_MIX_WEIGHTS = ((1, 1.0 / 3.0), (2, 1.0 / 3.0), (3, 1.0 / 3.0))
 
 
 def get_yunara_4core_top1_build(target_count=1, rank_by="dpg"):
@@ -443,7 +461,7 @@ class MixedSimCache:
     """적 수 시나리오 혼합 캐시 — sim() 이 TARGET_MIX_WEIGHTS 가중으로 tc별 DPS 를 합산.
 
     혼합 랭킹(rank_yunara_4core_paths_mixed)과 같은 지표를 receding-horizon 에서 쓰는 래퍼
-    (사용자 확정 2026-08-31: 혼합 1:1 이 유나라 기본 선택 지표). 골드는 tc 무관 동일.
+    (사용자 확정 2026-09-16: 혼합 1:1:1 이 유나라 기본 선택 지표). 골드는 tc 무관 동일.
     """
 
     def __init__(self, package, mix=None, shards=None, caches=None):
@@ -485,15 +503,9 @@ HALF_INCLUDE_LAST_SLOT = False
 
 def _half_tier_target(k):
     """코어 k 직전 하프 티어 타깃: 인접 코어 스탯 선형 보간(0.5코어는 코어1 그대로)."""
-    if k <= 1:
-        st = CORE_TARGET_STATS[1]
-        hp, armor, mr = st["hp"], st["armor"], st["mr"]
-    else:
-        a, b = CORE_TARGET_STATS[k - 1], CORE_TARGET_STATS[min(5, k)]
-        hp = (a["hp"] + b["hp"]) / 2.0
-        armor = (a["armor"] + b["armor"]) / 2.0
-        mr = (a["mr"] + b["mr"]) / 2.0
-    return Target(hp=hp, armor=armor, magic_resist=mr, bonus_hp=max(0, hp - 1600))
+    st = half_target_stats(k, ACTIVE_ARCHETYPE)
+    return Target(hp=st["hp"], armor=st["armor"], magic_resist=st["mr"],
+                  bonus_hp=bonus_hp(st["hp"]))
 
 
 def _half_enabled_for_slot(slot, horizon):
@@ -698,8 +710,8 @@ def main(gamma=None, include_last_half=None):
     축 (사용자 확정 2026-09-15):
       신발·전설룬 패키지 4 (ADC_PACKAGES_VIABLE — 피흡 소스 ≥1, 광전사+민첩함 금지)
       × 룬 파편 2 (SHARD_SCENARIOS)
-      × 교전 적 수 4 (TC1 / TC2 / TC3 / MIX 1:1)
-    MIX 는 TC1·TC2 캐시를 그대로 재사용하므로 추가 시뮬 비용이 없다.
+      × 교전 적 수 4 (TC1 / TC2 / TC3 / MIX 1:1:1)
+    MIX 는 TC1~TC3 캐시를 그대로 재사용하므로 추가 시뮬 비용이 없다.
     """
     if gamma is None:
         gamma = GAMMA
@@ -715,20 +727,26 @@ def main(gamma=None, include_last_half=None):
                                     out, gamma=gamma)
             mixed = MixedSimCache(package, shards=shards, caches=caches)
             out = solve_greedy_half(mixed, gamma=gamma)
-            print_half_scenario(f"{package['label']} · MIX 0.5/0.5 · 파편 {shard_label}",
+            print_half_scenario(f"{package['label']} · MIX 1:1:1 · 파편 {shard_label}",
                                 out, gamma=gamma)
 
 
 def run_cli(args=None):
     """유나라 CLI — 인자 없으면 기본 스윕. `half5`=5코어 하프 포함,
-    `late-yuntal`=1코어 윤탈 금지(라인전 난항 케이스), 숫자=γ 지정. 조합 가능."""
+    `late-yuntal`=1코어 윤탈 금지(라인전 난항 케이스),
+    `target=dealer|bruiser|tank`=상대 타깃 아키타입(기본 브루저), 숫자=γ 지정. 조합 가능."""
     import sys
 
     cli_args = list(sys.argv[1:] if args is None else args)
     include_last_half = False
-    while cli_args and cli_args[0] in ("half5", "late-yuntal"):
+    while cli_args and (cli_args[0] in ("half5", "late-yuntal")
+                        or cli_args[0].startswith("target=")):
         if cli_args[0] == "half5":
             include_last_half = True
+        elif cli_args[0].startswith("target="):
+            name = cli_args[0].split("=", 1)[1]
+            set_target_archetype(name)
+            print(f"[scenario] 타깃 아키타입 = {TARGET_ARCHETYPES[name]['label']}({name})")
         else:
             set_yuntal_min_slot(2)
             print("[scenario] 1코어 윤탈 금지 — 윤탈은 2코어에서만 구매 가능")

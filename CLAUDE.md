@@ -13,9 +13,10 @@
   - ⚠️ 시스템 `python3`(3.9)나 다른 인터프리터로 돌리지 말 것. 항상 **`.venv/bin/python`** 사용.
 - 시뮬은 패키지 모듈이라 **repo 루트에서 `-m`으로 실행**한다:
   - `.venv/bin/python -m adc_sim.simulations.ashe` — 애쉬 4코어 랭킹(+1~3코어 별도 랭킹 — 가중은 설정 파생 상위 3개)
-  - `… adc_sim.simulations.yunara [late-yuntal] [half5] [gamma]` — **기본** 유나라 1~5코어
-    receding-horizon(하프 코어 포함, §Yunara 빌드 탐색). 32표(패키지 4 × 파편 2 × TC1/2/3+MIX),
-    표만 출력이라 **헤드리스 안전**(matplotlib 비의존). 전체 ≈15분.
+  - `… adc_sim.simulations.yunara [late-yuntal] [half5] [target=dealer|bruiser|tank] [gamma]` —
+    **기본** 유나라 1~5코어 receding-horizon(하프 코어 포함, §Yunara 빌드 탐색).
+    32표(패키지 4 × 파편 2 × TC1/2/3+MIX 1:1:1), 표만 출력이라 **헤드리스 안전**(matplotlib
+    비의존). 전체 ≈15분. `target=` 로 상대 타깃 아키타입 교체(기본 브루저).
   - `… adc_sim.simulations.kaisa` / `.corki` / `.ezreal` / `.cogmaw`
   - `… adc_sim.simulations.vayne [gamma]` — **기본** 베인 1~5코어 receding-horizon 탐색(마지널 DPG 미래 할인합, γ 기본 0.8, 베인 DPS 측정 K=2). 8시나리오(치속/집공 × 핏빛길/민첩함 × 체력차 극복/최후의 일격), 도란활+탐식 고정. 출력 순서도 이 축 순서를 따른다.
   - `… adc_sim.simulations.vayne legacy-ranking` — 보존된 기존 1~4코어 전수 랭킹(온힛+크리 풀, 컨트롤 botrk-guinsoo-terminus-pd).
@@ -42,6 +43,7 @@ adc_sim/                  ← 소스 패키지 (코어 모듈끼리는 서로 im
     sim_settings.py ─ 케이스랭킹 '모델' 설정 데이터(가중 프로파일/축/제약/풀 제외세트/컨트롤 오프닝). 순수 설정·헬퍼(코어 import 안 함)
     case_ranking.py ─ 케이스 기반 빌드 랭킹 엔진(집합 메모이즈 시뮬 + 14케이스 전수). 현재 Ashe 전용(레벨표/타깃은 ashe.py 재사용)
     ranking_core.py ─ 공통 랭킹 러너(rank_builds; Phase1 vayne 이관, cogmaw/jinx 예정)
+    target_archetypes.py ─ 상대 타깃 아키타입(딜러/브루저/탱커) 코어·하프 스탯표. **현재 유나라만 사용, 확장 예정**
   data/
     items_data.py ─ 아이템 스탯/가격 데이터(숫자의 단일 출처)   ← 패치마다 가장 자주 바뀜
     items_registry.py ─ 키→인스턴스 통합 create_item_from_key(데이터 주입; 시뮬별 복제 제거)
@@ -64,7 +66,7 @@ _to_delete/ ─ 교체돼 쓰이지 않는 코드 보관(어디서도 import 안
 - **DPG** = `DPS / (gold/1000)` — 1000골드당 DPS, 즉 골드 효율.
 - **rel_dpg_score**(주 랭킹 지표) = 각 코어 구간의 `row_DPG / control_DPG` 비율을 **`settings.RANKING_SCORING`에서 파생된 코어 가중**(기본 discounted γ=0.8 → [0.8, 0.64, 0.512, 0.4096]; "weighted" 모드 시 fixed_raw)으로 가중합 ×100. 즉 **컨트롤 빌드 대비 상대 골드효율**. 가중은 settings.RANKING_SCORING("weighted" 고정벡터 | "discounted" γ-할인, **기본 discounted γ=0.8**)에서 파생 — CORE_WEIGHTS_RAW 소비처는 자동 반영.
 - **Control(기준) 빌드** = `kraken-pd-ie-ldr` 로 하드코딩. 탐색 경로 안에 반드시 존재해야 하며 없으면 `RuntimeError`. 후보 풀이나 키 이름을 바꿀 때 이 빌드가 빠지지 않게 할 것.
-- **코어 티어 1~4** = 아이템 1/2/3/4개 시점의 파워 스파이크. 티어마다 타깃 스탯(`CORE_TARGET_STATS`)과 챔피언 레벨/스킬 레벨(`CORE_<CHAMP>_LEVELS`)이 고정. (케이스 랭킹은 티어 1~5 사용 — `CORE_ASHE_LEVELS[5]`/`CORE_TARGET_STATS[5]`.)
+- **코어 티어 1~4** = 아이템 1/2/3/4개 시점의 파워 스파이크. 티어마다 타깃 스탯(`CORE_TARGET_STATS`)과 챔피언 레벨/스킬 레벨(`CORE_<CHAMP>_LEVELS`)이 고정. **유나라는 이 표를 `simulations/target_archetypes.py`(딜러/브루저/탱커)에서 파생**하고, 나머지 챔피언은 아직 각자 파일에 표 한 벌(1700/50/30 … 3000/150/95)을 복사해 들고 있다 — 확장 시 표를 새로 쓰지 말고 그 모듈을 쓸 것(챔피언별로 표가 갈라지면 power_compare 비교가 무의미해진다). (케이스 랭킹은 티어 1~5 사용 — `CORE_ASHE_LEVELS[5]`/`CORE_TARGET_STATS[5]`.)
 - 같은 4개 아이템 "집합"은 순서 후보 중 **최고 점수 하나로 dedup**(`combo_best`).
 - **`ashe.py` 보조 랭킹**: 메인 1~4(설정 파생 가중) 표와 **별도로** 1~3코어(설정 파생 가중 상위 3개) 랭킹을 같이 출력(`rel_dpg_score_3c`). 1~3 오프닝(앞 3아이템 집합)별 1행으로 dedup. 근거: 4코어는 실전상 보통 방어템이라 DPS-골드 랭킹에서 1~3코어가 더 현실적.
 
@@ -156,10 +158,24 @@ _to_delete/ ─ 교체돼 쓰이지 않는 코드 보관(어디서도 import 안
   (몰락 1~2코어 한정, 3코어 공속템 전면 제외 등)는 근거가 없어 폐기. pen 배타는 `pen_rule_ok` +
   하프의 **역병의 보석**(공허 하위)도 마관 슬롯 차지.
 - **시나리오 축**: `ADC_PACKAGES_VIABLE` 4조합(피흡 소스 ≥1 — 광전사+민첩함 금지) × 파편 2
-  (`SHARD_SCENARIOS`: 공속10%+적응형AD5.4 / 적응형AD5.4×2) × 적 수 TC1/TC2/TC3 + MIX 1:1.
+  (`SHARD_SCENARIOS`: 공속10%+적응형AD5.4 / 적응형AD5.4×2) × 적 수 TC1/TC2/TC3 + **MIX 1:1:1**.
   MIX 는 `MixedSimCache(caches=...)`로 TC 런 캐시를 재사용해 추가 시뮬 비용 0.
   `late-yuntal` 인자 = 라인전 난항으로 1코어 윤탈 불가한 판.
-- **결론 템트리** [2026-09-15 스윕 32표 × 2 시나리오]:
+- **상대 타깃 아키타입** [사용자 확정 2026-09-16] — `simulations/target_archetypes.py`:
+  **딜러 / 브루저(기본) / 탱커** 3종. 완성 코어와 하프 구간이 같은 표를 읽으므로
+  `set_target_archetype(name)` 또는 CLI `target=<name>` 한 번으로 둘 다 바뀐다.
+  · 딜러 = 유나라 본인의 성장 능력치(체력 590+110 / 방어 25+4.4 / 마저 33+1.1, `growth.py` 곡선)를
+    레벨 9/11/13/15/17 에 대입 + 도란템 체력 80 = "거울 상대"(1410/55/40 → 2400/94/50).
+  · 브루저 1900/70/30 → 3350/185/70(**마저 코어당 +10**), 탱커 2100/85/45 → 4050/230/77(**마저 레벨당 +4 = 코어당 +8**).
+  · 하프는 인접 코어 선형 보간(1코어 하프 = 코어1). 추가체력 = `max(0, HP−1600)` 규약 유지.
+  · **옛 단일 표(1700/50/30 → 3000/150/95)는 유나라에서 폐기** — 타 챔피언은 아직 그 표를 쓴다.
+    유나라 DPS 절대값이 바뀌므로 `tests/_baseline_dps.json` 을 재캡처했다.
+- **혼합 가중 변경** [사용자 확정 2026-09-16]: `TARGET_MIX_WEIGHTS` 가 적1:적2 = 0.5:0.5 에서
+  **적1:적2:적3 = 1:1:1** 로 바뀌었다(한 판에 라인전·소규모 교전·한타를 다 겪는다는 해석).
+  이 가중이 3코어 결론을 직접 지배한다 — 적3이 들어오면서 **3코어 추천이 도미닉 → 루난**으로
+  바뀌었고, 도미닉이 3코어로 남는 건 적1 단독 시나리오뿐이다.
+- **결론 템트리** [2026-09-15 스윕 32표 × 2 시나리오 — 아래 근거 수치는 옛 단일 타깃표·혼합
+  0.5:0.5 기준이다. 2026-09-16 아키타입/혼합 변경 후 재스윕 필요]:
   `1코어 윤탈(안 되면 크라켄) → 2코어 나머지 하나 → 3코어 루난(한타) | 도미닉(탱커 보험) →
    4코어 남은 하나 → 5코어 무한의 대검`. 단일 대상만 상정하면 루난 자리에 C44.
   근거: 3코어 루난−도미닉 차 **TC1 −19.7% / TC2 +1.3% / TC3 +36.6%**(4코어부터는 집합이 같아져
