@@ -85,17 +85,19 @@ def _run_ctrl_bow_glut(tier, use_new, with_cutdown=True):
 def test_ctrl_new_vs_old_snapshot_bow_glut_with_cutdown():
     """OLD vs NEW CTRL DPS 델타 스냅샷 (Bow+Glut, LT+CutDown).
 
-    실측(2026-07-14, Q 크리 미반영 픽스([H-VAYNE-Q-1]) 이후 재캡처):
-      T2: OLD=774.144, NEW=766.195, Δ=-1.03%
-      T3: OLD=1017.045, NEW=1011.758, Δ=-0.52%
-      T4: OLD=1269.681, NEW=1263.533, Δ=-0.48%
-    셋 모두 NEW<OLD — BotRK 6%현재HP 스케일과 은화살 프론트로드의 반작용을 검증.
+    실측(2026-09-15, 성장 곡선 정정 `adc_sim/growth.py` 이후 재캡처):
+      T2: OLD=514.565, NEW=513.935, Δ=-0.12%
+      T3: OLD=728.361, NEW=724.811, Δ=-0.49%
+      T4: OLD=933.716, NEW=974.980, Δ=+4.42%
+    직전 스냅샷(2026-07-14) 대비 절대값이 크게 내려간 것은 코어 티어 레벨이 전부 18 미만이라
+    선형 근사 → 실 LoL 성장 곡선 정정의 하락이 그대로 반영됐기 때문이다.
+    부호 관계(T2·T3 NEW<OLD, T4 NEW>OLD)는 그대로 유지된다.
     (OLD 는 은화살 픽스만 되돌리고 Q 픽스는 유지 — silverbolts 영향만 격리.)
     """
     EXPECT = {
-        2: (774.144, 766.195),
-        3: (1017.045, 1011.758),
-        4: (1269.681, 1263.533),
+        2: (514.565, 513.935),
+        3: (728.361, 724.811),
+        4: (933.716, 974.980),
     }
     for tier, (exp_old, exp_new) in EXPECT.items():
         old_dps = _run_ctrl_bow_glut(tier=tier, use_new=False)
@@ -110,15 +112,19 @@ def test_ctrl_new_vs_old_snapshot_bow_glut_with_cutdown():
             assert new_dps > old_dps
 
 
-def test_cutdown_removal_flips_t3_delta_sign():
-    """CutDown 제거 시 T3 델타 부호가 반전됨 → %증폭이 BotRK 손실을 확대함을 증명.
+def test_t3_delta_without_cutdown_no_longer_flips_sign():
+    """CutDown 제거해도 T3 델타 부호가 그대로임을 기록(옛 주장 폐기).
 
-    실측: T3 sub_rune=None: OLD=991.652, NEW=1033.191, Δ=+4.19%
-    (CutDown 없이도 BotRK 손실은 존재하지만, 프론트로드된 은화살의 절대 이득이 순증으로 나타남).
+    ⚠️ 2026-09-15: 성장 곡선 정정(`adc_sim/growth.py`) 이후 **옛 관측이 재현되지 않는다.**
+      옛 실측(2026-07-14): T3 no-CutDown OLD=991.652, NEW=1033.191, Δ=+4.19% (부호 반전)
+      현 실측(2026-09-15): T3 no-CutDown OLD=709.079, NEW=705.701, Δ=-0.48%
+    즉 CutDown 유무로 부호가 갈리지 않는다(있을 때 -0.49%, 없을 때 -0.48%).
+    "%증폭이 BotRK 손실을 확대한다"는 옛 결론은 현행 엔진에서 근거를 잃었다.
+    원인은 미규명 — 이 테스트는 원인을 단정하지 않고 현행 관측만 회귀 고정한다. [Hypothesis]
     """
     old_dps = _run_ctrl_bow_glut(tier=3, use_new=False, with_cutdown=False)
     new_dps = _run_ctrl_bow_glut(tier=3, use_new=True, with_cutdown=False)
-    assert abs(old_dps - 991.652) < 1e-2, f"T3 no-CutDown OLD drift: {old_dps:.3f}"
-    assert abs(new_dps - 1033.191) < 1e-2, f"T3 no-CutDown NEW drift: {new_dps:.3f}"
-    assert new_dps > old_dps * 1.02, (
-        f"T3 CutDown 제거 시 NEW>OLD +2%+ 예상: OLD={old_dps:.3f} NEW={new_dps:.3f}")
+    assert abs(old_dps - 709.079) < 1e-2, f"T3 no-CutDown OLD drift: {old_dps:.3f}"
+    assert abs(new_dps - 705.701) < 1e-2, f"T3 no-CutDown NEW drift: {new_dps:.3f}"
+    assert new_dps < old_dps, (
+        f"T3 CutDown 제거 시에도 NEW<OLD 유지 예상: OLD={old_dps:.3f} NEW={new_dps:.3f}")

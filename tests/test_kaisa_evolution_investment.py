@@ -62,36 +62,46 @@ def test_w_evolution_follows_nested_guinsoo_amp_tome_recipe():
 
 
 def test_e_evolution_counts_on_path_dagger_after_two_cores():
-    """2코어 E 98%가 다음 PD의 단검에서 진화하는 실제 누적 가격을 검증한다."""
+    """2코어 E 95.795%가 다음 내셔(곡궁)의 단검에서 진화하는 누적 가격을 검증한다.
+
+    ⚠️ 경로 교체(2026-09-15): 옛 경로 guinsoo-yuntal 은 윤탈 공속 45% 상향 이후
+    2코어에서 이미 추가 공속 100.795% 라 E 가 즉시 진화한다(= 단검 시나리오 소멸).
+    단검(=하위의 하위 재료) 마일스톤 검증을 유지하려고 내셔 경로로 바꿨다.
+    """
     result = evaluate_kaisa_evolution_investments(
-        ("guinsoo", "yuntal", "pd", "ie"),
+        ("guinsoo", "kraken", "nashor", "ie"),
         2,
         doran_key="doranbow",
         boots_key="glutton",
     )["e"]
 
-    assert result["current_value"] == 0.98
+    assert result["current_value"] == 0.95795
     assert result["evolved"] is False
     assert result["possible"] is True
-    assert result["investment_gold"] == 400 + 1000 + 3000 + 3100 + 250
+    assert result["investment_gold"] == 400 + 1000 + 3000 + 3000 + 250
     assert result["evolution_core_tier"] == 3
+    assert result["milestone_type"] == "component"
     assert result["components"] == ["단검"]
 
 
 def test_e_evolution_does_not_buy_dagger_without_future_dagger_recipe():
-    """3·4코어 조합식에 단검이 없으면 2코어 후 임의 단검을 추가하지 않는다."""
+    """3·4코어 조합식에 단검이 없으면 2코어 후 임의 단검을 추가하지 않는다.
+
+    ⚠️ 경로 교체(2026-09-15): 윤탈이 2코어에 있으면 E 가 이미 진화해 검증이 무의미해져
+    윤탈을 크라켄으로 바꿨다. 무한의 대검·도미닉 조합식엔 단검이 없다.
+    """
     result = evaluate_kaisa_evolution_investments(
-        ("guinsoo", "yuntal", "ie", "ldr"),
+        ("guinsoo", "kraken", "ie", "ldr"),
         2,
         doran_key="doranbow",
         boots_key="glutton",
     )["e"]
 
-    assert result["current_value"] == 0.98
+    assert result["current_value"] == 0.95795
     assert result["components"] != ["단검"]
     assert result["milestone_type"] == "core_complete"
-    assert result["evolution_core_tier"] == 3
-    assert result["investment_gold"] == 400 + 1000 + 3000 + 3100 + 3500
+    assert result["evolution_core_tier"] == 4
+    assert result["investment_gold"] == 400 + 1000 + 3000 + 3000 + 3500 + 3300
 
 
 def test_evolution_is_impossible_without_required_stat_by_four_cores():
@@ -121,9 +131,9 @@ def test_kaisa_report_meta_flattens_cumulative_evolution_gold_values():
     assert set(meta["evolutions"]) == {"q", "w", "e"}
     assert meta["q_evolution_gold"] == 6050
     assert meta["w_evolution_gold"] is None
-    assert meta["e_evolution_gold"] == 7750
+    assert meta["e_evolution_gold"] == 7400
     assert meta["q_evolved"] is True
-    assert meta["e_evolved"] is False
+    assert meta["e_evolved"] is True
     assert meta["e_evolution_possible"] is True
     assert not any(key.endswith("_evolution_grade") for key in meta)
 

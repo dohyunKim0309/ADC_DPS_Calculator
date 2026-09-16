@@ -89,7 +89,7 @@ ITEMS = {
     "botrk":       {"name": "Blade of the Ruined King", "cost": 3200, "behavior": "BladeOfRuinedKing",   "stats": {"ad": 40, "as": 0.25, "lifesteal": 0.10}, "recipe": ("흡혈의 낫", "곡궁", "곡괭이")},
     "bot_as18":    {"name": "BotRK (AS+18%)",           "cost": 3200, "behavior": "BladeOfRuinedKing",   "stats": {"ad": 40, "as": 0.43, "lifesteal": 0.10}},
     "pd":          {"name": "Phantom Dancer",           "cost": 2650, "behavior": "PhantomDancer",       "stats": {"as": 0.65, "crit": 0.25}, "recipe": ("단검", "열정의 검", "단검")},
-    "runaan":      {"name": "Runaan's Hurricane",       "cost": 2650, "behavior": "RunaansHurricane",    "stats": {"as": 0.40, "crit": 0.25}},
+    "runaan":      {"name": "Runaan's Hurricane",       "cost": 2650, "behavior": "RunaansHurricane",    "stats": {"as": 0.40, "crit": 0.25}, "recipe": ("열정의 검", "정찰병의 새총")},
     # 경계: 빛 스택(방어력+마저 각 레벨비례 ×3)이 방어 성격 → defense 태그.
     # 빛 스택은 champion.bonus_armor / bonus_mr 로 실제 적용된다(EHP 반영, 딜 계산엔 무관).
     #   레벨 1~6 +6 / 7~11 +7 / 12~18 +8, 최대 3스택. 구현은 Terminus.on_hit.
@@ -117,20 +117,20 @@ ITEMS = {
     # 존야의 모래시계: AP105/방어력50, 3250골드 (u.gg 2026-08 기준). 시간 정지(스테이시스 2.5초)는
     # "피해를 막는 시간"이라 고정된 유효 체력으로 환산할 수 없어 미모델 — 방어력만 EHP 에 반영된다.
     "zhonya":      {"name": "Zhonya's Hourglass",       "cost": 3250, "behavior": "ZhonyasHourglass",  "stats": {"ap": 105, "armor": 50}, "tags": ("defense",)},
-    "void":        {"name": "Void Staff",               "cost": 3000, "behavior": "VoidStaff",           "stats": {"ap": 95, "magic_pen_percent": 0.40}},
+    "void":        {"name": "Void Staff",               "cost": 3000, "behavior": "VoidStaff",           "stats": {"ap": 95, "magic_pen_percent": 0.40}, "recipe": ("역병의 보석", "방출의 마법봉")},
     "shieldbow":   {"name": "Immortal Shieldbow",       "cost": 3000, "behavior": "ImmortalShieldbow",   "stats": {"ad": 55, "crit": 0.25}, "recipe": ("곡괭이", "절정의 화살"), "tags": ("defense",)},
     "trinity":     {"name": "Trinity Force",            "cost": 3333, "behavior": "TrinityForce",        "stats": {"ad": 36, "as": 0.30, "cdr": 15}},
-    "essence":     {"name": "Essence Reaver",           "cost": 3050, "behavior": "EssenceReaver",       "stats": {"ad": 50, "crit": 0.25, "cdr": 20}},
+    "essence":     {"name": "Essence Reaver",           "cost": 3050, "behavior": "EssenceReaver",       "stats": {"ad": 50, "crit": 0.25, "cdr": 20}, "recipe": ("광휘의 검", "콜필드의 전투 망치", "민첩성의 망토")},
     # 황혼과 새벽: AP60/AH20(cdr)/AS20% 는 DPS 반영. 체력300 은 STAT_KEYS 미포함이라 보존 안 됨(DPS 무영향, 가격엔 포함).
     "dawn":        {"name": "Dusk and Dawn",            "cost": 3100, "behavior": "DuskAndDawn",         "stats": {"ap": 60, "as": 0.20, "cdr": 20}},
     # 마법사의 최후: 공속50%/MR45(보존,DPS무영향) + 온힛 45마법(클래스). 인내20%는 미모델.
-    "wit":         {"name": "Wit's End",               "cost": 2800, "behavior": "WitsEnd",            "stats": {"as": 0.50, "mr": 45}},
+    "wit":         {"name": "Wit's End",               "cost": 2800, "behavior": "WitsEnd",            "stats": {"as": 0.50, "mr": 45}, "recipe": ("곡궁", "음전자 망토", "곡궁")},
     # 나보리: 공속40%/치확25% + 패시브(평타마다 Q/W/E 쿨 15%↓, CogMaw.on_basic_attack에서 처리). 이속4%는 미모델.
     "navori":      {"name": "Navori Flickerblade",     "cost": 2650, "behavior": "NavoriFlickerblade",  "stats": {"as": 0.40, "crit": 0.25}},
-    "collector":   {"name": "The Collector",            "cost": 3000, "behavior": "TheCollector",        "stats": {"ad": 50, "crit": 0.25, "lethality": 10}},
+    "collector":   {"name": "The Collector",            "cost": 3000, "behavior": "TheCollector",        "stats": {"ad": 50, "crit": 0.25, "lethality": 10}, "recipe": ("곡괭이", "톱날 단검", "민첩성의 망토")},
     # 그림자 검: 암전(시야 제거)은 DPS 무관. 밤의 추적자 고정 피해는 UmbralGlaive가 처리.
     "umbral":      {"name": "Umbral Glaive",            "cost": 2800, "behavior": "UmbralGlaive",        "stats": {"ad": 60, "lethality": 18, "cdr": 15}, "recipe": ("톱날 단검", "콜필드의 전투 망치")},
-    "rfc":         {"name": "Rapid Firecannon",         "cost": 2650, "behavior": "RapidFirecannon",     "stats": {"as": 0.35, "crit": 0.25}},
+    "rfc":         {"name": "Rapid Firecannon",         "cost": 2650, "behavior": "RapidFirecannon",     "stats": {"as": 0.35, "crit": 0.25}, "recipe": ("열정의 검", "정찰병의 새총")},
     "manamune":    {"name": "Manamune",                 "cost": 2900, "behavior": "Manamune",            "stats": {"ad": 35, "cdr": 15, "mana": 500}},
     "muramana":    {"name": "Muramana",                 "cost": 2900, "behavior": "Manamune",            "stats": {"ad": 35, "cdr": 15, "mana": 500}},
     "plated":      {"name": "Plated Steelcaps",         "cost": 1200, "behavior": "Plated_Steelcaps",    "stats": {}},

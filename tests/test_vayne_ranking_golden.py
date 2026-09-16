@@ -1,6 +1,7 @@
 """베인 러너 이관 동작 보존 골든 — weighted 4:4:3:3 고정.
-값 출처: 2026-07-26 패치(Terminus 온힛 30 → 30+10%bAD+10%AP, Yuntal 3100→3000g/AS 40→45%) 재캡처.
-직전 스냅샷(2026-07-20 Q 평타리셋 옵션화) 대비 컨트롤 상승(Terminus 버프) → RelDPG 재정규화.
+값 출처: 2026-08-16 성장 곡선 정정(`adc_sim/growth.py`, 선형 → 실 LoL 곡선) 이후 재캡처(2026-09-15).
+코어 티어 레벨이 전부 18 미만이라 전 챔프 스탯이 내려갔고 컨트롤 weighted_dpg 도 97.94 → 67.53 으로
+하락했다(RelDPG 는 컨트롤 대비 비율이라 재정규화). 중복 정의돼 있던 GOLDEN_CTRL_WDPG 한 줄도 제거.
 값 변경 = 동작 변화 신호."""
 from adc_sim.simulations.vayne import _rank_rows, CONTROL_PATH
 
@@ -9,14 +10,13 @@ PATHS = [CONTROL_PATH, ("kraken", "pd", "ie", "ldr"), ("yuntal25", "c44", "ie", 
 
 GOLDEN = {
     # (path 튜플): (rel_dpg_score, weighted_dpg)
-    ("yuntal25", "c44", "ie", "ldr"): (115.278231, 85.998193),
-    ("kraken", "pd", "ie", "ldr"): (106.046063, 78.904888),
-    ("kraken", "guinsoo", "ie", "pd"): (105.600310, 78.511884),
-    ("botrk", "guinsoo", "terminus", "pd"): (100.0, 74.545329),
+    ("yuntal25", "c44", "ie", "ldr"): (120.495580, 81.470230),
+    ("kraken", "pd", "ie", "ldr"): (110.024102, 74.111842),
+    ("kraken", "guinsoo", "ie", "pd"): (105.773041, 70.984633),
+    ("botrk", "guinsoo", "terminus", "pd"): (100.0, 67.528109),
 }
 GOLDEN_N_ROWS = 4
-GOLDEN_CTRL_WDPG = 74.545329
-GOLDEN_CTRL_WDPG = 97.938660
+GOLDEN_CTRL_WDPG = 67.528109
 
 
 def test_vayne_rank_rows_golden():

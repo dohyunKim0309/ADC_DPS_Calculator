@@ -13,7 +13,10 @@
   - ⚠️ 시스템 `python3`(3.9)나 다른 인터프리터로 돌리지 말 것. 항상 **`.venv/bin/python`** 사용.
 - 시뮬은 패키지 모듈이라 **repo 루트에서 `-m`으로 실행**한다:
   - `.venv/bin/python -m adc_sim.simulations.ashe` — 애쉬 4코어 랭킹(+1~3코어 별도 랭킹 — 가중은 설정 파생 상위 3개)
-  - `… adc_sim.simulations.yunara` / `.kaisa` / `.corki` / `.ezreal` / `.cogmaw`
+  - `… adc_sim.simulations.yunara [late-yuntal] [half5] [gamma]` — **기본** 유나라 1~5코어
+    receding-horizon(하프 코어 포함, §Yunara 빌드 탐색). 32표(패키지 4 × 파편 2 × TC1/2/3+MIX),
+    표만 출력이라 **헤드리스 안전**(matplotlib 비의존). 전체 ≈15분.
+  - `… adc_sim.simulations.kaisa` / `.corki` / `.ezreal` / `.cogmaw`
   - `… adc_sim.simulations.vayne [gamma]` — **기본** 베인 1~5코어 receding-horizon 탐색(마지널 DPG 미래 할인합, γ 기본 0.8, 베인 DPS 측정 K=2). 8시나리오(치속/집공 × 핏빛길/민첩함 × 체력차 극복/최후의 일격), 도란활+탐식 고정. 출력 순서도 이 축 순서를 따른다.
   - `… adc_sim.simulations.vayne legacy-ranking` — 보존된 기존 1~4코어 전수 랭킹(온힛+크리 풀, 컨트롤 botrk-guinsoo-terminus-pd).
   - `… adc_sim.simulations.vayne pta-alacrity-subs [gamma]` — 집공·민첩함 고정 후 최후의 일격/체력차 극복 receding-horizon 비교.
@@ -42,9 +45,11 @@ adc_sim/                  ← 소스 패키지 (코어 모듈끼리는 서로 im
   data/
     items_data.py ─ 아이템 스탯/가격 데이터(숫자의 단일 출처)   ← 패치마다 가장 자주 바뀜
     items_registry.py ─ 키→인스턴스 통합 create_item_from_key(데이터 주입; 시뮬별 복제 제거)
+    recipe_states.py ─ 조합 트리 부분 보유 상태 열거 + 하프 코어 예산창(receding-horizon 용)
     cdragon.py ─ Community Dragon에서 패치 데이터 받아오기(소스 연동만; 계수→sim 매핑은 추후)
 results/{ashe,yunara}/ ─ 결과 PNG(생성물, git 제외)    reports/ ─ export 리포트(생성물, git 제외)
 experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 보관용   docs/ ─ superpowers 스펙·플랜 문서
+_to_delete/ ─ 교체돼 쓰이지 않는 코드 보관(어디서도 import 안 함; 지우기 전 근거를 남기는 용도)
 ```
 **이벤트 루프(`engine.run_simulation`)**: 매 스텝에서 `next_attack` / `skill_dt`(다음 스킬) / `state_dt`(다음 상태 변화) 중 **최소 시간(dt)** 만큼 시간을 진행시키고, 그 시점에 도달한 이벤트만 처리한다. 동시 시각이면 **스킬을 평타보다 먼저** 처리. `eps`(1e-9) 넛지로 같은 시각 고착을 방지. 타깃 HP가 0 이하가 되면 종료, `dps = 누적피해 / 처치시간`.
 
@@ -102,6 +107,10 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
   ⚠️ **BotRK×은화살 반작용**: CTRL(botrk-guinsoo-...) T2~T4 는 픽스 후 오히려 소폭(-1% 내외) DPS 하락 —
   총 버스트 수는 동일하나 팬텀히트로 버스트가 프론트로드 → 타깃 HP 조기 하락 → BotRK 6%현재HP 딜 손실.
   전 크리코어 빌드는 %현재HP 아이템이 없어 영향 無. 진단·회귀는 `tests/test_vayne_silverbolts_botrk_interaction.py` 참조.
+  ⚠️ **2026-09-15 재측정**: 성장 곡선 정정(`growth.py`) 이후 "CutDown 제거 시 T3 델타 부호 반전"이
+  재현되지 않는다(옛 +4.19% → 현 −0.48%, CutDown 있을 때 −0.49% 와 사실상 동일). 즉 "%증폭이 BotRK
+  손실을 확대한다"는 옛 결론은 현행 엔진에서 근거를 잃었다. 원인 미규명 — 위 반작용 서술을 인용하기
+  전에 재확인할 것. [Hypothesis]
 - **Q/R 엔진 모델**: Q 는 스킬 이벤트(무직접피해)로 `q_empowered` arm + `q_reset_pending` +
   마나30 게이트. **베인 DPS 기본 설정은 첫 Q에서만 벽 평캔 `ANIM_CANCEL_CLIP=0.33s`를 1회 적용한다.
   이후 Q 쿨 완료 시 직전 평타가 0.1초 이내면 즉시 Q, 아니면 다음 일반 평타 직후 Q를 사용하며,
@@ -125,6 +134,45 @@ experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 
   (LT·PtA 절대 weighted-DPG 우위), basic=컨트롤 under 치속(실전 기준). 스킬 선마 Q→W→E, R=lvl 기반
   (코어 1~5: Q/W/E/R = 5/2/1/1, 5/3/1/2, 5/5/1/2, 5/5/3/2, 5/5/4/3).
   E(콘뎀)·패시브(이속) 미모델.
+
+### Yunara 빌드 탐색 (`simulations/yunara.py`) — receding-horizon + 하프 코어 [2026-09-15 교체]
+- **기본 모드 = 1~5코어 receding-horizon, 아이템 사이 구간(하프 코어)까지 채점.** 옛 4코어 전수
+  랭킹의 표/그래프/리포트 출력과, 앵커 누적 점수식을 쓰던 비-하프 경로는 `_to_delete/`로 보냈다.
+  랭킹 엔진(`rank_yunara_4core_paths`/`get_yunara_4core_top1_build`)만 power_compare·ashe 용으로 남음.
+- **점수식(증분)**: `V(S) = max_x [ γ^(s/2)·m_half(S,x) + γ^((s+1)/2)·m_full(S,x) + … ]`,
+  `m_half = (D(S+재료)−D(S)) / (재료비/1000)`, `m_full = (D(S+x)−D(S+재료)) / ((가격−재료비)/1000)`.
+  **스텝마다 기준을 직전 상태로 갱신**한다(타 챔프 `_score_combo`의 앵커 누적과 다름 — 그쪽은
+  첫 아이템 기여가 모든 항에 중복 계상된다). 하프 스텝 할인 √γ, 풀코어당 실효 할인은 기존 γ=0.8 유지.
+- **하프 코어 규칙** [사용자 확정 2026-09-15]: 목표 아이템 x 의 **하위템만**, 조합 트리를 재귀로
+  내려가 부분 보유 상태를 전수 열거(`data/recipe_states.py`). 예산창 `[ceil100(가격/2), +100]`,
+  창이 비면 **하단만** 100씩 완화(상단은 절대 안 넘김 — 라바돈 1200, 공허 1250 처럼 크게 밑돌 수 있음).
+  선택은 **스텝 마지널 DPG 최대**(점수에 들어가는 축과 동일). 레벨 8/10/12/14/16, 타깃은 인접 코어
+  선형 보간. **5코어 하프는 기본 생략**(`HALF_INCLUDE_LAST_SLOT=False`, `half5` 인자로 켬) — 비용의
+  57%를 먹는데 가중은 γ^9 ≈ 0.36, 실전에서도 5코어는 칸이 모자라 계획대로 못 산다.
+  ⚠️ **알려진 왜곡**: 점수가 "비율의 합"이라 하프 위치가 절반에서 멀수록 값이 부푼다(U자, 최소점이
+  절반 부근). 실측 밴드 42~54% 안에서는 0.5% 미만이라 그대로 두기로 했다(사용자 확정).
+- **코어 풀**: `CORE_POOL` 17종을 1~5코어가 공유. 예외는 둘뿐 — 윤탈 1~2코어만(`YUNTAL_MIN_SLOT`/
+  `YUNTAL_MAX_SLOT`), 1코어 제외 5종(rabadon/shadowflame/void/ldr/mortal). 슬롯별 손코딩 리스트
+  (몰락 1~2코어 한정, 3코어 공속템 전면 제외 등)는 근거가 없어 폐기. pen 배타는 `pen_rule_ok` +
+  하프의 **역병의 보석**(공허 하위)도 마관 슬롯 차지.
+- **시나리오 축**: `ADC_PACKAGES_VIABLE` 4조합(피흡 소스 ≥1 — 광전사+민첩함 금지) × 파편 2
+  (`SHARD_SCENARIOS`: 공속10%+적응형AD5.4 / 적응형AD5.4×2) × 적 수 TC1/TC2/TC3 + MIX 1:1.
+  MIX 는 `MixedSimCache(caches=...)`로 TC 런 캐시를 재사용해 추가 시뮬 비용 0.
+  `late-yuntal` 인자 = 라인전 난항으로 1코어 윤탈 불가한 판.
+- **결론 템트리** [2026-09-15 스윕 32표 × 2 시나리오]:
+  `1코어 윤탈(안 되면 크라켄) → 2코어 나머지 하나 → 3코어 루난(한타) | 도미닉(탱커 보험) →
+   4코어 남은 하나 → 5코어 무한의 대검`. 단일 대상만 상정하면 루난 자리에 C44.
+  근거: 3코어 루난−도미닉 차 **TC1 −19.7% / TC2 +1.3% / TC3 +36.6%**(4코어부터는 집합이 같아져
+  값 동일). 4코어 C44 vs 루난 **TC1 +16% / TC2 −13% / TC3 −48%** → 적이 둘만 돼도 루난 우위.
+  `late-yuntal`이면 32/32 전부 **2코어 윤탈**(포기 안 함), 대가는 2코어 타이밍 −10%(최악 −18.7%)
+  한 구간뿐이고 3코어부터 기본 스윕과 값이 같아진다.
+- **AP 풀은 전 시나리오에서 한 번도 채택되지 않았다**(공허·라바돈·그림자불꽃·나셔). 1코어 DPG로
+  라바돈 50.6 vs 구인수 80.3. 유나라의 평타당 AP 채널이 Q 온힛 `+0.10 AP` 하나뿐이라 구조적으로
+  나오는 결과지만, **그 계수 자체가 나무위키 출처 `[Hypothesis]`(CDragon 미검증)** 이므로 결론의
+  신뢰도는 계수 신뢰도를 못 넘는다. 풀에서 빼지는 않는다 — "AP 저가치"를 시뮬로 보이는 게 목적.
+- **신뢰도 주의**: 1코어 선택은 2위와 중앙 1.1%(최소 0.10%) 차라 가정 변화에 쉽게 뒤집힌다.
+  4코어는 11.6% 차로 견고. 윤탈 스택 가정(구매 코어 0%/12% → 다음 코어 25%)이 1~2코어 결론을
+  직접 지배한다(사용자 확정: 타당).
 
 ### Jinx (`champion.py` Jinx + `simulations/jinx.py`) [수치 3소스 교차검증 patch16.13·가설 태그]
 - **미니건 크리 평타 캐리 + W 넛지**. Q 스위쳐루=미니건(평타 최대 3스택 +130% 공속, 2.5s 감쇠)/로켓 토글 —

@@ -45,27 +45,32 @@ def test_presstheattack_adaptive_magic_on_ap_build():
 
 
 def test_kaisa_alacrity_attack_speed_does_not_count_for_e_evolution():
-    """Alacrity raises combat AS but must not contribute to Kai'Sa E evolution."""
+    """Alacrity raises combat AS but must not contribute to Kai'Sa E evolution.
+
+    ⚠️ 아이템 교체(2026-09-15): 윤탈 공속 45% 상향 이후 옛 조합(윤탈)은 룬 없이도
+    추가 공속이 100% 를 넘어 "진화 안 됨" 전제가 깨졌다. 경계로 바꿔 전제를 복원한다
+    (아이템 공속 75% + 성장 → 90.795%, 민첩함 18% 를 더해도 진화 판정엔 안 들어감).
+    """
     kaisa = KaiSa(level=11, q_level=5, w_level=5, e_level=3, r_level=2)
-    for key in ("doranbow", "glutton", "guinsoo", "yuntal"):
+    for key in ("doranbow", "glutton", "guinsoo", "terminus"):
         kaisa.add_item(create_item_from_key(key))
 
     combat_as_without_rune = kaisa.current_attack_speed
     kaisa.bonus_as_percent += 0.18
 
     assert kaisa.current_attack_speed > combat_as_without_rune
-    assert abs(kaisa._get_evolution_bonus_as() - 0.98) < 1e-9
+    assert abs(kaisa._get_evolution_bonus_as() - 0.90795) < 1e-9
     assert kaisa.has_e_evolved() is False
 
 
 def test_kaisa_item_attack_speed_still_counts_for_e_evolution():
     """Replacing lifesteal boots with AS boots must make the same build E-evolved."""
     kaisa = KaiSa(level=11, q_level=5, w_level=5, e_level=3, r_level=2)
-    for key in ("doranbow", "berserker", "guinsoo", "yuntal"):
+    for key in ("doranbow", "berserker", "guinsoo", "terminus"):
         kaisa.add_item(create_item_from_key(key))
     kaisa.bonus_as_percent += 0.18
 
-    assert abs(kaisa._get_evolution_bonus_as() - 1.23) < 1e-9
+    assert abs(kaisa._get_evolution_bonus_as() - 1.20795) < 1e-9
     assert kaisa.has_e_evolved() is True
 
 

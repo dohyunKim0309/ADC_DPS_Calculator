@@ -1,20 +1,9 @@
-import csv
-import json
-from datetime import datetime
-
-import matplotlib.pyplot as plt
-
 from adc_sim.champion import Yunara, Target
 from adc_sim.runes import LethalTempo, CutDown
 from adc_sim.engine import run_simulation
-from adc_sim.settings import get_result_export_settings
 from adc_sim.data.items_registry import create_item_from_key
-from adc_sim.simulations.ehp import (
-    core_timing_ehp, healing_effective, survivability, survivability_per_1000_gold,
-)
-from adc_sim.data.items_data import (
-    DORAN_OPTIONS, DORAN_SHORT, ADC_PACKAGES, pen_rule_ok,
-)
+from adc_sim.data.recipe_states import half_core_candidates
+from adc_sim.data.items_data import ADC_PACKAGES, ADC_PACKAGES_VIABLE, pen_rule_ok
 
 
 def _build_yunara_4core_all_paths():
@@ -340,60 +329,6 @@ def rank_yunara_4core_paths(target_count=1):
 TARGET_MIX_WEIGHTS = ((1, 0.5), (2, 0.5))
 
 
-def rank_yunara_4core_paths_mixed(mix=None):
-    """혼합 DPS 기준 4코어 전수 랭킹. 반환 스키마는 rank_yunara_4core_paths 와 동일.
-
-    mix: ((target_count, weight), ...). 코어별 DPS/DPG 는 혼합값으로 계산되고,
-    rel_dpg_score 는 같은 혼합 기준의 컨트롤 대비 상대값이다. 골드는 tc 무관 동일.
-    """
-    mix = tuple(mix or TARGET_MIX_WEIGHTS)
-    all_paths = _build_yunara_4core_all_paths()
-
-    results = []
-    for c1, c2, c3, c4 in all_paths:
-        for pkg in ADC_PACKAGES:
-            dps_mix = [0.0, 0.0, 0.0, 0.0]
-            costs = [0, 0, 0, 0]
-            for tc, w in mix:
-                kw = dict(doran_key=pkg["doran"], boots_key=pkg["boots"],
-                          rune_as_bonus=pkg["rune_as"], target_count=tc)
-                for tier in range(1, 5):
-                    d, g = simulate_yunara_core_path([c1, c2, c3, c4][:tier], tier, **kw)
-                    dps_mix[tier - 1] += w * d
-                    costs[tier - 1] = g
-            results.append(_build_yunara_result_entry((c1, c2, c3, c4), dps_mix, costs, pkg))
-
-    control_candidates = [row for row in results if row["is_control"]]
-    if not control_candidates:
-        raise RuntimeError("Control build not found: Krk-PD-IE-LDR")
-
-    def _weighted_dpg(row):
-        d = _calculate_dpg_values(row["y"], row["x"])
-        return sum(CORE_WEIGHTS[i] * d[i] for i in range(4))
-    best_control = max(control_candidates, key=_weighted_dpg)
-    ctrl_dpg = _calculate_dpg_values(best_control["y"], best_control["x"])
-    ctrl_dps = best_control["y"]
-
-    for row in results:
-        row_dpg = _calculate_dpg_values(row["y"], row["x"])
-        rel = [(row_dpg[i] / ctrl_dpg[i]) if ctrl_dpg[i] > 0 else 0.0 for i in range(4)]
-        row["dpg"] = row_dpg
-        row["rel_dpg_score"] = sum(CORE_WEIGHTS[i] * rel[i] for i in range(4)) * 100.0
-        rel_dps = [(row["y"][i] / ctrl_dps[i]) if ctrl_dps[i] > 0 else 0.0 for i in range(4)]
-        row["rel_dps_score"] = sum(CORE_WEIGHTS[i] * rel_dps[i] for i in range(4)) * 100.0
-
-    combo_best = {}
-    for row in results:
-        key = tuple(sorted(row["path"]))
-        prev = combo_best.get(key)
-        if prev is None or row["rel_dpg_score"] > prev["rel_dpg_score"]:
-            combo_best[key] = row
-    deduped = sorted(combo_best.values(), key=lambda r: r["rel_dpg_score"], reverse=True)
-    best_control_after = next(row for row in deduped if row["is_control"])
-    return {"ranked": deduped, "best_control": best_control_after,
-            "total_paths_simulated": len(all_paths), "mix": mix}
-
-
 def get_yunara_4core_top1_build(target_count=1, rank_by="dpg"):
     """Return the cached Yunara 4-core top1 build summary for the given target_count.
 
@@ -427,268 +362,46 @@ def get_yunara_4core_top1_build(target_count=1, rank_by="dpg"):
     return cached
 
 
-def _build_yunara_report_row(rank, row, best_control):
-    """Flatten one ranked Yunara result into a CSV/JSON-friendly row."""
-    ctrl_dps = best_control["y"]
-    ctrl_costs = best_control["x"]
-    ctrl_dpg = _calculate_dpg_values(ctrl_dps, ctrl_costs)
-    dpgs = row.get("dpg") or _calculate_dpg_values(row["y"], row["x"])
-    baseline = best_control["rel_dpg_score"]
-    report_row = {
-        "rank": rank,
-        "champion": "Yunara",
-        "build": "-".join(row["path"]),
-        "label": row["label"],
-        "path": list(row["path"]),
-        "rel_dpg_score": row["rel_dpg_score"],
-        "vs_control_pct": ((row["rel_dpg_score"] / baseline) - 1.0) * 100.0 if baseline > 0 else 0.0,
-        "is_control": row["is_control"],
-        "control_label": row["control_label"],
-    }
-    for index in range(4):
-        core_no = index + 1
-        dps_pct = ((row["y"][index] / ctrl_dps[index]) - 1.0) * 100.0 if ctrl_dps[index] > 0 else 0.0
-        dpg_pct = ((dpgs[index] / ctrl_dpg[index]) - 1.0) * 100.0 if ctrl_dpg[index] > 0 else 0.0
-        report_row[f"core{core_no}_gold"] = row["x"][index]
-        report_row[f"core{core_no}_dps"] = row["y"][index]
-        report_row[f"core{core_no}_dpg"] = dpgs[index]
-        report_row[f"core{core_no}_delta_dps_pct"] = dps_pct
-        report_row[f"core{core_no}_delta_dpg_pct"] = dpg_pct
-    return report_row
-
-
-def _build_yunara_report_rows(ranked, best_control, top_n):
-    """Build the same row set used by console output and report export."""
-    controls = [row for row in ranked if row["is_control"]]
-    output_rows = ranked[:top_n] + controls
-    return [
-        _build_yunara_report_row(rank=index, row=row, best_control=best_control)
-        for index, row in enumerate(output_rows, start=1)
-    ]
-
-
-def _resolve_report_base_path(report_name, generated_at):
-    """Return the base path for a timestamped report name."""
-    export_settings = get_result_export_settings()
-    export_settings["export_dir"].mkdir(parents=True, exist_ok=True)
-    timestamp = generated_at.strftime("%Y%m%dT%H%M%SZ")
-    return export_settings["export_dir"] / f"{report_name}_{timestamp}"
-
-
-def _write_csv_rows(csv_path, rows):
-    """Write flattened rows to CSV while preserving column order."""
-    if not rows:
-        return
-    with csv_path.open("w", newline="", encoding="utf-8") as file_obj:
-        writer = csv.DictWriter(file_obj, fieldnames=list(rows[0].keys()))
-        writer.writeheader()
-        writer.writerows(rows)
-
-
-def _write_json_payload(json_path, payload):
-    """Write one JSON payload with UTF-8 encoding for report reuse."""
-    with json_path.open("w", encoding="utf-8") as file_obj:
-        json.dump(payload, file_obj, ensure_ascii=False, indent=2)
-
-
-def export_yunara_ranking_report(ranked_data, top_n=20):
-    """Export Yunara ranking rows to CSV/JSON according to settings."""
-    export_settings = get_result_export_settings()
-    if not export_settings["enabled"]:
-        return []
-
-    generated_at = datetime.utcnow()
-    rows = _build_yunara_report_rows(ranked_data["ranked"], ranked_data["best_control"], top_n)
-    payload = {
-        "report_type": "yunara_ranking",
-        "generated_at": generated_at.isoformat() + "Z",
-        "summary": {
-            "best_build": list(ranked_data["ranked"][0]["path"]),
-            "best_label": ranked_data["ranked"][0]["label"],
-            "best_score": ranked_data["ranked"][0]["rel_dpg_score"],
-            "control_build": list(ranked_data["best_control"]["path"]),
-            "control_label": ranked_data["best_control"]["label"],
-            "control_score": ranked_data["best_control"]["rel_dpg_score"],
-            "total_paths_simulated": ranked_data["total_paths_simulated"],
-            "top_n": top_n,
-        },
-        "rows": rows,
-    }
-
-    written_paths = []
-    report_base = _resolve_report_base_path("yunara_ranking", generated_at)
-    export_format = export_settings["format"]
-    try:
-        if export_format in ("csv", "both"):
-            csv_path = report_base.with_suffix(".csv")
-            _write_csv_rows(csv_path, rows)
-            written_paths.append(csv_path)
-        if export_format in ("json", "both"):
-            json_path = report_base.with_suffix(".json")
-            _write_json_payload(json_path, payload)
-            written_paths.append(json_path)
-    except OSError as exc:
-        print(f"[Warn] Failed to export Yunara ranking report: {exc}")
-        return []
-    return written_paths
-
-
-def _row_survivability(row, target_count=1):
-    """랭킹 행의 코어 1~4 생존성(유효체력 + 회복 환산)과 회복량을 반환한다.
-
-    EHP 는 시뮬 무관 스탯 산술이지만 회복량은 전투 결과라 코어별로 시뮬을 한 번 더 돈다.
-    반환: (surv_list, healing_list, ehp_list) — surv_list[i] = {physical, magic, true, ...}
-    """
-    survs, heals, ehps = [], [], []
-    for tier in (1, 2, 3, 4):
-        level_cfg = CORE_YUNARA_LEVELS[tier]
-        ehp = core_timing_ehp(
-            lambda level, lv=level_cfg: Yunara(
-                level=lv["level"], q_level=lv["q_level"],
-                w_level=lv["w_level"], r_level=lv["r_level"]),
-            level_cfg["level"],
-            ([row["doran"]] if row["doran"] else []) + [row["boots"]] + list(row["path"][:tier]),
-        )
-        _dps, _gold, sustain = simulate_yunara_core_path(
-            list(row["path"]), tier, doran_key=row["doran"], boots_key=row["boots"],
-            rune_as_bonus=row["rune_as"], target_count=target_count, return_sustain=True,
-        )
-        heals.append(sustain["total_healing"])
-        ehps.append(ehp)
-        survs.append(survivability(ehp, sustain["total_healing"]))
-    return survs, heals, ehps
-
-
-def print_case_style_table(ranked, best_control, target_count, top_n=20):
-    """Print the Yunara ranking in case_ranking.py table format (4코어).
-
-    좌측 4열=DPS(코어1~4), 우측 4열=DPG(코어1~4), GOLD=4코어 총골드,
-    그리고 컨트롤 대비 가중 상대점수를 DPG(랭킹 지표)·DPS(절대 파워) 둘 다 표기.
-    """
-    scenario = "단일 대상(적 1명)" if target_count == 1 else f"적 {target_count}명 교전(다대상 유효 DPS)"
-    print(f"\n{'=' * 132}")
-    print(f"[YUNARA] target_count={target_count}  ({scenario})  가중 1~4코어 {CORE_WEIGHTS_LABEL}")
-    print("  제약: pen-exclusive≤1(terminus/ldr/mortal) | "
-          "후보=YUNARA_CORE1~4_CANDIDATES(core1·2에 statikk 포함, 애쉬와 분리)")
-    print("좌 4열=DPS(코어1~4), 우 4열=DPG(코어1~4), GOLD=4코어 총골드 | "
-          "SCORE=컨트롤 대비 가중 상대(DPG=골드효율=랭킹지표, DPS=절대파워), vs=±%")
-    print("각 빌드 아래 보조행 = 생존성(코어1~4) = 유효체력 + 회복 환산. 물리/마법/고정 세 축이며 "
-          "괄호는 1000골드당 생존성. HEAL 은 기준 전투 누적 회복량(DPS 기반 근사).")
-    header = (f"{'RK':>2} | {'BUILD':<36} | "
-              f"{'1C':>6} {'2C':>6} {'3C':>6} {'4C':>6} | "
-              f"{'1C':>6} {'2C':>6} {'3C':>6} {'4C':>6} | "
-              f"{'GOLD':>6} | {'회복물리':>7} {'회복마법':>7} {'회복고정':>7} | "
-              f"{'SCORE':>8} {'vs':>7} | {'SCORE':>8} {'vs':>7}")
-    print(f"{'':>2} | {'':<36} | {'--- DPS (core 1->4) ---':^27} | "
-          f"{'--- DPG (core 1->4) ---':^27} | {'':>6} | {'-- 4코어 회복(축별 EHP) --':^23} | "
-          f"{'DPG (rank metric)':^16} | {'DPS':^16}")
-    print(header)
-    print("-" * len(header))
-
-    def _row(tag, label, dpss, dpgs, survs, heals, golds, gold, score_dpg, score_dps, ehps):
-        dps_s = " ".join(f"{dpss[i]:>6.0f}" for i in range(4))
-        dpg_s = " ".join(f"{dpgs[i]:>6.1f}" for i in range(4))
-        h4 = healing_effective(heals[3], ehps[3])     # 4코어 회복을 축별 유효체력으로
-        print(f"{tag:>2} | {label:<36} | {dps_s} | {dpg_s} | {gold:>6.0f} | "
-              f"{h4['physical']:>7.0f} {h4['magic']:>7.0f} {h4['true']:>7.0f} | "
-              f"{score_dpg:>8.2f} {score_dpg - 100.0:>+7.2f} | {score_dps:>8.2f} {score_dps - 100.0:>+7.2f}")
-        for axis, tag_ko in (("physical", "물리"), ("magic", "마법"), ("true", "고정")):
-            cells = " ".join(
-                f"{survs[i][axis]:>6.0f}({survivability_per_1000_gold(survs[i][axis], golds[i]):>5.1f})"
-                for i in range(4)
-            )
-            print(f"{'':>2} | {'  ↳ 생존성 ' + tag_ko:<36} | {cells}")
-
-    ctrl_surv, ctrl_heal, ctrl_ehp = _row_survivability(best_control, target_count)
-    _row("C", best_control["label"] + " [CTRL]", best_control["y"], best_control["dpg"],
-         ctrl_surv, ctrl_heal, best_control["x"], best_control["x"][3], 100.0, 100.0, ctrl_ehp)
-    rank = 0
-    for row in ranked:
-        if row["is_control"]:
-            continue
-        rank += 1
-        if rank > top_n:
-            break
-        row_surv, row_heal, row_ehp = _row_survivability(row, target_count)
-        _row(str(rank), row["label"], row["y"], row["dpg"], row_surv, row_heal,
-             row["x"], row["x"][3], row["rel_dpg_score"], row["rel_dps_score"], row_ehp)
-
-
-def plot_graph(ranked, best_control):
-    """Plot the top-ranked Yunara paths and control build on one graph."""
-    top5 = ranked[:5]
-    controls = [row for row in ranked if row["is_control"]]
-
-    plt.figure(figsize=(15, 10))
-    for row in ranked:
-        if not row["is_control"]:
-            plt.plot(row["x"], row["y"], color="#B0B7C3", alpha=0.15, linewidth=0.8, marker="o", markersize=2)
-
-    top_colors = ["#E4572E", "#F3A712", "#2E86AB", "#3A7D44", "#A23B72"]
-    for index, row in enumerate(top5):
-        color = top_colors[index % len(top_colors)]
-        plt.plot(
-            row["x"], row["y"], color=color, linewidth=2.4, marker="D", markersize=5,
-            label=f"Top{index + 1} {row['label']} (RelDPG:{row['rel_dpg_score']:.1f})"
-        )
-        for core_index in range(4):
-            plt.annotate(
-                f"{row['y'][core_index]:.0f}", (row["x"][core_index], row["y"][core_index]),
-                textcoords="offset points", xytext=(8, 8 if core_index % 2 == 0 else -12),
-                fontsize=7, color=color,
-                bbox=dict(boxstyle="round,pad=0.15", facecolor="white", edgecolor=color, alpha=0.85, linewidth=0.6)
-            )
-
-    for row in controls:
-        plt.plot(
-            row["x"], row["y"], color="#111111", linewidth=2.8, marker="o", markersize=7,
-            label=f"{row['control_label']} ({row['label']})"
-        )
-        for core_index in range(4):
-            plt.annotate(
-                f"{row['y'][core_index]:.0f}", (row["x"][core_index], row["y"][core_index]),
-                textcoords="offset points", xytext=(-16, 10 if core_index % 2 == 0 else -14),
-                fontsize=8, color="#111111",
-                bbox=dict(boxstyle="round,pad=0.15", facecolor="#F8F9FA", edgecolor="#222222", alpha=0.9, linewidth=0.6)
-            )
-
-    plt.title("Yunara Build Path Power Spike (1/2/3/4 Core)")
-    plt.xlabel("Total Gold at Core Timing")
-    plt.ylabel("DPS")
-    plt.grid(True, alpha=0.3)
-    plt.legend(loc="best", fontsize=9)
-    plt.tight_layout()
-    plt.show()
-
-
 GAMMA = DEFAULT_DISCOUNT_GAMMA
 HORIZON = 5
 # receding-horizon 기본 모드가 훑는 교전 적 수 시나리오.
 # 1=순수 단일 대상, 2=루난 서브타겟 1명, 3=루난 서브타겟 캡(2명) 완전 활용.
 TARGET_COUNT_SCENARIOS = (1, 2, 3)
-CORE1_CANDIDATES = [
-    "kraken", "yuntal25", "storm", "c44", "bot", "guinsoo", "terminus", "nashor", "statikk",
+# ── 코어 후보 풀 (사용자 확정 2026-09-15) ────────────────────────────────────
+# 1~5코어 전부 같은 합집합 풀을 쓰고, 예외는 아래 둘뿐이다. 슬롯마다 손으로 적던
+# 옛 리스트(몰락 1~2코어 한정, 3코어에서 공속템 전면 제외 등)는 근거가 없어 폐기했다.
+#   · 윤탈: 스택 아이템이라 1~2코어에서만 (SLOT_RESTRICTED 관례 유지)
+#   · 1코어 제외 5종: 치확·공속 기반이 없는 시점에 첫 아이템으로 의미가 없다
+# pen 배타(방관 ≤1 / 마관 ≤1)는 pen_rule_ok 로 별도 적용된다.
+CORE_POOL = [
+    "kraken", "yuntal25", "storm", "c44", "bot", "guinsoo", "terminus", "nashor",
+    "statikk", "pd", "runaan", "shadowflame", "ie", "ldr", "rabadon", "mortal", "void",
 ]
-CORE2_CANDIDATES = [
-    "kraken", "yuntal25", "storm", "c44", "bot", "pd", "runaan", "terminus",
-    "guinsoo", "nashor", "statikk", "shadowflame",
-]
-CORE3_CANDIDATES = [
-    "ie", "ldr", "guinsoo", "terminus", "shadowflame", "nashor", "rabadon", "mortal", "void",
-]
-CORE4_CANDIDATES = [
-    "ie", "ldr", "storm", "c44", "pd", "runaan", "kraken", "statikk", "guinsoo",
-    "terminus", "nashor", "shadowflame", "rabadon", "mortal", "void",
-]
-# [Hypothesis] 유나라 전용 5코어 풀이 없으므로 베인 마이그레이션 관례대로 4코어 풀을 재사용한다.
-CORE5_CANDIDATES = list(CORE4_CANDIDATES)
-CANDIDATES_BY_SLOT = {
-    1: CORE1_CANDIDATES,
-    2: CORE2_CANDIDATES,
-    3: CORE3_CANDIDATES,
-    4: CORE4_CANDIDATES,
-    5: CORE5_CANDIDATES,
-}
+YUNTAL_MAX_SLOT = 2
+# 윤탈 구매 가능 최소 슬롯. 기본 1. 라인전이 힘들어 1코어 윤탈이 불가능한 판을 보려면
+# 2 로 올린다(`late-yuntal` CLI 인자 / set_yuntal_min_slot). 윤탈은 스택 아이템이라
+# 구매 코어의 치명타가 약하게 평가되므로, 늦게 살수록 그 손해를 늦게 치른다.
+YUNTAL_MIN_SLOT = 1
+CORE1_EXCLUDED = frozenset({"rabadon", "shadowflame", "void", "ldr", "mortal"})
+
+
+def _slot_candidates(slot):
+    """슬롯 제약만 적용한 후보 목록 (pen 배타는 탐색 쪽에서 별도 검사)."""
+    keys = [k for k in CORE_POOL
+            if not (k == "yuntal25" and not YUNTAL_MIN_SLOT <= slot <= YUNTAL_MAX_SLOT)]
+    if slot == 1:
+        keys = [k for k in keys if k not in CORE1_EXCLUDED]
+    return keys
+
+
+CANDIDATES_BY_SLOT = {slot: _slot_candidates(slot) for slot in range(1, HORIZON + 1)}
+
+
+def set_yuntal_min_slot(slot):
+    """윤탈 최소 구매 슬롯을 바꾸고 후보 맵을 다시 만든다(시나리오 전환용)."""
+    global YUNTAL_MIN_SLOT
+    YUNTAL_MIN_SLOT = slot
+    CANDIDATES_BY_SLOT.update({s: _slot_candidates(s) for s in range(1, HORIZON + 1)})
 
 
 class SimCache:
@@ -733,9 +446,11 @@ class MixedSimCache:
     (사용자 확정 2026-08-31: 혼합 1:1 이 유나라 기본 선택 지표). 골드는 tc 무관 동일.
     """
 
-    def __init__(self, package, mix=None, shards=None):
+    def __init__(self, package, mix=None, shards=None, caches=None):
+        """caches 를 주면 그 SimCache 를 재사용한다 — MIX 가 TC 런의 시뮬을 공유해 공짜가 된다."""
         self.mix = tuple(mix or TARGET_MIX_WEIGHTS)
-        self.caches = {tc: SimCache(package, tc, shards=shards) for tc, _ in self.mix}
+        self.caches = {tc: (caches or {}).get(tc) or SimCache(package, tc, shards=shards)
+                       for tc, _ in self.mix}
         self.hits = 0
         self.misses = 0
 
@@ -757,14 +472,15 @@ class MixedSimCache:
 # [H-HALF-1] 하프 시점 스킬레벨은 다음 코어 표를 사용(레벨 조건으로 R 랭크만 가드).
 # [H-HALF-2] 윤탈이 이미 완성된 상태의 하프 시점 치명타는 25%(스택이 얼추 찼다고 가정).
 # [H-HALF-DISCOUNT] 하프+풀 스텝은 γ^(s/2) (s=0,1,2,…) 로 할인 — 풀 코어 간 비율은 기존 γ 유지.
-HALF_TIER_GOLD_CAP = 1600
+#
+# 창 규칙 (사용자 확정 2026-09-15): 옛 전역 캡 1600 을 버리고 **아이템별** 예산창
+# [ceil100(가격/2), +100] 안에서 고른다. 창이 비면 하단만 100 씩 완화하고 상단은
+# 절대 넘지 않는다. 후보 열거·창 계산은 adc_sim/data/recipe_states.py 가 단일 출처.
+# 선택 기준도 절대 DPS 가 아니라 **점수에 실제로 들어가는 스텝 마지널 DPG** 다.
 HALF_TIER_LEVELS = {1: 8, 2: 10, 3: 12, 4: 14, 5: 16}
-# 조합식이 데이터에 없는 아이템의 대체 하위템 (루난=열정의 검 계열, 공허=지팡이 계열)
-FALLBACK_RECIPES = {
-    "runaan": ("열정의 검", "민첩성의 망토"),
-    "rfc": ("열정의 검", "민첩성의 망토"),
-    "void": ("쓸데없이 큰 지팡이", "망각의 구"),
-}
+# 5코어 하프는 기본 생략 (사용자 확정 2026-09-15): 5코어 구매 시점엔 아이템 칸이 모자라
+# 계획대로 사기 어렵고, 전체 시뮬 비용의 57% 를 먹으면서 가중은 γ^9 ≈ 0.36 에 불과하다.
+HALF_INCLUDE_LAST_SLOT = False
 
 
 def _half_tier_target(k):
@@ -780,53 +496,14 @@ def _half_tier_target(k):
     return Target(hp=hp, armor=armor, magic_resist=mr, bonus_hp=max(0, hp - 1600))
 
 
-def _recipe_component_names(next_key):
-    """다음 코어의 조합식 하위템 이름 튜플(데이터 recipe → 없으면 FALLBACK_RECIPES → 빈 튜플)."""
-    from adc_sim.data.items_data import ITEMS as _ITEMS
-    recipe = _ITEMS.get(next_key, {}).get("recipe") or FALLBACK_RECIPES.get(next_key)
-    return tuple(recipe) if recipe else ()
+def _half_enabled_for_slot(slot, horizon):
+    """해당 슬롯에서 하프 티어를 평가할지 — 마지막 슬롯은 기본 생략."""
+    return slot < horizon or HALF_INCLUDE_LAST_SLOT
 
 
-def _component_subsets(next_key, cap=HALF_TIER_GOLD_CAP):
-    """조합식 슬롯별 {안 삼 | 완제 하위템 | 그 재료(builds_from) 부분집합} 택1의 곱 중 합계 ≤ cap.
-
-    이미 든 하위템의 재료를 중복 보유하는 조합(완성 시 잉여 환불 효과)은 금지 —
-    예: 윤탈 = B.F.+단검(1550G) 가능(새총 재료 단검만 선구매), 새총+단검×2 는 불가.
-    사용자 지적 2026-08-31.
-    """
-    from itertools import combinations, product
-    from adc_sim.data.items_data import ITEM_CATALOG
-
-    def slot_options(name):
-        if name not in ITEM_CATALOG:
-            return [()]
-        opts = [(), (name,)]
-        if ITEM_CATALOG[name]["tier"] == "epic":
-            mats = [b for b in ITEM_CATALOG[name].get("builds_from", ()) if b in ITEM_CATALOG]
-            for r in range(1, len(mats) + 1):
-                for c in combinations(mats, r):
-                    opts.append(tuple(c))
-        # 슬롯 내 중복 옵션 제거
-        seen, uniq = set(), []
-        for o in opts:
-            k = tuple(sorted(o))
-            if k not in seen:
-                seen.add(k)
-                uniq.append(o)
-        return uniq
-
-    slots = [slot_options(n) for n in _recipe_component_names(next_key)]
-    subsets, seen = [()], {()}
-    for pick in product(*slots) if slots else []:
-        combo = tuple(n for part in pick for n in part)
-        key = tuple(sorted(combo))
-        if key in seen:
-            continue
-        cost = sum(ITEM_CATALOG[n]["cost"] for n in combo)
-        if cost <= cap:
-            seen.add(key)
-            subsets.append(combo)
-    return subsets
+def _half_component_options(next_key):
+    """다음 코어의 하프 후보 구성들 — recipe_states 의 창 규칙 결과(재료 이름 튜플들)."""
+    return tuple(names for _cost, names in half_core_candidates(next_key))
 
 
 def simulate_yunara_half_tier(done_keys, next_key, comp_names, doran_key=None,
@@ -866,50 +543,49 @@ def simulate_yunara_half_tier(done_keys, next_key, comp_names, doran_key=None,
     return dps, total_cost
 
 
-def _half_cache_sim(cache, done_tuple, next_key):
-    """SimCache 하나에 대해 (done, next) 하프 티어 최적 하위템 구성을 메모이즈해 반환."""
+def _half_raw(cache, done_tuple, next_key, comp_names):
+    """캐시 종류에 상관없이 하프 티어 (dps, gold) 하나를 구한다."""
+    if isinstance(cache, MixedSimCache):
+        dps, gold = 0.0, 0
+        for tc, weight in cache.mix:
+            d, g = simulate_yunara_half_tier(list(done_tuple), next_key, comp_names,
+                                             **cache.caches[tc].kw)
+            dps += weight * d
+            gold = g
+        return dps, gold
+    return simulate_yunara_half_tier(list(done_tuple), next_key, comp_names, **cache.kw)
+
+
+def sim_half(cache, done_tuple, next_key):
+    """(done → next) 하프 티어 최적 구성 (dps, gold, comps) 를 메모이즈해 반환한다.
+
+    선택 기준은 앵커(done 완성 상태) 대비 **마지널 DPG** — 점수식에 들어가는 값과
+    같은 축이라야 "고른 것"과 "점수에 반영되는 것"이 어긋나지 않는다.
+    후보가 없으면(조합식 미보유) 하프 없이 앵커 그대로를 돌려준다.
+    """
     key = (tuple(sorted(done_tuple)), next_key)
     store = getattr(cache, "_half_cache", None)
     if store is None:
         store = cache._half_cache = {}
     if key in store:
         return store[key]
-    best = None
-    for comps in _component_subsets(next_key):
-        d, g = simulate_yunara_half_tier(list(done_tuple), next_key, comps, **cache.kw)
-        if best is None or d > best[0]:
-            best = (d, g, comps)
+
+    # 1코어 하프의 앵커는 "아무 코어도 없는" 상태 — 점수식이 슬롯1에서 (0, 0) 에서
+    # 출발하는 것과 같은 규약을 쓴다(시작 아이템 값은 하프 쪽 골드에 포함돼 있다).
+    base_dps, base_gold = cache.sim(tuple(done_tuple)) if done_tuple else (0.0, 0.0)
+    best, best_marginal = None, None
+    for comp_names in _half_component_options(next_key):
+        dps, gold = _half_raw(cache, done_tuple, next_key, comp_names)
+        delta_gold = gold - base_gold
+        if delta_gold <= 0:
+            continue
+        marginal = (dps - base_dps) / (delta_gold / 1000.0)
+        if best_marginal is None or marginal > best_marginal:
+            best, best_marginal = (dps, gold, comp_names), marginal
+    if best is None:
+        best = (base_dps, base_gold, ())
     store[key] = best
     return best
-
-
-def _mixed_half_sim(mixed_cache, done_tuple, next_key):
-    """MixedSimCache 용 하프 티어: 부분집합을 '혼합 DPS' 기준으로 최적화."""
-    key = (tuple(sorted(done_tuple)), next_key)
-    store = getattr(mixed_cache, "_half_cache", None)
-    if store is None:
-        store = mixed_cache._half_cache = {}
-    if key in store:
-        return store[key]
-    best = None
-    for comps in _component_subsets(next_key):
-        dps, gold = 0.0, 0
-        for tc, w in mixed_cache.mix:
-            d, g = simulate_yunara_half_tier(list(done_tuple), next_key, comps,
-                                             **mixed_cache.caches[tc].kw)
-            dps += w * d
-            gold = g
-        if best is None or dps > best[0]:
-            best = (dps, gold, comps)
-    store[key] = best
-    return best
-
-
-def sim_half(cache, done_tuple, next_key):
-    """캐시 타입에 맞는 하프 티어 시뮬 (dps, gold, comps)."""
-    if isinstance(cache, MixedSimCache):
-        return _mixed_half_sim(cache, done_tuple, next_key)
-    return _half_cache_sim(cache, done_tuple, next_key)
 
 
 def _score_combo_half(cache, fixed, combo, from_slot, dps_prev, gold_prev, gamma, horizon):
@@ -920,11 +596,14 @@ def _score_combo_half(cache, fixed, combo, from_slot, dps_prev, gold_prev, gamma
     for tier in range(from_slot, horizon + 1):
         done = tuple(full_path[:tier - 1])
         nxt = full_path[tier - 1]
-        h_dps, h_gold, _ = sim_half(cache, done, nxt)
-        dg = h_gold - g_prev
-        if dg > 0:
-            score += (gamma ** (step / 2.0)) * (h_dps - d_prev) / (dg / 1000.0)
-        d_prev, g_prev = max(d_prev, h_dps), max(g_prev, h_gold)
+        if _half_enabled_for_slot(tier, horizon):
+            h_dps, h_gold, _ = sim_half(cache, done, nxt)
+            dg = h_gold - g_prev
+            if dg > 0:
+                score += (gamma ** (step / 2.0)) * (h_dps - d_prev) / (dg / 1000.0)
+            d_prev, g_prev = max(d_prev, h_dps), max(g_prev, h_gold)
+        # 하프를 건너뛰어도 step 은 진행한다 — 구간 자체는 존재하고 채점만 생략하므로
+        # 뒤따르는 완성 스텝의 할인 지수가 흔들리지 않는다.
         step += 1
         f_dps, f_gold = cache.sim(tuple(full_path[:tier]))
         dg = f_gold - g_prev
@@ -954,7 +633,10 @@ def solve_greedy_half(cache, gamma=None, horizon=HORIZON, top_alt=3):
         if best_combo is None:
             break
         nxt = best_combo[0]
-        h_dps, h_gold, h_comps = sim_half(cache, tuple(fixed), nxt)
+        if _half_enabled_for_slot(slot, horizon):
+            h_dps, h_gold, h_comps = sim_half(cache, tuple(fixed), nxt)
+        else:
+            h_dps, h_gold, h_comps = None, None, ()
         fixed.append(nxt)
         dps_now, gold_now = cache.sim(tuple(fixed))
         ranked = sorted(alternatives_by_item.items(), key=lambda kv: kv[1], reverse=True)[:top_alt]
@@ -976,11 +658,15 @@ def print_half_scenario(label, out, gamma=None):
     print(f"γ={gamma}(하프 스텝 √γ), horizon={HORIZON} | 최종 궤적: "
           f"{' → '.join(ITEM_SHORT.get(k, k) for k in out['trajectory'])}")
     for s in out["steps"]:
-        comps = "+".join(c[:6] for c in s["half_comps"]) if s["half_comps"] else "(없음)"
         alts = " / ".join(f"{ITEM_SHORT.get(a['item'], a['item'])}:{a['score']:.1f}"
                           for a in s["alternatives"])
+        if s["half_dps"] is None:
+            half_text = "하프[생략]".ljust(34)
+        else:
+            comps = "+".join(c[:6] for c in s["half_comps"]) if s["half_comps"] else "(없음)"
+            half_text = (f"하프[{comps}] DPS {s['half_dps']:6.1f}/G{s['half_gold']:<5.0f}")
         print(f"  {s['slot']}C {ITEM_SHORT.get(s['item'], s['item']):<9} "
-              f"| 하프[{comps}] DPS {s['half_dps']:6.1f}/G{s['half_gold']:<5.0f} "
+              f"| {half_text} "
               f"→ 완성 DPS {s['dps']:7.1f}/G{s['gold']:<5.0f} | {alts}")
 
 
@@ -1006,132 +692,47 @@ def _enumerate_future_combos(fixed, from_slot, horizon=HORIZON):
     yield from rec(0, [])
 
 
-def _score_combo(cache, fixed, combo, from_slot, dps_prev, gold_prev, gamma, horizon):
-    """미래 코어별 마지널 DPG 할인합을 계산해 조합 점수로 반환한다."""
-    full_path = list(fixed) + list(combo)
-    score = 0.0
-    for offset, tier in enumerate(range(from_slot, horizon + 1)):
-        dps, gold = cache.sim(tuple(full_path[:tier]))
-        delta_gold = gold - gold_prev
-        marginal_dpg = (dps - dps_prev) / (delta_gold / 1000.0) if delta_gold > 0 else 0.0
-        score += (gamma ** offset) * marginal_dpg
-    return score
+def main(gamma=None, include_last_half=None):
+    """기본 모드 — 하프 티어 포함 receding-horizon 전체 스윕.
 
-
-def solve_greedy(cache, gamma=None, horizon=HORIZON, top_alt=3):
-    """매 슬롯에서 미래 할인 마지널 DPG를 재탐색해 유나라 1~5코어 궤적을 반환한다."""
-    if gamma is None:
-        gamma = GAMMA
-    fixed, steps = [], []
-    dps_prev, gold_prev = 0.0, 0.0
-    for slot in range(1, horizon + 1):
-        best_score, best_combo = None, None
-        alternatives_by_item, alternatives_path = {}, {}
-        for combo in _enumerate_future_combos(fixed, slot, horizon):
-            score = _score_combo(cache, fixed, combo, slot, dps_prev, gold_prev, gamma, horizon)
-            item_key = combo[0]
-            if item_key not in alternatives_by_item or score > alternatives_by_item[item_key]:
-                alternatives_by_item[item_key], alternatives_path[item_key] = score, combo
-            if best_score is None or score > best_score:
-                best_score, best_combo = score, combo
-        if best_combo is None:
-            break
-        fixed.append(best_combo[0])
-        dps_now, gold_now = cache.sim(tuple(fixed))
-        delta_gold = gold_now - gold_prev
-        marginal_dpg = (dps_now - dps_prev) / (delta_gold / 1000.0) if delta_gold > 0 else 0.0
-        ranked = sorted(alternatives_by_item.items(), key=lambda pair: pair[1], reverse=True)[:top_alt]
-        steps.append({
-            "slot": slot, "item": best_combo[0], "score": best_score,
-            "dps": dps_now, "gold": gold_now, "marginal_dpg": marginal_dpg,
-            "future_path_winner": best_combo,
-            "alternatives": [
-                {"item": key, "score": score, "future_path": alternatives_path[key]}
-                for key, score in ranked
-            ],
-        })
-        dps_prev, gold_prev = dps_now, gold_now
-    return {"trajectory": fixed, "steps": steps}
-
-
-def print_scenario(label, out, cache, target_count, gamma=None):
-    """유나라 receding-horizon 최종 궤적과 슬롯별 선택·대안을 출력한다."""
-    if gamma is None:
-        gamma = GAMMA
-    print(f"\n{'=' * 22}  Yunara · TC{target_count} · {label}  {'=' * 22}")
-    print(f"γ={gamma}, horizon={HORIZON} | 최종 궤적: "
-          f"{' → '.join(ITEM_SHORT.get(key, key) for key in out['trajectory'])}")
-    print(f"시뮬 캐시: {cache.hits} hits / {cache.misses} misses")
-    for step in out["steps"]:
-        alternatives = " / ".join(
-            f"{ITEM_SHORT.get(alt['item'], alt['item'])}:{alt['score']:.1f}"
-            for alt in step["alternatives"]
-        )
-        print(
-            f"  {step['slot']}C → {ITEM_SHORT.get(step['item'], step['item']):<10} | "
-            f"DPS {step['dps']:>7.1f} | Gold {step['gold']:>5.0f} | "
-            f"MarginalDPG {step['marginal_dpg']:>7.2f} | Score {step['score']:>7.2f} | {alternatives}"
-        )
-
-
-def main(gamma=None):
-    """유나라의 단일·2·3대상과 두 ADC 패키지를 베인식 receding-horizon으로 탐색한다.
-
-    TC3 은 루난 서브타겟 캡(2명)이 완전히 채워지는 시나리오다
-    (champion.py 6-2: sub_targets = min(2, target_count - 1)).
+    축 (사용자 확정 2026-09-15):
+      신발·전설룬 패키지 4 (ADC_PACKAGES_VIABLE — 피흡 소스 ≥1, 광전사+민첩함 금지)
+      × 룬 파편 2 (SHARD_SCENARIOS)
+      × 교전 적 수 4 (TC1 / TC2 / TC3 / MIX 1:1)
+    MIX 는 TC1·TC2 캐시를 그대로 재사용하므로 추가 시뮬 비용이 없다.
     """
     if gamma is None:
         gamma = GAMMA
-    for target_count in TARGET_COUNT_SCENARIOS:
-        for package in ADC_PACKAGES:
-            cache = SimCache(package, target_count)
-            out = solve_greedy(cache, gamma=gamma)
-            print_scenario(package["label"], out, cache, target_count, gamma=gamma)
-    # 혼합(기본 선택 지표, 사용자 확정 2026-08-31): DPS_mix = Σ w·DPS_tc (TARGET_MIX_WEIGHTS, 기본 1:1)
-    for package in ADC_PACKAGES:
-        cache = MixedSimCache(package)
-        out = solve_greedy(cache, gamma=gamma)
-        print_scenario(f"{package['label']} · MIX 0.5/0.5", out, cache, "mix", gamma=gamma)
-
-
-def main_legacy_ranking():
-    """교체 전 유나라 4코어 전수 랭킹·리포트·그래프를 실행한다."""
-    """Run the Yunara ranking for 1-enemy and 2-enemy scenarios (case_ranking 표 포맷).
-
-    상대 1명(순수 단일 대상)과 2명(다대상 유효 DPS) 각각으로 시뮬을 돌려 표 2개를 출력한다.
-    리포트 export·그래프는 단일 대상(1명) 기준으로 유지한다.
-    """
-    print("\n=== Yunara Build Path Ranking: 단일 대상(1명) vs 2명 교전 ===")
-    data_by_tc = {}
-    for tc in (1, 2):
-        data_by_tc[tc] = rank_yunara_4core_paths(target_count=tc)
-        print(f"\n[Info] target_count={tc}: {data_by_tc[tc]['total_paths_simulated']} paths simulated (before same-combo dedup)")
-        print_case_style_table(data_by_tc[tc]["ranked"], data_by_tc[tc]["best_control"], tc, top_n=20)
-
-    report_paths = export_yunara_ranking_report(data_by_tc[1], top_n=20)
-    for report_path in report_paths:
-        print(f"[Info] Saved Yunara report: {report_path}")
-    plot_graph(data_by_tc[1]["ranked"], data_by_tc[1]["best_control"])
+    if include_last_half is not None:
+        global HALF_INCLUDE_LAST_SLOT
+        HALF_INCLUDE_LAST_SLOT = bool(include_last_half)
+    for shard_label, shards in SHARD_SCENARIOS.items():
+        for package in ADC_PACKAGES_VIABLE:
+            caches = {tc: SimCache(package, tc, shards=shards) for tc in TARGET_COUNT_SCENARIOS}
+            for tc in TARGET_COUNT_SCENARIOS:
+                out = solve_greedy_half(caches[tc], gamma=gamma)
+                print_half_scenario(f"{package['label']} · TC{tc} · 파편 {shard_label}",
+                                    out, gamma=gamma)
+            mixed = MixedSimCache(package, shards=shards, caches=caches)
+            out = solve_greedy_half(mixed, gamma=gamma)
+            print_half_scenario(f"{package['label']} · MIX 0.5/0.5 · 파편 {shard_label}",
+                                out, gamma=gamma)
 
 
 def run_cli(args=None):
-    """기본 receding-horizon 또는 `legacy-ranking` 호환 모드로 유나라 CLI를 실행한다."""
+    """유나라 CLI — 인자 없으면 기본 스윕. `half5`=5코어 하프 포함,
+    `late-yuntal`=1코어 윤탈 금지(라인전 난항 케이스), 숫자=γ 지정. 조합 가능."""
     import sys
 
     cli_args = list(sys.argv[1:] if args is None else args)
-    if cli_args and cli_args[0] == "legacy-ranking":
-        main_legacy_ranking()
-        return
-    if cli_args and cli_args[0] == "half":
-        # 하프 티어 포함 RH — 혼합 지표(기본) × 유효 신발·전설룬 4조합 × 파편 시나리오
-        # (광전사+민첩함 제외 — 프로젝트 기본 규칙, items_data.ADC_PACKAGES_VIABLE)
-        from adc_sim.data.items_data import ADC_PACKAGES_VIABLE
-        for shard_label, shards in SHARD_SCENARIOS.items():
-            for package in ADC_PACKAGES_VIABLE:
-                cache = MixedSimCache(package, shards=shards)
-                out = solve_greedy_half(cache)
-                print_half_scenario(f"{package['label']} · MIX · 파편 {shard_label}", out)
-        return
+    include_last_half = False
+    while cli_args and cli_args[0] in ("half5", "late-yuntal"):
+        if cli_args[0] == "half5":
+            include_last_half = True
+        else:
+            set_yuntal_min_slot(2)
+            print("[scenario] 1코어 윤탈 금지 — 윤탈은 2코어에서만 구매 가능")
+        cli_args = cli_args[1:]
     gamma = GAMMA
     if cli_args:
         try:
@@ -1141,7 +742,7 @@ def run_cli(args=None):
         except ValueError:
             print(f"[warn] gamma 인자 파싱 실패({cli_args[0]!r}) — 기본 {GAMMA} 사용")
             gamma = GAMMA
-    main(gamma=gamma)
+    main(gamma=gamma, include_last_half=include_last_half)
 
 
 if __name__ == "__main__":
