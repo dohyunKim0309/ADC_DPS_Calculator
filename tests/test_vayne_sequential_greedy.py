@@ -1,7 +1,7 @@
 """vayne.py에 통합된 기본 receding-horizon 탐색의 시나리오 전달 테스트."""
 
 from adc_sim.runes import CoupDeGrace, CutDown, PressTheAttack
-from adc_sim.simulations import vayne as greedy
+from adc_sim.simulations import receding, vayne as greedy
 
 
 def test_pta_alacrity_sub_rune_mode_wires_both_scenarios(monkeypatch):
@@ -17,13 +17,13 @@ def test_pta_alacrity_sub_rune_mode_wires_both_scenarios(monkeypatch):
             self.hits = 1
             self.misses = 1
 
-    def fake_solve(cache, gamma):
-        """전용 모드가 전달한 할인율을 기록하고 최소 결과를 반환한다."""
-        solved_gamma.append(gamma)
+    def fake_solve(spec, cache):
+        """전용 모드가 spec 에 실어 보낸 할인율을 기록하고 최소 결과를 반환한다."""
+        solved_gamma.append(spec.gamma)
         return {"trajectory": [], "steps": []}
 
     monkeypatch.setattr(greedy, "SimCache", FakeCache)
-    monkeypatch.setattr(greedy, "solve_greedy", fake_solve)
+    monkeypatch.setattr(receding, "solve", fake_solve)
     monkeypatch.setattr(greedy, "print_scenario", lambda *args, **kwargs: None)
 
     greedy.main_pta_alacrity_sub_runes(gamma=0.8)
@@ -69,8 +69,12 @@ def test_default_scenarios_are_ordered_and_include_both_sub_runes(monkeypatch):
     ]
 
 
-def test_early_step_horizons_only_truncate_requested_core_lookahead(monkeypatch):
-    """1·2코어 3코어 lookahead 뒤에는 전체 horizon 재탐색을 유지한다."""
+def test_slot_lookahead_only_truncates_requested_core_lookahead(monkeypatch):
+    """1·2코어 3코어 lookahead 뒤에는 전체 horizon 재탐색을 유지한다.
+
+    옛 vayne.solve_greedy 의 first/second_step_horizon 이 공통 엔진에서
+    receding.solve(slot_lookahead={슬롯: 끝코어}) 로 일반화됐다.
+    """
     observed_horizons = []
 
     class FakeCache:
@@ -79,15 +83,21 @@ def test_early_step_horizons_only_truncate_requested_core_lookahead(monkeypatch)
         def sim(self, items):
             return len(items) * 100.0, len(items) * 1000.0
 
-    def fake_enumerate(fixed, from_slot, horizon):
+        def sim_half(self, done, next_key, comps):
+            return len(done) * 100.0 + 50.0, len(done) * 1000.0 + 500.0
+
+    def fake_enumerate(spec, fixed, from_slot, horizon):
         """호출 lookahead를 기록하고 각 슬롯에 하나의 유효 미래 조합을 제공한다."""
         observed_horizons.append((from_slot, horizon))
         yield tuple(f"slot{from_slot}_{offset}" for offset in range(horizon - from_slot + 1))
 
-    monkeypatch.setattr(greedy, "_enumerate_future_combos", fake_enumerate)
+    monkeypatch.setattr(receding, "enumerate_future_combos", fake_enumerate)
 
-    greedy.solve_greedy(
-        FakeCache(), horizon=5, first_step_horizon=3, second_step_horizon=3,
+    spec = receding.RecedingSpec(
+        title="Fake", candidates_by_slot={slot: [] for slot in range(1, 6)},
+        pen_rule_ok=lambda keys: True, half_options=lambda key: ((),),
+        gamma=0.8, horizon=5,
     )
+    receding.solve(spec, FakeCache(), horizon=5, slot_lookahead={1: 3, 2: 3})
 
     assert observed_horizons == [(1, 3), (2, 3), (3, 5), (4, 5), (5, 5)]
