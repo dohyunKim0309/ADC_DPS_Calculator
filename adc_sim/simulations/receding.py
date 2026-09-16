@@ -160,6 +160,7 @@ def solve(spec, cache, horizon=None, top_alt=3, initial_fixed=(), slot_lookahead
             "slot": index, "item": item_key, "score": None,
             "half_dps": h_dps, "half_gold": h_gold, "half_comps": h_comps,
             "dps": dps_now, "gold": gold_now, "alternatives": [],
+            "future_path_winner": tuple(fixed[index - 1:]),
             "marginal_dpg": _marginal(dps_now, dps_prev, gold_now, gold_prev),
             "baseline_dps_prev": dps_prev, "baseline_gold_prev": gold_prev,
             "fixed_by_user": True,
@@ -191,6 +192,7 @@ def solve(spec, cache, horizon=None, top_alt=3, initial_fixed=(), slot_lookahead
             "slot": slot, "item": nxt, "score": best_score,
             "half_dps": h_dps, "half_gold": h_gold, "half_comps": h_comps,
             "dps": dps_now, "gold": gold_now,
+            "future_path_winner": best_combo,
             "marginal_dpg": _marginal(dps_now, dps_prev, gold_now, gold_prev),
             "baseline_dps_prev": dps_prev, "baseline_gold_prev": gold_prev,
             "alternatives": [{"item": k, "score": v, "future_path": alternatives_path[k]}
