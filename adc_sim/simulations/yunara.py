@@ -3,6 +3,7 @@ from adc_sim.runes import LethalTempo, CutDown
 from adc_sim.engine import run_simulation
 from adc_sim.data.items_registry import create_item_from_key
 from adc_sim.data.recipe_states import half_core_candidates
+from adc_sim.simulations import receding
 from adc_sim.data.items_data import ADC_PACKAGES, ADC_PACKAGES_VIABLE, pen_rule_ok
 
 
@@ -427,6 +428,10 @@ class SimCache:
         yuntal_last = bool(items_tuple) and "yuntal25" in sorted_items and items_tuple[-1] == "yuntal25"
         return sorted_items, yuntal_last
 
+    def sim_half(self, done_tuple, next_key, comp_names):
+        """하프 티어(next_key 의 하위템 comp_names 보유) DPS·총 골드."""
+        return simulate_yunara_half_tier(list(done_tuple), next_key, comp_names, **self.kw)
+
     def sim(self, items_tuple):
         """완성 코어 경로의 현재 티어 DPS와 총 골드를 반환한다."""
         key = self._key(items_tuple)
@@ -453,6 +458,15 @@ class MixedSimCache:
                        for tc, _ in self.mix}
         self.hits = 0
         self.misses = 0
+
+    def sim_half(self, done_tuple, next_key, comp_names):
+        """혼합 지표 하프 티어 — tc별 DPS 를 가중 합산(골드는 tc 무관 동일)."""
+        dps, gold = 0.0, 0
+        for tc, weight in self.mix:
+            d, g = self.caches[tc].sim_half(done_tuple, next_key, comp_names)
+            dps += weight * d
+            gold = g
+        return dps, gold
 
     def sim(self, items_tuple):
         dps, gold = 0.0, 0
@@ -496,14 +510,24 @@ def _half_tier_target(k):
     return Target(hp=hp, armor=armor, magic_resist=mr, bonus_hp=max(0, hp - 1600))
 
 
-def _half_enabled_for_slot(slot, horizon):
-    """해당 슬롯에서 하프 티어를 평가할지 — 마지막 슬롯은 기본 생략."""
-    return slot < horizon or HALF_INCLUDE_LAST_SLOT
-
-
 def _half_component_options(next_key):
     """다음 코어의 하프 후보 구성들 — recipe_states 의 창 규칙 결과(재료 이름 튜플들)."""
     return tuple(names for _cost, names in half_core_candidates(next_key))
+
+
+def build_spec(gamma=None, horizon=None, include_last_half=None):
+    """현재 모듈 설정을 담은 공통 엔진용 RecedingSpec (탐색 로직은 receding.py)."""
+    return receding.RecedingSpec(
+        title="Yunara · 하프 티어 포함",
+        candidates_by_slot=CANDIDATES_BY_SLOT,
+        pen_rule_ok=pen_rule_ok,
+        half_options=_half_component_options,
+        gamma=GAMMA if gamma is None else gamma,
+        item_short=ITEM_SHORT,
+        horizon=HORIZON if horizon is None else horizon,
+        include_last_half=(HALF_INCLUDE_LAST_SLOT if include_last_half is None
+                           else include_last_half),
+    )
 
 
 def simulate_yunara_half_tier(done_keys, next_key, comp_names, doran_key=None,
@@ -543,155 +567,6 @@ def simulate_yunara_half_tier(done_keys, next_key, comp_names, doran_key=None,
     return dps, total_cost
 
 
-def _half_raw(cache, done_tuple, next_key, comp_names):
-    """캐시 종류에 상관없이 하프 티어 (dps, gold) 하나를 구한다."""
-    if isinstance(cache, MixedSimCache):
-        dps, gold = 0.0, 0
-        for tc, weight in cache.mix:
-            d, g = simulate_yunara_half_tier(list(done_tuple), next_key, comp_names,
-                                             **cache.caches[tc].kw)
-            dps += weight * d
-            gold = g
-        return dps, gold
-    return simulate_yunara_half_tier(list(done_tuple), next_key, comp_names, **cache.kw)
-
-
-def sim_half(cache, done_tuple, next_key):
-    """(done → next) 하프 티어 최적 구성 (dps, gold, comps) 를 메모이즈해 반환한다.
-
-    선택 기준은 앵커(done 완성 상태) 대비 **마지널 DPG** — 점수식에 들어가는 값과
-    같은 축이라야 "고른 것"과 "점수에 반영되는 것"이 어긋나지 않는다.
-    후보가 없으면(조합식 미보유) 하프 없이 앵커 그대로를 돌려준다.
-    """
-    key = (tuple(sorted(done_tuple)), next_key)
-    store = getattr(cache, "_half_cache", None)
-    if store is None:
-        store = cache._half_cache = {}
-    if key in store:
-        return store[key]
-
-    # 1코어 하프의 앵커는 "아무 코어도 없는" 상태 — 점수식이 슬롯1에서 (0, 0) 에서
-    # 출발하는 것과 같은 규약을 쓴다(시작 아이템 값은 하프 쪽 골드에 포함돼 있다).
-    base_dps, base_gold = cache.sim(tuple(done_tuple)) if done_tuple else (0.0, 0.0)
-    best, best_marginal = None, None
-    for comp_names in _half_component_options(next_key):
-        dps, gold = _half_raw(cache, done_tuple, next_key, comp_names)
-        delta_gold = gold - base_gold
-        if delta_gold <= 0:
-            continue
-        marginal = (dps - base_dps) / (delta_gold / 1000.0)
-        if best_marginal is None or marginal > best_marginal:
-            best, best_marginal = (dps, gold, comp_names), marginal
-    if best is None:
-        best = (base_dps, base_gold, ())
-    store[key] = best
-    return best
-
-
-def _score_combo_half(cache, fixed, combo, from_slot, dps_prev, gold_prev, gamma, horizon):
-    """하프+풀 스텝을 γ^(s/2) 로 할인한 마지널 DPG 합. [H-HALF-DISCOUNT]"""
-    full_path = list(fixed) + list(combo)
-    score, step = 0.0, 0
-    d_prev, g_prev = dps_prev, gold_prev
-    for tier in range(from_slot, horizon + 1):
-        done = tuple(full_path[:tier - 1])
-        nxt = full_path[tier - 1]
-        if _half_enabled_for_slot(tier, horizon):
-            h_dps, h_gold, _ = sim_half(cache, done, nxt)
-            dg = h_gold - g_prev
-            if dg > 0:
-                score += (gamma ** (step / 2.0)) * (h_dps - d_prev) / (dg / 1000.0)
-            d_prev, g_prev = max(d_prev, h_dps), max(g_prev, h_gold)
-        # 하프를 건너뛰어도 step 은 진행한다 — 구간 자체는 존재하고 채점만 생략하므로
-        # 뒤따르는 완성 스텝의 할인 지수가 흔들리지 않는다.
-        step += 1
-        f_dps, f_gold = cache.sim(tuple(full_path[:tier]))
-        dg = f_gold - g_prev
-        if dg > 0:
-            score += (gamma ** (step / 2.0)) * (f_dps - d_prev) / (dg / 1000.0)
-        d_prev, g_prev = f_dps, f_gold
-        step += 1
-    return score
-
-
-def solve_greedy_half(cache, gamma=None, horizon=HORIZON, top_alt=3):
-    """하프 티어 포함 receding-horizon: 매 슬롯 미래(하프+풀) 할인 마지널 DPG 재탐색."""
-    if gamma is None:
-        gamma = GAMMA
-    fixed, steps = [], []
-    dps_prev, gold_prev = 0.0, 0.0
-    for slot in range(1, horizon + 1):
-        best_score, best_combo = None, None
-        alternatives_by_item, alternatives_path = {}, {}
-        for combo in _enumerate_future_combos(fixed, slot, horizon):
-            score = _score_combo_half(cache, fixed, combo, slot, dps_prev, gold_prev, gamma, horizon)
-            item_key = combo[0]
-            if item_key not in alternatives_by_item or score > alternatives_by_item[item_key]:
-                alternatives_by_item[item_key], alternatives_path[item_key] = score, combo
-            if best_score is None or score > best_score:
-                best_score, best_combo = score, combo
-        if best_combo is None:
-            break
-        nxt = best_combo[0]
-        if _half_enabled_for_slot(slot, horizon):
-            h_dps, h_gold, h_comps = sim_half(cache, tuple(fixed), nxt)
-        else:
-            h_dps, h_gold, h_comps = None, None, ()
-        fixed.append(nxt)
-        dps_now, gold_now = cache.sim(tuple(fixed))
-        ranked = sorted(alternatives_by_item.items(), key=lambda kv: kv[1], reverse=True)[:top_alt]
-        steps.append({
-            "slot": slot, "item": nxt, "score": best_score,
-            "half_dps": h_dps, "half_gold": h_gold, "half_comps": h_comps,
-            "dps": dps_now, "gold": gold_now,
-            "alternatives": [{"item": k, "score": v, "future_path": alternatives_path[k]}
-                             for k, v in ranked],
-        })
-        dps_prev, gold_prev = dps_now, gold_now
-    return {"trajectory": fixed, "steps": steps}
-
-
-def print_half_scenario(label, out, gamma=None):
-    if gamma is None:
-        gamma = GAMMA
-    print(f"\n{'=' * 18}  Yunara · 하프 티어 포함 · {label}  {'=' * 18}")
-    print(f"γ={gamma}(하프 스텝 √γ), horizon={HORIZON} | 최종 궤적: "
-          f"{' → '.join(ITEM_SHORT.get(k, k) for k in out['trajectory'])}")
-    for s in out["steps"]:
-        alts = " / ".join(f"{ITEM_SHORT.get(a['item'], a['item'])}:{a['score']:.1f}"
-                          for a in s["alternatives"])
-        if s["half_dps"] is None:
-            half_text = "하프[생략]".ljust(34)
-        else:
-            comps = "+".join(c[:6] for c in s["half_comps"]) if s["half_comps"] else "(없음)"
-            half_text = (f"하프[{comps}] DPS {s['half_dps']:6.1f}/G{s['half_gold']:<5.0f}")
-        print(f"  {s['slot']}C {ITEM_SHORT.get(s['item'], s['item']):<9} "
-              f"| {half_text} "
-              f"→ 완성 DPS {s['dps']:7.1f}/G{s['gold']:<5.0f} | {alts}")
-
-
-def _enumerate_future_combos(fixed, from_slot, horizon=HORIZON):
-    """확정 코어 뒤에서 중복·관통 제약을 만족하는 유나라 미래 조합을 생성한다."""
-    remaining = list(range(from_slot, horizon + 1))
-
-    def rec(index, current):
-        """현재 슬롯 이후의 합법적인 아이템 조합을 재귀 생성한다."""
-        if index == len(remaining):
-            yield tuple(current)
-            return
-        for item_key in CANDIDATES_BY_SLOT[remaining[index]]:
-            if item_key in fixed or item_key in current:
-                continue
-            candidate = tuple(fixed) + tuple(current) + (item_key,)
-            if not pen_rule_ok(candidate):
-                continue
-            current.append(item_key)
-            yield from rec(index + 1, current)
-            current.pop()
-
-    yield from rec(0, [])
-
-
 def main(gamma=None, include_last_half=None):
     """기본 모드 — 하프 티어 포함 receding-horizon 전체 스윕.
 
@@ -706,17 +581,18 @@ def main(gamma=None, include_last_half=None):
     if include_last_half is not None:
         global HALF_INCLUDE_LAST_SLOT
         HALF_INCLUDE_LAST_SLOT = bool(include_last_half)
+    spec = build_spec(gamma=gamma)
     for shard_label, shards in SHARD_SCENARIOS.items():
         for package in ADC_PACKAGES_VIABLE:
             caches = {tc: SimCache(package, tc, shards=shards) for tc in TARGET_COUNT_SCENARIOS}
             for tc in TARGET_COUNT_SCENARIOS:
-                out = solve_greedy_half(caches[tc], gamma=gamma)
-                print_half_scenario(f"{package['label']} · TC{tc} · 파편 {shard_label}",
-                                    out, gamma=gamma)
+                out = receding.solve(spec, caches[tc])
+                receding.print_scenario(
+                    spec, f"{package['label']} · TC{tc} · 파편 {shard_label}", out)
             mixed = MixedSimCache(package, shards=shards, caches=caches)
-            out = solve_greedy_half(mixed, gamma=gamma)
-            print_half_scenario(f"{package['label']} · MIX 0.5/0.5 · 파편 {shard_label}",
-                                out, gamma=gamma)
+            out = receding.solve(spec, mixed)
+            receding.print_scenario(
+                spec, f"{package['label']} · MIX 0.5/0.5 · 파편 {shard_label}", out)
 
 
 def run_cli(args=None):
