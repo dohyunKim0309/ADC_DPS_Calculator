@@ -24,10 +24,16 @@ drafts/
 # ── Generated outputs ──────────────────────
 # 시뮬 결과 이미지(results/)와 export 리포트(reports/)는 생성물이라 추적 제외.
 # 보관하고 싶은 결과는 Archive/ 로 직접 옮겨서 관리.
-results/
-reports/
+# ⚠️ 루트 기준으로 앵커(/)한다 — 앵커가 없으면 `docs/reports/`(리포트 소스, 추적 대상)까지
+#    함께 제외돼 버린다. settings.PROJECT_ROOT 가 가리키는 것도 루트의 두 디렉터리다.
+/results/
+/reports/
 # CDragon 등에서 받아온 패치 데이터 스냅샷 (생성물)
 patch_data/
+# 리포트 빌드 산출물 — 템플릿(docs/reports/*.template.html) + 데이터(*.json) 만 추적하고
+# 둘을 합친 결과물은 제외한다(150KB 데이터가 박혀 diff 가 리뷰 불가능해진다).
+# 만들려면: python -m tools.build_yunara_report
+docs/reports/yunara_report.html
 
 # ── 에이전트 로컬 설정 ─────────────────────
 # Claude Code 의 머신별 권한/설정. 저장소에 공유할 내용이 아니다.

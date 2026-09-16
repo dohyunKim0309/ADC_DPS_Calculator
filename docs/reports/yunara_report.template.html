@@ -1,0 +1,697 @@
+<title>유나라 템트리 파워 곡선</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@500;700;900&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --bg:#f4f6f9; --panel:#ffffff; --panel-2:#eef1f6; --line:#dde3ec; --line-soft:#e9edf3;
+    --ink:#0e141c; --ink-2:#48525f; --muted:#7b8695;
+    --accent:#2a78d6; --accent-ink:#1c5cab;
+    --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100;
+    --bar:#9ec5f4; --bar-top:#2a78d6;
+    --good:#0ca30c; --crit:#d03b3b;
+    --shadow:0 1px 2px rgba(14,20,28,.06), 0 10px 28px rgba(14,20,28,.05);
+    --mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --body:"IBM Plex Sans KR", system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif;
+    --display:"Gothic A1", "IBM Plex Sans KR", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#101318; --panel:#171b21; --panel-2:#1d222a; --line:#2b323c; --line-soft:#232932;
+      --ink:#f1f4f8; --ink-2:#b7c0cc; --muted:#8892a0;
+      --accent:#3987e5; --accent-ink:#86b6ef;
+      --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
+      --bar:#256abf; --bar-top:#3987e5;
+      --good:#0ca30c; --crit:#e66767;
+      --shadow:0 1px 2px rgba(0,0,0,.45), 0 12px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#101318; --panel:#171b21; --panel-2:#1d222a; --line:#2b323c; --line-soft:#232932;
+    --ink:#f1f4f8; --ink-2:#b7c0cc; --muted:#8892a0;
+    --accent:#3987e5; --accent-ink:#86b6ef;
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
+    --bar:#256abf; --bar-top:#3987e5;
+    --good:#0ca30c; --crit:#e66767;
+    --shadow:0 1px 2px rgba(0,0,0,.45), 0 12px 30px rgba(0,0,0,.35);
+  }
+
+  body{background:var(--bg); color:var(--ink); font-family:var(--body); line-height:1.6;}
+  .wrap{max-width:1080px; margin:0 auto; padding-inline:18px; padding-block:28px 56px;
+        display:flex; flex-direction:column; gap:26px;}
+  h1,h2,h3{font-family:var(--display); text-wrap:balance; margin:0;}
+  h1{font-size:clamp(26px,5vw,40px); font-weight:900; letter-spacing:-.02em; line-height:1.15;}
+  h2{font-size:18px; font-weight:700; letter-spacing:-.01em;}
+  h3{font-size:14px; font-weight:700;}
+  p{margin:0;}
+  .lede{color:var(--ink-2); font-size:15px; max-width:64ch;}
+  .eyebrow{font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted);
+           font-weight:600; font-family:var(--body);}
+
+  .meta{display:flex; flex-wrap:wrap; gap:6px;}
+  .chip{font-size:11.5px; color:var(--ink-2); background:var(--panel-2); border:1px solid var(--line-soft);
+        border-radius:999px; padding:3px 10px; font-variant-numeric:tabular-nums;}
+
+  .switch{display:flex; flex-wrap:wrap; gap:6px; background:var(--panel); border:1px solid var(--line);
+          border-radius:12px; padding:6px; box-shadow:var(--shadow);}
+  .switch button{flex:1 1 auto; min-width:84px; font-family:var(--body); font-size:13px; font-weight:600;
+          color:var(--ink-2); background:transparent; border:0; border-radius:8px; padding:9px 10px;
+          cursor:pointer; transition:background .15s, color .15s;}
+  .switch button:hover{background:var(--panel-2);}
+  .switch button[aria-pressed="true"]{background:var(--accent); color:#fff;}
+  .switch button:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+
+  .kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px;}
+  .kpi{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px 16px;
+       box-shadow:var(--shadow); display:flex; flex-direction:column; gap:3px;}
+  .kpi .k-label{font-size:11.5px; color:var(--muted); font-weight:600;}
+  .kpi .k-value{font-family:var(--mono); font-size:27px; font-weight:600; letter-spacing:-.02em;
+                font-variant-numeric:tabular-nums; line-height:1.2;}
+  .kpi .k-sub{font-size:12px; color:var(--ink-2);}
+  .kpi.lead{border-color:var(--accent); }
+  .kpi.lead .k-value{font-family:var(--display); font-size:19px; font-weight:700; letter-spacing:-.01em;}
+  .delta{font-family:var(--mono); font-weight:600; font-variant-numeric:tabular-nums;}
+  .delta.up{color:var(--good);} .delta.down{color:var(--crit);}
+
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:18px;
+        box-shadow:var(--shadow); display:flex; flex-direction:column; gap:12px;}
+  .card-head{display:flex; flex-wrap:wrap; align-items:baseline; gap:8px 14px; justify-content:space-between;}
+  .card-note{font-size:12px; color:var(--muted); max-width:60ch;}
+
+  .legend{display:flex; flex-wrap:wrap; gap:6px 16px;}
+  .lg{display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--ink-2);}
+  .lg i{width:12px; height:12px; border-radius:3px; display:inline-block; flex:none;}
+  .lg small{color:var(--muted); font-family:var(--mono); font-size:11px;}
+
+  .plot{position:relative;}
+  .plot svg{display:block; width:100%; height:auto;}
+  .tip{position:absolute; pointer-events:none; opacity:0; transform:translate(-50%,-115%);
+       background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:8px 10px;
+       box-shadow:var(--shadow); font-size:12px; color:var(--ink); white-space:nowrap; z-index:5;
+       transition:opacity .12s;}
+  .tip b{font-family:var(--display); font-weight:700; font-size:12.5px;}
+  .tip .row{font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--ink-2); font-size:11.5px;}
+
+  .bars{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:18px;}
+
+  .tablewrap{overflow-x:auto;}
+  table{border-collapse:collapse; width:100%; min-width:1080px; font-size:12.5px;}
+  th,td{text-align:right; padding:7px 10px; border-bottom:1px solid var(--line-soft); white-space:nowrap;}
+  th:first-child, td:first-child{text-align:left; position:sticky; left:0; background:var(--panel);}
+  thead th{color:var(--muted); font-weight:600; font-size:11.5px; border-bottom:1px solid var(--line);}
+  thead th.on{color:var(--ink);}
+  tbody td{font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--ink-2);}
+  tbody td:first-child{font-family:var(--body); color:var(--ink);}
+  tr.half td{color:var(--muted);}
+  tr.core td{background:var(--panel-2);}
+  .swatch{width:9px; height:9px; border-radius:2px; display:inline-block; margin-right:7px;}
+
+  .guide{border-color:var(--accent);}
+  .rules{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:10px 18px;}
+  .rule-row{display:flex; gap:10px; align-items:flex-start;}
+  .rule-n{flex:none; font-family:var(--mono); font-size:11px; font-weight:600; color:var(--accent);
+          border:1px solid var(--accent); border-radius:6px; padding:1px 7px; margin-top:2px;}
+  .rule-row p{font-size:12.5px; color:var(--ink-2);}
+  .pick{background:var(--panel-2); border-radius:12px; padding:14px 16px; display:flex;
+        flex-direction:column; gap:10px;}
+  .pick .pick-head{font-size:12px; color:var(--muted);}
+  .chain{display:flex; flex-wrap:wrap; gap:6px; align-items:center;}
+  .chain .node{display:flex; flex-direction:column; gap:1px; background:var(--panel);
+        border:1px solid var(--line); border-radius:10px; padding:6px 11px;}
+  .chain .node b{font-family:var(--display); font-size:13.5px;}
+  .chain .node small{font-family:var(--mono); font-size:10.5px; color:var(--muted);}
+  .chain .arrow{color:var(--muted); font-size:13px;}
+  .pick .why{font-size:12.5px; color:var(--ink-2);}
+  #matrix{min-width:520px;}
+  #matrix td, #matrix th{text-align:center;}
+  #matrix td:first-child, #matrix th:first-child{text-align:left;}
+  #matrix tbody td{font-family:var(--body);}
+  .notes{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px;}
+  .note{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px 16px;
+        display:flex; flex-direction:column; gap:6px;}
+  .note p, .note li{font-size:12.5px; color:var(--ink-2); line-height:1.65;}
+  .note ul{margin:0; padding-left:17px; display:flex; flex-direction:column; gap:4px;}
+  .rule{height:1px; background:var(--line); border:0; margin:0;}
+  code{font-family:var(--mono); font-size:11.5px; background:var(--panel-2); padding:1px 5px;
+       border-radius:5px; color:var(--ink-2);}
+  @media (prefers-reduced-motion: reduce){ *{transition:none !important;} }
+</style>
+
+<div class="wrap">
+
+  <header style="display:flex; flex-direction:column; gap:10px;">
+    <span class="eyebrow">ADC DPS Calculator · 유나라 빌드 리포트</span>
+    <h1>유나라 템트리 파워 곡선</h1>
+    <p class="lede">순차 탐색(receding-horizon)이 뽑은 신규 템트리를 기존 정석 트리와 <b>하프 코어</b>(아이템 사이 하위템 구간)까지 포함해 누적 골드축에서 비교한다. 1코어 윤탈이 가능한 판과 <b>라인전이 막혀 불가능한 판</b>을 따로 보고, 상대가 <b>딜러냐 브루저냐 탱커냐</b>에 따라 타깃 표도 갈아 끼운다. 세로축은 DPS(절대 파워)와 DPG(1000골드당 DPS, 골드효율) 둘 다.</p>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <section class="card guide">
+    <div class="card-head">
+      <h2>결론 — 이렇게 간다</h2>
+      <p class="card-note">아래 세 스위치를 바꾸면 이 칸도 같이 바뀐다. 기준은 5코어 골드효율(DPG), 동률이면 3코어가 센 쪽.</p>
+    </div>
+    <div class="rules">
+      <div class="rule-row"><span class="rule-n">1코어</span><p><b>윤탈.</b> 라인전이 막혀 못 서면 크라켄으로 열고 <b>윤탈을 2코어로 미룬다</b> — 포기하지 않는다. 대가는 2코어 타이밍 한 구간뿐.</p></div>
+      <div class="rule-row"><span class="rule-n">2코어</span><p><b>남은 하나</b>(윤탈로 열었으면 크라켄, 크라켄으로 열었으면 윤탈). 2코어 루난은 어느 조건에서도 이기지 못한다.</p></div>
+      <div class="rule-row"><span class="rule-n">3코어</span><p><b>적 수로 갈린다.</b> 순수 1:1 구도에서만 도미닉이고, 적이 둘만 돼도 루난이 앞선다 — 한타까지 섞은 1:1:1 혼합에서는 타깃 종류와 무관하게 루난이 3코어다. 상대가 딜러뿐인 1:1이면 도미닉 대신 무한도 성립한다.</p></div>
+      <div class="rule-row"><span class="rule-n">4~5코어</span><p><b>3코어에서 안 간 쪽 + 무한.</b> 무한은 어느 조건에서도 4코어 이후 자리고, 3코어 무한은 전 시나리오에서 밀린다. 단일 지향이면 C44가 무한 앞에 낀다.</p></div>
+    </div>
+    <div class="pick" id="pick"></div>
+    <div>
+      <h3 style="margin-bottom:8px;">조건별 추천 — <span id="matrixGroup"></span></h3>
+      <div class="tablewrap"><table id="matrix"></table></div>
+    </div>
+  </section>
+
+  <section style="display:flex; flex-direction:column; gap:10px;">
+    <h2>교전 시나리오</h2>
+    <div class="switch" id="switch" role="group" aria-label="교전 시나리오 선택"></div>
+    <p class="card-note" id="scenNote"></p>
+  </section>
+
+  <section style="display:flex; flex-direction:column; gap:10px;">
+    <h2>상대 타깃</h2>
+    <div class="switch" id="archSwitch" role="group" aria-label="타깃 아키타입 선택"></div>
+    <p class="card-note" id="archNote"></p>
+    <div class="meta" id="archTiers"></div>
+  </section>
+
+  <section style="display:flex; flex-direction:column; gap:10px;">
+    <h2>1코어 계열</h2>
+    <div class="switch" id="groupSwitch" role="group" aria-label="1코어 계열 선택"></div>
+    <p class="card-note" id="groupNote"></p>
+  </section>
+
+  <section class="kpis" id="kpis"></section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>절대 파워 · DPS</h2>
+      <p class="card-note">선택한 계열의 네 트리. 가로축 = 누적 골드(도란활·신발 포함). ● 완성 코어, ○ 하프 코어.</p>
+    </div>
+    <div class="legend" id="legend1"></div>
+    <div class="plot" id="plotDps"><div class="tip" id="tipDps"></div></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>골드효율 · DPG</h2>
+      <p class="card-note">DPG = DPS ÷ (누적 골드/1000). 곡선이 위에 있을수록 같은 돈으로 더 많은 딜을 산다.</p>
+    </div>
+    <div class="legend" id="legend2"></div>
+    <div class="plot" id="plotDpg"><div class="tip" id="tipDpg"></div></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>5코어 시점 비교</h2>
+      <p class="card-note">두 계열 일곱 트리 전부. 계열을 바꿔도 이 막대와 아래 표는 그대로 전부 보여준다.</p>
+    </div>
+    <div class="bars">
+      <div class="plot" id="barDps"><div class="tip" id="tipBarDps"></div></div>
+      <div class="plot" id="barDpg"><div class="tip" id="tipBarDpg"></div></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>수치 표</h2>
+      <p class="card-note">선택한 시나리오의 전 구간. 회색 행이 하프 코어, 진한 행이 완성 코어다.</p>
+    </div>
+    <div class="tablewrap"><table id="tbl"></table></div>
+  </section>
+
+  <hr class="rule">
+
+  <section style="display:flex; flex-direction:column; gap:12px;">
+    <h2>읽는 법과 한계</h2>
+    <div class="notes">
+      <div class="note">
+        <h3>1코어 윤탈 계열</h3>
+        <p>트리 이름은 <b>초반 3코어</b>다 — 4~5코어는 같은 아이템 집합으로 수렴하는 경우가 많아, 승부는 앞 세 칸에서 갈린다.</p>
+        <ul>
+          <li><b>윤탈-무한-도미닉</b> → C44 → 크라켄. 1:1·솔로킬 지향.</li>
+          <li><b>윤탈-크라켄-도미닉</b> → 루난 → 무한. 루난을 4코어로 미룬 판.</li>
+          <li><b>윤탈-크라켄-루난</b> → 도미닉 → 무한. 같은 다섯 아이템을 루난 먼저로 당긴 판. 5코어 값은 위와 같고, 갈리는 건 3~4코어 구간뿐이다.</li>
+          <li><b>윤탈-루난-무한</b> → 도미닉 → C44. <b>기존</b> 정석 트리이자 이 계열의 비교 기준(컨트롤).</li>
+        </ul>
+      </div>
+      <div class="note">
+        <h3>1코어 윤탈 불가 계열</h3>
+        <ul>
+          <li><b>크라켄-윤탈-도미닉</b> → 무한 → C44.</li>
+          <li><b>크라켄-윤탈-루난</b> → 도미닉 → C44.</li>
+          <li><b>크라켄-루난-무한</b> → 도미닉 → C44. <b>기존</b> 정석 트리이자 이 계열의 컨트롤.</li>
+        </ul>
+        <p>라인전이 막혀도 윤탈을 <b>포기하는 게 아니라 2코어로 미룬다</b>. 대가는 2코어 타이밍 한 구간뿐이고(위 KPI 타일), 3코어부터는 1코어 윤탈 계열과 값이 붙는다.</p>
+      </div>
+      <div class="note">
+        <h3>3코어 루난이냐 도미닉이냐</h3>
+        <p>이 리포트의 갈림길. 판단 축은 적 수다 — 같은 3코어 시점에서 루난은 윤탈-도미닉 대비 적1 <b>−19.7%</b>, 적2 <b>+1.3%</b>, 적3 <b>+36.6%</b>. 적이 하나뿐인 구도면 도미닉, 둘이면 동률, 셋이면 루난이 압도한다. <b>무한은 어느 계열에서도 4~5코어 자리</b>고, 3코어 무한은 전 시나리오에서 밀린다.</p>
+      </div>
+      <div class="note">
+        <h3>하프 코어</h3>
+        <p>아이템 완성 전 하위템만 든 구간. 목표 아이템 가격의 절반 근처(예산창 <code>[올림100(가격/2), +100]</code>)에서 마지널 DPG가 가장 높은 조합을 고른다. 5코어 하프는 프로젝트 기본대로 생략 — 실전에서 계획대로 사는 일이 드물어서다.</p>
+      </div>
+      <div class="note">
+        <h3>상대 타깃 세 가지</h3>
+        <p><b>딜러</b>는 유나라 본인의 성장 능력치(체력 590+110 / 방어 25+4.4 / 마저 33+1.1, 라이엇 성장 곡선)에 도란템 체력 80만 얹은 값 — 즉 "거울 상대". <b>브루저</b>와 <b>탱커</b>는 체력·방어를 쌓는 상대고, 탱커 마저는 레벨당 +4(코어 사이 +8)로 올라간다. 코어별 스탯은 스위치 아래 칩 그대로다. 도미닉의 거인 학살자 증폭이 타깃 추가 체력에 비례하므로 딜러 상대에선 1~2코어에 증폭이 거의 0이고, 탱커 상대에선 4코어부터 15% 캡에 닿는다.</p>
+      </div>
+      <div class="note">
+        <h3>측정 조건</h3>
+        <p>레벨은 코어 1~5에서 9/11/13/15/17, 하프에서 8/10/12/14/16. 타깃은 위에서 고른 아키타입 표를 쓰고, 하프는 인접 코어 선형 보간이다. DPS는 같은 체력바를 2회 처치하는 지속딜(K=2). 기존 A·B는 원래 4아이템 트리라, 5코어 비교를 맞추려 C44를 다섯 번째로 붙였다.</p>
+      </div>
+      <div class="note">
+        <h3>믿으면 안 되는 것</h3>
+        <ul>
+          <li>적 2·3 값은 확산딜을 1차 대상 기록에 합산한 <b>유효 DPS</b>다. 단일 처치 속도가 아니다.</li>
+          <li>윤탈 치명타는 <b>구매 코어 0% → 다음 코어 25%</b> 가정. 1~2코어 결론을 직접 지배한다.</li>
+          <li>K=2 처치 타이밍 양자화로 ±2%p 잡음이 있다. 그 안의 차이는 동률로 읽어야 한다.</li>
+          <li>라인 클리어·생존력·사거리 가치는 모델 밖이다.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script type="application/json" id="curves">__CURVES_JSON__</script>
+<script>
+(function(){
+  "use strict";
+  var DATA = JSON.parse(document.getElementById("curves").textContent);
+  // 트리 이름 = 초반 3코어 (사용자 확정) — 4~5코어는 같은 집합으로 수렴하는 경우가 많아
+  // 앞 세 칸이 트리의 정체를 가른다. 기존 정석 트리는 TAG 로 따로 표시한다.
+  var SHORT = {
+    opt_solo:"윤탈-무한-도미닉", opt_fight:"윤탈-크라켄-도미닉", opt_run3:"윤탈-크라켄-루난",
+    meta_yun:"윤탈-루난-무한",
+    late_solo:"크라켄-윤탈-도미닉", late_run:"크라켄-윤탈-루난", meta_krk:"크라켄-루난-무한"
+  };
+  var TAG = {meta_yun:"기존", meta_krk:"기존"};
+  function tagHtml(id){
+    return TAG[id] ? ' <span style="font-size:10.5px; color:var(--muted);">기존</span>' : '';
+  }
+  // 1코어 계열별 패널 — 색은 슬롯(역할)에 고정, 두 계열은 동시에 표시되지 않는다.
+  var GROUPS = [
+    {id:"yun", label:"1코어 윤탈", ids:["opt_solo","opt_fight","opt_run3","meta_yun"],
+     note:"라인전이 풀려 윤탈을 1코어로 세울 수 있는 판. 신규 트리 셋과 기존 B(윤탈-루난-무한-도미닉)의 비교다."},
+    {id:"krk", label:"1코어 윤탈 불가", ids:["late_solo","late_run","meta_krk"],
+     note:"라인전 난항으로 1코어를 크라켄으로 가는 판. 윤탈은 2코어로 밀리고, 기존 A(이 계열의 컨트롤)와 같은 조건에서 붙는다."}
+  ];
+  var SLOT = ["var(--s1)","var(--s2)","var(--s3)","var(--s4)"];
+  var BAR_IDS = ["opt_solo","opt_fight","opt_run3","late_solo","late_run","meta_krk","meta_yun"];
+  var SCEN = [
+    {id:"tc1", label:"적 1명", note:"순수 단일 대상. 솔로킬·사이드 스플릿 구도."},
+    {id:"tc2", label:"적 2명", note:"둘이 붙은 교전. 크라켄 처형 가속과 루난 확산이 살아난다."},
+    {id:"mix", label:"혼합 1:1:1", note:"적 1·2·3명을 같은 비중으로 섞은 통합 지표. 라인전·소규모 교전·한타를 한 판에 다 겪는다는 전제다."},
+    {id:"tc3", label:"적 3명", note:"루난 서브타겟 캡(2명)이 꽉 차는 한타 전제."}
+  ];
+  var byId = {}; DATA.builds.forEach(function(b){ byId[b.id] = b; });
+  var state = {scen:"mix", group:"yun", arch:"bruiser"};
+
+  function el(id){ return document.getElementById(id); }
+  function fmt(n, d){ return Number(n).toFixed(d === undefined ? 0 : d); }
+  function gold(g){ return (g/1000).toFixed(2).replace(/0$/,"") + "k"; }
+  function pct(a, b){ return (a/b - 1) * 100; }
+  function deltaHtml(v){
+    var cls = v >= 0 ? "up" : "down";
+    return '<span class="delta ' + cls + '">' + (v >= 0 ? "+" : "") + v.toFixed(1) + '%</span>';
+  }
+  function cssVar(name){
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+  function group(){ return GROUPS.filter(function(g){ return g.id === state.group; })[0]; }
+  function slotVar(id){
+    var i = group().ids.indexOf(id);
+    return i > -1 ? SLOT[i] : "var(--muted)";
+  }
+  function colorOf(id){ return cssVar(slotVar(id).slice(4, -1)); }
+
+  /* ---------- meta chips ---------- */
+  [DATA.package, DATA.rune, "파편 " + DATA.shard, "K=2 지속딜", "γ=0.8 순차 탐색", "레벨 8~17"]
+    .forEach(function(t){
+      var s = document.createElement("span"); s.className = "chip"; s.textContent = t;
+      el("meta").appendChild(s);
+    });
+
+  /* ---------- target archetype switch ---------- */
+  function arch(){ return DATA.archetypes.filter(function(a){ return a.id === state.arch; })[0]; }
+  DATA.archetypes.forEach(function(a){
+    var b = document.createElement("button");
+    b.type = "button"; b.textContent = a.label; b.dataset.arch = a.id;
+    b.setAttribute("aria-pressed", String(a.id === state.arch));
+    b.addEventListener("click", function(){
+      state.arch = a.id;
+      Array.prototype.forEach.call(el("archSwitch").children, function(c){
+        c.setAttribute("aria-pressed", String(c.dataset.arch === state.arch));
+      });
+      render();
+    });
+    el("archSwitch").appendChild(b);
+  });
+
+  /* ---------- group switch ---------- */
+  GROUPS.forEach(function(g){
+    var b = document.createElement("button");
+    b.type = "button"; b.textContent = g.label; b.dataset.group = g.id;
+    b.setAttribute("aria-pressed", String(g.id === state.group));
+    b.addEventListener("click", function(){
+      state.group = g.id;
+      Array.prototype.forEach.call(el("groupSwitch").children, function(c){
+        c.setAttribute("aria-pressed", String(c.dataset.group === state.group));
+      });
+      render();
+    });
+    el("groupSwitch").appendChild(b);
+  });
+
+  /* ---------- scenario switch ---------- */
+  SCEN.forEach(function(s){
+    var b = document.createElement("button");
+    b.type = "button"; b.textContent = s.label; b.dataset.scen = s.id;
+    b.setAttribute("aria-pressed", String(s.id === state.scen));
+    b.addEventListener("click", function(){
+      state.scen = s.id;
+      Array.prototype.forEach.call(el("switch").children, function(c){
+        c.setAttribute("aria-pressed", String(c.dataset.scen === state.scen));
+      });
+      render();
+    });
+    el("switch").appendChild(b);
+  });
+
+  /* ---------- svg helpers ---------- */
+  var NS = "http://www.w3.org/2000/svg";
+  function svgEl(tag, attrs){
+    var n = document.createElementNS(NS, tag);
+    for (var k in attrs) n.setAttribute(k, attrs[k]);
+    return n;
+  }
+  function niceTicks(lo, hi, count){
+    var raw = (hi - lo) / count, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    var step = [1, 2, 2.5, 5, 10].map(function(m){ return m * mag; })
+      .filter(function(s){ return s >= raw; })[0] || 10 * mag;
+    var start = Math.floor(lo / step) * step, out = [];
+    for (var v = start; v <= hi + step * 0.5; v += step) out.push(Math.round(v * 100) / 100);
+    return out;
+  }
+
+  function drawLines(host, tip, key, unit){
+    host.querySelectorAll("svg").forEach(function(n){ n.remove(); });
+    var W = Math.max(300, host.clientWidth || 640);
+    var compact = W < 560;
+    var H = compact ? 300 : 360;
+    var padL = compact ? 40 : 48, padR = compact ? 12 : 104, padT = 14, padB = 34;
+    var series = group().ids.map(function(id){
+      return {id:id, name:SHORT[id], color:colorOf(id), pts:byId[id].series[state.arch][state.scen]};
+    });
+    var gx = [], gy = [];
+    series.forEach(function(s){ s.pts.forEach(function(p){ gx.push(p.gold); gy.push(p[key]); }); });
+    var x0 = Math.min.apply(null, gx), x1 = Math.max.apply(null, gx);
+    var lo = Math.min.apply(null, gy), hi = Math.max.apply(null, gy);
+    // DPS 는 0 기준(절대 파워), DPG 는 비율 지표라 값 구간만 확대한다.
+    var y0 = key === "dps" ? 0 : Math.max(0, lo - (hi - lo) * 0.35);
+    var y1 = hi + (hi - y0) * 0.06;
+    var ticks = niceTicks(y0, y1, compact ? 4 : 5);
+    y0 = ticks[0]; y1 = Math.max(y1, ticks[ticks.length - 1]);
+    var X = function(v){ return padL + (v - x0) / (x1 - x0) * (W - padL - padR); };
+    var Y = function(v){ return H - padB - (v - y0) / (y1 - y0) * (H - padT - padB); };
+
+    var svg = svgEl("svg", {viewBox:"0 0 " + W + " " + H, role:"img",
+      "aria-label":"빌드별 누적 골드 대비 " + unit + " 곡선"});
+    var ink2 = cssVar("--ink-2"), muted = cssVar("--muted"), grid = cssVar("--line");
+    var surface = cssVar("--panel");
+
+    ticks.forEach(function(t){
+      svg.appendChild(svgEl("line", {x1:padL, x2:W - padR, y1:Y(t), y2:Y(t),
+        stroke:grid, "stroke-width":1}));
+      svg.appendChild(Object.assign(svgEl("text", {x:padL - 7, y:Y(t) + 4, "text-anchor":"end",
+        "font-size":compact ? 10 : 11, fill:muted, "font-family":"var(--mono)"}),
+        {textContent:fmt(t)}));
+    });
+    [x0, (x0 + x1) / 2, x1].forEach(function(g){
+      svg.appendChild(Object.assign(svgEl("text", {x:X(g), y:H - 12, "text-anchor":"middle",
+        "font-size":compact ? 10 : 11, fill:muted, "font-family":"var(--mono)"}),
+        {textContent:gold(g)}));
+    });
+    svg.appendChild(Object.assign(svgEl("text", {x:0, y:11, "font-size":10.5, fill:muted,
+      "font-family":"var(--mono)"}), {textContent:unit}));
+
+    var hits = [], endLabels = [];
+    series.forEach(function(s){
+      var d = s.pts.map(function(p, i){ return (i ? "L" : "M") + X(p.gold) + " " + Y(p[key]); }).join(" ");
+      svg.appendChild(svgEl("path", {d:d, fill:"none", stroke:s.color, "stroke-width":2,
+        "stroke-linejoin":"round", "stroke-linecap":"round"}));
+      s.pts.forEach(function(p){
+        var isHalf = p.step.indexOf("half") > -1;
+        svg.appendChild(svgEl("circle", {cx:X(p.gold), cy:Y(p[key]), r:isHalf ? 4 : 5,
+          fill:isHalf ? surface : s.color, stroke:isHalf ? s.color : surface, "stroke-width":2}));
+        hits.push({x:X(p.gold), y:Y(p[key]), s:s, p:p});
+      });
+      var last = s.pts[s.pts.length - 1];
+      endLabels.push({y:Y(last[key]), name:s.name, color:s.color});
+    });
+
+    if (!compact){
+      endLabels.sort(function(a, b){ return a.y - b.y; });
+      var gap = 16;
+      for (var i = 1; i < endLabels.length; i++){
+        if (endLabels[i].y - endLabels[i - 1].y < gap) endLabels[i].y = endLabels[i - 1].y + gap;
+      }
+      var over = endLabels[endLabels.length - 1].y - (H - padB);
+      if (over > 0) endLabels.forEach(function(l){ l.y -= over; });
+      endLabels.forEach(function(l){
+        svg.appendChild(svgEl("rect", {x:W - padR + 8, y:l.y - 5, width:9, height:9, rx:2, fill:l.color}));
+        svg.appendChild(Object.assign(svgEl("text", {x:W - padR + 21, y:l.y + 4,
+          "font-size":12, fill:ink2, "font-family":"var(--body)"}), {textContent:l.name}));
+      });
+    }
+
+    svg.addEventListener("mousemove", function(ev){
+      var r = svg.getBoundingClientRect(), sc = W / r.width;
+      var mx = (ev.clientX - r.left) * sc, my = (ev.clientY - r.top) * sc;
+      var best = null, bd = 1e9;
+      hits.forEach(function(h){
+        var d = Math.pow(h.x - mx, 2) + Math.pow(h.y - my, 2);
+        if (d < bd){ bd = d; best = h; }
+      });
+      if (best && bd < 900){
+        tip.innerHTML = '<b>' + best.s.name + '</b> · ' + best.p.label +
+          '<div class="row">' + unit + ' ' + fmt(best.p[key], 1) + ' · 누적 ' + best.p.gold + 'g</div>' +
+          (best.p.comps && best.p.comps.length ? '<div class="row">' + best.p.comps.join(" + ") + '</div>' : '');
+        tip.style.left = (best.x / sc) + "px";
+        tip.style.top = (best.y / sc) + "px";
+        tip.style.opacity = 1;
+      } else { tip.style.opacity = 0; }
+    });
+    svg.addEventListener("mouseleave", function(){ tip.style.opacity = 0; });
+    host.appendChild(svg);
+  }
+
+  function drawBars(host, tip, key, title, unit){
+    host.querySelectorAll("svg").forEach(function(n){ n.remove(); });
+    var rows = BAR_IDS.map(function(id){
+      var pts = byId[id].series[state.arch][state.scen];
+      var last = pts[pts.length - 1];
+      return {id:id, name:SHORT[id], full:byId[id].name, v:last[key], gold:last.gold};
+    }).sort(function(a, b){ return b.v - a.v; });
+    var W = Math.max(280, host.clientWidth || 460);
+    var rowH = 34, padT = 34, padB = 10, padR = 54;
+    var padL = Math.min(148, Math.max(96, W * 0.42));   // 3코어 이름이 들어갈 만큼
+    var H = padT + rows.length * rowH + padB;
+    var max = Math.max.apply(null, rows.map(function(r){ return r.v; })) * 1.12;
+    var muted = cssVar("--muted"), ink = cssVar("--ink"), ink2 = cssVar("--ink-2");
+    var barC = cssVar("--bar"), topC = cssVar("--bar-top");
+    var svg = svgEl("svg", {viewBox:"0 0 " + W + " " + H, role:"img",
+      "aria-label":title + " 빌드별 비교"});
+    svg.appendChild(Object.assign(svgEl("text", {x:0, y:14, "font-size":12.5, fill:ink,
+      "font-family":"var(--display)", "font-weight":"700"}), {textContent:title}));
+    svg.appendChild(Object.assign(svgEl("text", {x:0, y:29, "font-size":11, fill:muted}),
+      {textContent:"5코어 완성 시점 · " + unit}));
+
+    rows.forEach(function(r, i){
+      var y = padT + i * rowH + 6, h = 16;
+      var w = Math.max(2, r.v / max * (W - padL - padR));
+      svg.appendChild(Object.assign(svgEl("text", {x:0, y:y + 12,
+        "font-size":W < 420 ? 10.5 : 11.5, fill:ink2, "font-family":"var(--body)"}),
+        {textContent:r.name + (TAG[r.id] ? " (기존)" : "")}));
+      svg.appendChild(svgEl("rect", {x:padL, y:y, width:w, height:h, rx:4,
+        fill:i === 0 ? topC : barC}));
+      svg.appendChild(Object.assign(svgEl("text", {x:padL + w + 8, y:y + 12, "font-size":12,
+        fill:i === 0 ? ink : ink2, "font-family":"var(--mono)",
+        "font-weight":i === 0 ? "600" : "400"}), {textContent:fmt(r.v, key === "dpg" ? 1 : 0)}));
+      var hit = svgEl("rect", {x:0, y:y - 6, width:W, height:rowH - 2, fill:"transparent"});
+      hit.addEventListener("mousemove", function(ev){
+        var rect = svg.getBoundingClientRect(), sc = W / rect.width;
+        tip.innerHTML = '<b>' + r.name + '</b><div class="row">' + r.full + '</div>' +
+          '<div class="row">' + unit + ' ' + fmt(r.v, 1) + ' · ' + r.gold + 'g</div>';
+        tip.style.left = ((ev.clientX - rect.left)) + "px";
+        tip.style.top = ((y + 8) / sc) + "px";
+        tip.style.opacity = 1;
+      });
+      hit.addEventListener("mouseleave", function(){ tip.style.opacity = 0; });
+      svg.appendChild(hit);
+    });
+    host.appendChild(svg);
+  }
+
+  function renderLegend(host){
+    host.innerHTML = "";
+    group().ids.forEach(function(id){
+      var b = byId[id];
+      var d = document.createElement("span"); d.className = "lg";
+      d.innerHTML = '<i style="background:' + slotVar(id) + '"></i>' + SHORT[id] + tagHtml(id) +
+        ' <small>→' + b.path_ko.slice(3).join("-") + '</small>';
+      host.appendChild(d);
+    });
+  }
+
+  function renderKpis(){
+    var host = el("kpis"); host.innerHTML = "";
+    var base = byId[metaOf(state.group)].series[state.arch][state.scen];
+    var baseEnd = base[base.length - 1];
+    // 지금 고른 계열 안에서 고른다 — 계열·시나리오·타깃을 바꾸면 이 타일도 따라 바뀐다.
+    // 5코어 집합이 같은 트리(예: 신규 교전 / 루난 3코어)는 DPG 가 동률이라
+    // bestOf 의 3코어 타이브레이크가 갈라준다. 단순 정렬이면 배열 순서에 고정돼 버린다.
+    var best = bestOf(group().ids, state.arch, state.scen);
+    var bestB = byId[best.id];
+    var mid = best.mid;
+    var baseMid = base.filter(function(p){ return p.step === "3C"; })[0];
+
+    function tile(label, value, sub, lead){
+      var d = document.createElement("div");
+      d.className = "kpi" + (lead ? " lead" : "");
+      d.innerHTML = '<span class="k-label">' + label + '</span>' +
+        '<span class="k-value">' + value + '</span><span class="k-sub">' + sub + '</span>';
+      host.appendChild(d);
+    }
+    tile("이 시나리오 최고 골드효율", SHORT[best.id] + tagHtml(best.id),
+         "전체 " + bestB.path_ko.join(" → "), true);
+    var y2 = byId.opt_fight.series[state.arch][state.scen].filter(function(p){ return p.step === "2C"; })[0];
+    var k2 = byId.late_run.series[state.arch][state.scen].filter(function(p){ return p.step === "2C"; })[0];
+    tile("5코어 DPS", fmt(best.end.dps),
+         SHORT[metaOf(state.group)] + " 대비 " + deltaHtml(pct(best.end.dps, baseEnd.dps)));
+    tile("5코어 DPG", fmt(best.end.dpg, 1),
+         SHORT[metaOf(state.group)] + " 대비 " + deltaHtml(pct(best.end.dpg, baseEnd.dpg)));
+    tile("3코어 DPS", fmt(mid.dps),
+         SHORT[metaOf(state.group)] + " 대비 " + deltaHtml(pct(mid.dps, baseMid.dps)));
+    tile("1코어 윤탈 불가의 대가", deltaHtml(pct(k2.dps, y2.dps)),
+         "2코어 시점 DPS · " + fmt(k2.dps) + " vs " + fmt(y2.dps));
+  }
+
+  /* ---------- 추천 계산 ---------- */
+  // 5코어 DPG 최대, 0.15% 안쪽 동률이면 3코어 DPG 로 가른다(같은 집합·다른 순서를 구분).
+  function bestOf(ids, archId, scenId){
+    var rows = ids.map(function(id){
+      var pts = byId[id].series[archId][scenId];
+      var mid = pts.filter(function(p){ return p.step === "3C"; })[0];
+      return {id:id, end:pts[pts.length - 1], mid:mid};
+    }).sort(function(a, b){ return b.end.dpg - a.end.dpg; });
+    var top = rows[0];
+    rows.forEach(function(r){
+      if (r.end.dpg >= top.end.dpg * 0.9985 && r.mid.dpg > top.mid.dpg) top = r;
+    });
+    return top;
+  }
+  function metaOf(groupId){ return groupId === "yun" ? "meta_yun" : "meta_krk"; }
+
+  function renderPick(){
+    var g = group();
+    var best = bestOf(g.ids, state.arch, state.scen);
+    var base = byId[metaOf(g.id)].series[state.arch][state.scen];
+    var baseEnd = base[base.length - 1];
+    var b = byId[best.id];
+    var pts = b.series[state.arch][state.scen].filter(function(p){ return p.step.indexOf("half") < 0; });
+    var chain = pts.map(function(p, i){
+      return '<span class="node"><b>' + b.path_ko[i] + '</b><small>' + p.gold + 'g · ' +
+             fmt(p.dps) + ' DPS</small></span>';
+    }).join('<span class="arrow">→</span>');
+    el("pick").innerHTML =
+      '<div class="pick-head">' + arch().label + ' 상대 · ' +
+      SCEN.filter(function(x){ return x.id === state.scen; })[0].label + ' · ' + g.label +
+      ' 에서는</div><div class="chain">' + chain + '</div>' +
+      (best.id === metaOf(g.id)
+        ? '<div class="why"><b>' + SHORT[best.id] + '</b> — 이 조건에서는 기존 트리가 최고다.</div>'
+        : '<div class="why"><b>' + SHORT[best.id] + '</b> — ' + SHORT[metaOf(g.id)] + '(이 계열의 기존 트리) 대비 ' +
+      '5코어 DPS ' + deltaHtml(pct(best.end.dps, baseEnd.dps)) + ' · DPG ' +
+      deltaHtml(pct(best.end.dpg, baseEnd.dpg)) + ' · 3코어 DPS ' +
+      deltaHtml(pct(best.mid.dps, base.filter(function(p){ return p.step === "3C"; })[0].dps)) + '</div>');
+  }
+
+  function renderMatrix(){
+    var g = group();
+    el("matrixGroup").textContent = g.label;
+    var head = '<thead><tr><th>타깃 \\ 적 수</th>' + SCEN.map(function(sc){
+      return '<th>' + sc.label + '</th>';
+    }).join("") + '</tr></thead>';
+    var body = DATA.archetypes.map(function(a){
+      var cells = SCEN.map(function(sc){
+        var best = bestOf(g.ids, a.id, sc.id);
+        var base = byId[metaOf(g.id)].series[a.id][sc.id];
+        var d = pct(best.end.dpg, base[base.length - 1].dpg);
+        var on = (a.id === state.arch && sc.id === state.scen);
+        return '<td' + (on ? ' style="background:var(--panel-2); font-weight:600;"' : '') + '>' +
+          '<span class="swatch" style="background:' + slotVar(best.id) + '"></span>' +
+          SHORT[best.id] + tagHtml(best.id) + '<br><span style="font-size:11px; color:var(--muted); font-family:var(--mono)">' +
+          (d >= 0 ? "+" : "") + d.toFixed(1) + '%</span></td>';
+      }).join("");
+      return '<tr><td>' + a.label + '</td>' + cells + '</tr>';
+    }).join("");
+    el("matrix").innerHTML = head + '<tbody>' + body + '</tbody>' +
+      '<tfoot><tr><td colspan="5" style="text-align:left; color:var(--muted); font-size:11.5px; border:0; padding-top:10px;">' +
+      '칸 = 그 조건의 최적 트리와, 이 계열 기존 트리 대비 5코어 DPG 차이. 진한 칸이 지금 고른 조건이다.</td></tr></tfoot>';
+  }
+
+  function renderTable(){
+    var t = el("tbl");
+    var pts = byId.meta_krk.series[state.arch][state.scen];
+    var head = '<thead><tr><th>구간</th>' + BAR_IDS.map(function(id){
+      var inGroup = group().ids.indexOf(id) > -1;
+      var c = inGroup ? '<span class="swatch" style="background:' + slotVar(id) + '"></span>' : '';
+      return '<th' + (inGroup ? ' class="on"' : '') + '>' + c + SHORT[id] + tagHtml(id) + '</th>';
+    }).join("") + '</tr></thead>';
+    var rows = pts.map(function(_, i){
+      var isHalf = pts[i].step.indexOf("half") > -1;
+      var cells = BAR_IDS.map(function(id){
+        var p = byId[id].series[state.arch][state.scen][i];
+        if (!p) return "<td>—</td>";
+        return "<td>" + fmt(p.dps) + " <span style='color:var(--muted)'>/ " + fmt(p.dpg, 1) + "</span></td>";
+      }).join("");
+      var lab = isHalf ? (Math.ceil(pts[i].tier) + "코어 하프") : (pts[i].tier + "코어 완성");
+      return '<tr class="' + (isHalf ? "half" : "core") + '"><td>' + lab + "</td>" + cells + "</tr>";
+    }).join("");
+    t.innerHTML = head + "<tbody>" + rows + "</tbody>" +
+      '<tfoot><tr><td colspan="8" style="text-align:left; color:var(--muted); font-size:11.5px; border:0; padding-top:10px;">각 칸 = DPS / DPG. 빌드마다 같은 구간이라도 아이템이 달라 누적 골드가 다르다 — 정확한 골드는 곡선 위 점에 올려 확인.</td></tr></tfoot>';
+  }
+
+  function render(){
+    var s = SCEN.filter(function(x){ return x.id === state.scen; })[0];
+    el("scenNote").textContent = s.note;
+    el("groupNote").textContent = group().note;
+    var a = arch();
+    el("archNote").textContent = a.desc;
+    el("archTiers").innerHTML = [1, 2, 3, 4, 5].map(function(t){
+      var v = a.tiers[t];
+      return '<span class="chip">' + t + '코어 ' + v[0] + 'HP · 방' + v[1] + ' · 마저' + v[2] + '</span>';
+    }).join("");
+    renderKpis();
+    renderPick();
+    renderMatrix();
+    renderLegend(el("legend1"));
+    renderLegend(el("legend2"));
+    drawLines(el("plotDps"), el("tipDps"), "dps", "DPS");
+    drawLines(el("plotDpg"), el("tipDpg"), "dpg", "DPG");
+    drawBars(el("barDps"), el("tipBarDps"), "dps", "DPS", "DPS");
+    drawBars(el("barDpg"), el("tipBarDpg"), "dpg", "DPG", "DPG");
+    renderTable();
+  }
+
+  var rt;
+  window.addEventListener("resize", function(){
+    clearTimeout(rt); rt = setTimeout(render, 160);
+  });
+  if (window.matchMedia) {
+    var mq = window.matchMedia("(prefers-color-scheme: dark)");
+    if (mq.addEventListener) mq.addEventListener("change", render);
+  }
+  render();
+})();
+</script>
