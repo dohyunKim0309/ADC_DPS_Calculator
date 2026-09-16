@@ -1,6 +1,6 @@
 import pytest
 
-from adc_sim.simulations import ashe, cogmaw, corki, ezreal, jinx, yunara
+from adc_sim.simulations import ashe, cogmaw, corki, ezreal, jinx, receding, yunara
 from adc_sim.settings import (
     RANKING_SCORING, derive_core_weights, CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL,
 )
@@ -117,12 +117,13 @@ def test_yunara_cli_half5_enables_last_slot(monkeypatch):
     assert called == [(yunara.GAMMA, True)]
 
 
-def test_yunara_half_combo_score_is_incremental_and_skips_last_half(monkeypatch):
+def test_half_combo_score_is_incremental_and_skips_last_half(monkeypatch):
     """하프+완성 스텝이 γ^(step/2) 할인 **증분** 마지널 DPG 합인지 수계산한다.
 
-    다른 챔피언의 _score_combo 는 앵커(탐색 시작 시점) 대비 누적 마지널이라 첫 아이템
-    기여가 모든 항에 중복 계상되지만, 하프 경로는 스텝마다 기준을 직전 상태로 갱신한다.
-    마지막 슬롯(=horizon)의 하프는 생략되며, 그때도 step 은 진행해 할인 지수를 유지한다.
+    공통 엔진(`simulations/receding.py`) 계약이다. 다른 챔피언의 _score_combo 는 앵커
+    (탐색 시작 시점) 대비 누적 마지널이라 첫 아이템 기여가 모든 항에 중복 계상되지만,
+    하프 경로는 스텝마다 기준을 직전 상태로 갱신한다. 마지막 슬롯(=horizon)의 하프는
+    생략되며, 그때도 step 은 진행해 할인 지수를 유지한다.
     """
     class FakeCache:
         """아이템 개수에 대응하는 합성 DPS·골드를 반환한다."""
@@ -130,11 +131,16 @@ def test_yunara_half_combo_score_is_incremental_and_skips_last_half(monkeypatch)
         def sim(self, items):
             return {1: (100.0, 1000.0), 2: (300.0, 2000.0)}[len(items)]
 
-    monkeypatch.setattr(yunara, "sim_half", lambda cache, done, nxt: (50.0, 500.0, ()))
+        def sim_half(self, done, next_key, comps):
+            return (50.0, 500.0)
 
-    score = yunara._score_combo_half(
-        FakeCache(), [], ("a", "b"), 1, 0.0, 0.0, 0.5, 2,
+    spec = receding.RecedingSpec(
+        title="Fake", candidates_by_slot={1: ["a"], 2: ["b"]},
+        pen_rule_ok=lambda keys: True, half_options=lambda key: ((),),
+        gamma=0.5, horizon=2,
     )
+
+    score = receding.score_combo(spec, FakeCache(), [], ("a", "b"), 1, 0.0, 0.0)
 
     # 1C 하프 (50-0)/0.5 = 100          × γ^0   = 100
     # 1C 완성 (100-50)/0.5 = 100        × γ^0.5 = 70.7107
