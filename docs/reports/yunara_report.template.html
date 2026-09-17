@@ -270,7 +270,7 @@
   <section class="card">
     <div class="card-head">
       <h2>타이밍별 규칙</h2>
-      <p class="card-note">브루저 · 혼합 1:1:1 기준. 같은 앞 아이템끼리만 비교했다.</p>
+      <p class="card-note" id="rulesNote"></p>
     </div>
     <div class="rules" id="rules"></div>
   </section>
@@ -333,7 +333,7 @@
             <li>적 2·3 값은 <b>메인 타깃에 꽂히는 DPS</b>다. 루난 볼트가 서브 타깃에 준 피해는 집계하지 않고, Q 확산이 메인으로 되돌린 분량만 더한다.</li>
             <li>윤탈 치명타는 <b>구매 코어 0% → 다음 코어 25%</b> 가정이다. 1~2코어 순서 결론을 직접 지배한다.</li>
             <li>K=2 처치 타이밍 양자화로 ±2%p 잡음이 있다. score 차 0.5% 안쪽은 동률(<span class="tie">≈</span>)로 표시한다.</li>
-            <li>각 노드에서 <b>상위 3개만</b> 다음 단계로 전개했다. 나머지는 점수만 있고 그 뒤 가지는 <b>미검증</b>이다.</li>
+            <li>각 노드에서 <b>상위 3개만</b> 다음 단계로 전개했다. 나머지도 점수는 같은 방식으로 계산했고, 그 뒤 가지만 <b>전개하지 않았다</b>.</li>
             <li>라인 클리어·생존력·사거리 가치는 모델 밖이다.</li>
           </ul>
         </div>
@@ -473,6 +473,7 @@
       var b = document.createElement("button");
       b.type = "button";
       b.className = "cand" + (i === 0 ? " lead" : "");
+      var tiedTop = mains.length > 1 && mains[1].rel > -TIE;
       var tie = (i > 0 && r.rel > -TIE) ? '<span class="tie">≈ 동률</span>' : '';
       b.innerHTML =
         '<span class="rank">' + (i + 1) + '</span>' +
@@ -480,7 +481,9 @@
         '<span class="score">' + fmt(r.score, 1) + '</span>' +
         '<span class="sub">누적 ' + r.gold + 'g · mDPG ' + fmt(r.mdpg, 1) + '<br>' +
           'DPS ' + fmt(r.dps) + ' · DPG ' + fmt(r.dpg, 1) + '</span>' +
-        '<span class="rel">' + (i === 0 ? "score 1위" : fmt(r.rel, 1) + "%") + '</span>';
+        '<span class="rel">' + (i === 0
+            ? (tiedTop ? '<span class="tie">≈ 동률</span>' : "score 1위")
+            : fmt(r.rel, 1) + "%") + '</span>';
       b.addEventListener("click", function(){
         state.path = state.path.concat([r.item]);
         render();
@@ -497,7 +500,7 @@
         return '<tr><td>' + (ITEM[r.item] || r.item) + '</td><td>' + fmt(r.score, 1) + '</td>' +
           '<td>' + fmt(r.rel, 1) + '%</td><td>' + fmt(r.mdpg, 1) + '</td>' +
           '<td>' + fmt(r.dps) + '</td><td>' + fmt(r.dpg, 1) + '</td>' +
-          '<td><span class="unverified">미검증</span></td></tr>';
+          '<td><span class="unverified">전개 안 함</span></td></tr>';
       }).join("") + '</tbody>';
   }
 
@@ -525,18 +528,70 @@
       " — " + SCEN_NOTE[state.scen] + " 후보를 누르면 그다음 칸으로 넘어간다.";
   }
 
-  /* ---------- 타이밍별 규칙 (score 기준, 브루저·혼합) ---------- */
-  var RULES = [
-    ["2코어", "<b>윤탈·크라켄을 앞 두 칸에.</b> 1코어는 크라켄 673.5 ≈ 윤탈 670.0(0.5% 차)이지만, 윤탈로 열면 2코어 크라켄이 684.5 로 되받는다. 윤탈의 1코어 mDPG 가 67.8 로 낮은 건 치확 0%→25% 가정 탓이다."],
-    ["3코어", "<b>루난이냐 도미닉이냐.</b> score 는 618.8 ≈ 616.1(0.4% 차)로 동률인데 mDPG 는 루난 145.9 vs 도미닉 90.7. <b>지금 교전이 잦으면 루난, 뒤를 보면 도미닉</b>이다."],
-    ["4코어", "<b>3코어에서 안 간 쪽이 1위로 온다.</b> 두 경로는 5코어에서 같은 집합으로 만나므로 갈리는 건 순서뿐이다. 무한은 두 경우 다 2위."],
-    ["5코어", "<b>순위가 거의 고정된다.</b> γ 가 네 번 곱해져 기여가 0.41 배. 이 칸은 score 보다 mDPG 를 보는 게 낫다."]
-  ];
+  /* ---------- 타이밍별 규칙 (현재 스위치의 데이터에서 생성) ---------- */
+  function sortedRows(node){
+    return Object.keys(node).map(function(k){ var r = node[k]; r.item = k; return r; })
+      .sort(function(a, b){ return b.score - a.score; });
+  }
+  function bestPathFrom(prefix){
+    var p = prefix.slice();
+    for (;;){
+      var n = nodeAt(p);
+      if (!n || !Object.keys(n).length) return p;
+      p.push(sortedRows(n)[0].item);
+    }
+  }
+  function finalSet(prefix){
+    return bestPathFrom(prefix).slice().sort().join("+");
+  }
+  function nm(item){ return ITEM[item] || item; }
+  // 받침 유무로 조사 선택 — "윤탈이" / "구인수가".
+  function josa(word, withJong, noJong){
+    var ch = word.charCodeAt(word.length - 1), has;
+    if (ch >= 0xAC00 && ch <= 0xD7A3) has = ((ch - 0xAC00) % 28) !== 0;
+    else if (ch >= 0x30 && ch <= 0x39) has = "0136780".indexOf(word.slice(-1)) > -1;
+    else has = false;
+    return word + (has ? withJong : noJong);
+  }
+  function subj(item){ return josa(nm(item), "이", "가"); }
 
-
-  el("rules").innerHTML = RULES.map(function(r){
-    return '<div class="rule-item"><span class="rule-tag">' + r[0] + '</span><p>' + r[1] + '</p></div>';
-  }).join("");
+  function renderRules(){
+    var host = el("rules"); host.innerHTML = "";
+    el("rulesNote").textContent = arch().label + " 상대 · " + SCEN_LABEL[state.scen] +
+      " 기준. score 1위를 따라간 경로에서, 같은 칸의 형제 후보끼리만 비교한다.";
+    var path = [];
+    for (var d = 0; d < 5; d++){
+      var node = nodeAt(path);
+      if (!node || !Object.keys(node).length) break;
+      var rows = sortedRows(node), a = rows[0], b = rows[1], c = rows[2];
+      var pre = d ? path.map(nm).join("-") + " 뒤, " : "";
+      var txt = pre + "<b>" + nm(a.item) + " " + fmt(a.score, 1) + "</b>";
+      if (b){
+        var gapAB = Math.abs(b.rel), tied = gapAB < TIE;
+        txt += (tied ? " ≈ " : " > ") + nm(b.item) + " " + fmt(b.score, 1) +
+               " (" + fmt(gapAB, 1) + "% 차)";
+        if (c && Math.abs(c.rel - b.rel) < TIE)
+          txt += " (3위 " + nm(c.item) + " " + fmt(c.score, 1) + " 는 2위와 동률)";
+        txt += ". ";
+        if (b.mdpg > a.mdpg){
+          txt += "mDPG 는 " + nm(b.item) + " " + fmt(b.mdpg, 1) + " > " +
+                 nm(a.item) + " " + fmt(a.mdpg, 1) +
+                 (tied ? " — <b>지금 파워가 급하면 " + nm(b.item) + ", 뒤를 보면 " + nm(a.item) + "</b>."
+                       : " — 이 칸 골드만 보면 " + subj(b.item) + " 싸게 오른다.");
+        } else {
+          txt += "mDPG 도 " + subj(a.item) + " " + fmt(a.mdpg, 1) + " 로 앞선다.";
+        }
+        if (tied && finalSet(path.concat([a.item])) === finalSet(path.concat([b.item])))
+          txt += " 두 경로는 5코어에서 같은 집합으로 만나므로 갈리는 건 순서뿐이다.";
+      } else {
+        txt += ". 이 칸엔 다른 후보가 없다.";
+      }
+      var row = document.createElement("div"); row.className = "rule-item";
+      row.innerHTML = '<span class="rule-tag">' + (d + 1) + '코어</span><p>' + txt + '</p>';
+      host.appendChild(row);
+      path.push(a.item);
+    }
+  }
 
   /* ---------- 측정 조건 칩 ---------- */
   [EX.meta.package, EX.meta.rune, "파편 " + EX.meta.shard,
@@ -794,6 +849,7 @@
     renderChain();
     renderState();
     renderCandidates();
+    renderRules();
     renderArchNote();
     renderKpis();
     renderLegend(el("legend1"));
