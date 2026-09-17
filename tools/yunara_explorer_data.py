@@ -164,6 +164,7 @@ class Explorer:
                 "ddps": round(r["ddps"], 1),
                 "mdpg": round(r["mdpg"], 1),
                 "half_dps": round(r["half_dps"], 1) if r["half_dps"] else None,
+                "half_gold": int(r["half_gold"]) if r["half_gold"] else None,
                 "half_dpg": round(r["half_dpg"], 1) if r["half_dpg"] else None,
                 "rel": round(100.0 * (r["score"] / best - 1.0), 1) if best else 0.0,
                 "tier": "main" if i < MAIN_TOP_N else "minor",

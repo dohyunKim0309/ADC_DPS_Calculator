@@ -297,7 +297,7 @@
   </section>
 
   <details class="fold">
-    <summary><b>KPI</b> <span>다섯 아이템을 다 갖췄을 때의 절대 파워와 골드효율</span></summary>
+    <summary><b>KPI</b> <span>지금 1위 경로의 절대 파워와 골드효율</span></summary>
     <div class="fold-body">
       <div class="kpis" id="kpis"></div>
       <p class="foot">지금 고른 상대·적 수에서 다섯 아이템을 다 갖췄을 때의 값이다.
@@ -306,7 +306,7 @@
   </details>
 
   <details class="fold">
-    <summary><b>파워 곡선</b> <span>누적 골드에 따른 DPS·DPG 변화 — 네 트리 비교</span></summary>
+    <summary><b>파워 곡선</b> <span>지금 1위 경로와 기존 트리의 누적 골드별 DPS·DPG</span></summary>
     <div class="fold-body">
       <div class="legend" id="legend1"></div>
       <div class="plot" id="plotDps"><div class="tip" id="tipDps"></div></div>
@@ -319,14 +319,17 @@
   </details>
 
   <details class="fold">
-    <summary><b>5코어 시점 비교</b> <span>일곱 트리의 완성 시점 DPS·DPG 순위</span></summary>
+    <summary><b>5코어 시점 비교</b> <span>지금 1위 경로까지 포함한 완성 시점 DPS·DPG 순위</span></summary>
     <div class="fold-body">
       <div class="bars">
         <div class="plot" id="barDps"><div class="tip" id="tipBarDps"></div></div>
         <div class="plot" id="barDpg"><div class="tip" id="tipBarDpg"></div></div>
       </div>
       <p class="foot">다섯 아이템을 다 갖춘 시점만 잘라 세운 값이다. 왼쪽은 DPS(절대 파워),
-        오른쪽은 DPG(골드 1000당 DPS). 트리마다 총 골드가 달라 두 순위는 어긋날 수 있다.</p>
+        오른쪽은 DPG(골드 1000당 DPS). 트리마다 총 골드가 달라 두 순위는 어긋날 수 있다.
+        여기 1위와 탐색기의 "지금 1위" 가 다를 수 있는데, 탐색기는 1~5코어 전 구간의 할인 합(score)으로
+        세우고 이 막대는 마지막 한 점만 보기 때문이다.
+        이 시점 값은 든 아이템 집합에만 달려 있어, 순서만 다른 트리는 한 줄로 합쳤다(막대에 올리면 목록이 뜬다).</p>
     </div>
   </details>
 
@@ -393,10 +396,12 @@
     meta_yun:"윤탈-루난-무한", late_solo:"크라켄-윤탈-도미닉", late_run:"크라켄-윤탈-루난",
     meta_krk:"크라켄-루난-무한"
   };
-  var TAG = {meta_yun:"기존", meta_krk:"기존"};
-  var LINE_IDS = ["opt_fight", "opt_run3", "meta_yun", "meta_krk"];
+  var TAG = {meta_yun:"기존", meta_krk:"기존", dp_best:"지금 1위"};
+  // 곡선은 4줄까지 — 탐색기 1위 + 기존 메타 둘 + 흔한 대안 하나.
+  var LINE_IDS = ["dp_best", "meta_krk", "meta_yun", "late_run"];
   var SLOT = ["var(--s1)","var(--s2)","var(--s3)","var(--s4)"];
-  var BAR_IDS = ["opt_solo","opt_fight","opt_run3","late_solo","late_run","meta_krk","meta_yun"];
+  var BAR_IDS = ["dp_best","opt_solo","opt_fight","opt_run3","late_solo","late_run",
+                 "meta_krk","meta_yun"];
   var SCEN_LABEL = {tc1:"적 1명", tc2:"적 2명", tc3:"적 3명", mix:"혼합 1:1:1"};
   var SCEN_NOTE = {
     tc1:"순수 단일 대상. 솔로킬·사이드 구도.",
@@ -419,15 +424,27 @@
   function cssVar(name){
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
-  function group(){ return {id:"all", ids:LINE_IDS}; }
+  function group(){ return {id:"all", ids:liveIds(LINE_IDS)}; }
   function slotVar(id){
-    var i = LINE_IDS.indexOf(id);
+    var i = liveIds(LINE_IDS).indexOf(id);
     return i > -1 ? SLOT[i] : "var(--muted)";
   }
   function colorOf(id){ return cssVar(slotVar(id).slice(4, -1)); }
   function tagHtml(id){
-    return TAG[id] ? ' <span style="font-size:10.5px; color:var(--muted);">기존</span>' : '';
+    return TAG[id] ? ' <span style="font-size:10.5px; color:var(--muted);">' + TAG[id] + '</span>' : '';
   }
+  // 탐색기 1위와 같은 트리가 고정 비교군에도 있으면 중복이라 뺀다.
+  function liveIds(ids){
+    var best = byId.dp_best;
+    return ids.filter(function(id){
+      return id === "dp_best" || !best || byId[id].name !== best.name;
+    });
+  }
+  function barIds(){ return liveIds(BAR_IDS); }
+  function stepOf(pts, step){
+    return pts.filter(function(p){ return p.step === step; })[0];
+  }
+  function pointAt(id, step){ return stepOf(byId[id].series[state.arch][state.scen], step); }
   function arch(){
     return EX.archetypes.filter(function(a){ return a.id === state.arch; })[0];
   }
@@ -644,6 +661,33 @@
     }
   }
 
+  /* ---------- 탐색기 1위 경로 → 아래 섹션들이 쓰는 시리즈 ---------- */
+  // 접이식 섹션이 보던 고정 7트리에는 "지금 조건의 1위" 가 없어 KPI 와 탐색기가 어긋났다.
+  // 탐색기 노드에서 같은 모양의 시리즈를 만들어 비교군 맨 앞에 넣는다.
+  function buildDpBest(){
+    var path = bestPathFrom([]), prefix = [], pts = [];
+    path.forEach(function(item, i){
+      var info = nodeAt(prefix)[item], tier = i + 1;
+      if (info.half_dps && info.half_gold)
+        pts.push({step:tier + "C-half", tier:tier - 0.5, gold:info.half_gold,
+                  dps:info.half_dps, dpg:info.half_dpg, label:tier + "코어 하프", comps:[]});
+      pts.push({step:tier + "C", tier:tier, gold:info.gold, dps:info.dps, dpg:info.dpg,
+                label:tier + "코어 " + nm(item), comps:[]});
+      prefix.push(item);
+    });
+    var ko = path.map(nm), full = ko.join("-"), series = {};
+    series[state.arch] = {}; series[state.arch][state.scen] = pts;
+    byId.dp_best = {id:"dp_best", name:full, kind:"dp", group:"dp",
+                    path_ko:ko, series:series};
+    // 앞 3개가 고정 트리와 겹치면(같은 트리는 아닌데) 한 칸 더 보여 구분한다.
+    var taken = BAR_IDS.filter(function(id){
+      return id !== "dp_best" && byId[id] && byId[id].name !== full;
+    }).map(function(id){ return SHORT[id]; });
+    var n = 3, label = ko.slice(0, 3).join("-");
+    while (taken.indexOf(label) > -1 && n < ko.length){ n++; label = ko.slice(0, n).join("-"); }
+    SHORT.dp_best = label;
+  }
+
   /* ---------- 측정 조건 칩 ---------- */
   [EX.meta.package, EX.meta.rune, "파편 " + EX.meta.shard,
    "K=2 지속딜", "γ=" + EX.meta.gamma, "상위 " + EX.meta.main_top_n + "개만 전개"]
@@ -762,14 +806,43 @@
 
   function drawBars(host, tip, key, title, unit){
     host.querySelectorAll("svg").forEach(function(n){ n.remove(); });
-    var rows = BAR_IDS.map(function(id){
-      var pts = byId[id].series[state.arch][state.scen];
+    // 5코어 시점 값은 "장착 집합" 에만 달렸다 — 순서만 다른 트리는 한 줄로 합친다.
+    var bySet = {}, order = [];
+    barIds().forEach(function(id){
+      var k = byId[id].path_ko.slice().sort().join("+");
+      if (!bySet[k]){ bySet[k] = []; order.push(k); }
+      bySet[k].push(id);
+    });
+    var rows = order.map(function(k){
+      var ids = bySet[k];
+      var rep = ids.indexOf("dp_best") > -1 ? "dp_best" : ids[0];
+      var pts = byId[rep].series[state.arch][state.scen];
       var last = pts[pts.length - 1];
-      return {id:id, name:SHORT[id], full:byId[id].name, v:last[key], gold:last.gold};
+      return {id:rep, name:SHORT[rep], full:byId[rep].name, v:last[key], gold:last.gold,
+              alts:ids.filter(function(x){ return x !== rep; })};
     }).sort(function(a, b){ return b.v - a.v; });
     var W = Math.max(280, host.clientWidth || 460);
     var rowH = 34, padT = 34, padB = 10, padR = 54;
-    var padL = Math.min(148, Math.max(96, W * 0.42));   // 3코어 이름이 들어갈 만큼
+    var fsLab = W < 420 ? 10.5 : 11.5;
+    rows.forEach(function(r){
+      r.label = r.name + (TAG[r.id] ? " (" + TAG[r.id] + ")" : "");
+    });
+    // 라벨 칸은 가장 긴 이름에 맞추되(한글 1 : 영숫자 0.55 폭 근사), 좁으면 글자를 줄이고
+    // 그래도 넘치면 뒤를 자른다 — 전체 경로는 막대 툴팁에 있다.
+    function textW(t, fs){
+      var w = 0;
+      for (var i = 0; i < t.length; i++) w += t.charCodeAt(i) > 0x2000 ? 1 : 0.55;
+      return w * fs;
+    }
+    var cap = Math.max(96, W * 0.52);
+    var widest = Math.max.apply(null, rows.map(function(r){ return textW(r.label, fsLab); }));
+    if (widest > cap) fsLab = Math.max(9, fsLab * cap / widest);
+    rows.forEach(function(r){
+      while (textW(r.label, fsLab) > cap - 6 && r.label.length > 6)
+        r.label = r.label.slice(0, -2) + "…";
+    });
+    var padL = Math.min(cap, Math.max(96,
+      Math.max.apply(null, rows.map(function(r){ return textW(r.label, fsLab); })) + 10));
     var H = padT + rows.length * rowH + padB;
     var max = Math.max.apply(null, rows.map(function(r){ return r.v; })) * 1.12;
     var muted = cssVar("--muted"), ink = cssVar("--ink"), ink2 = cssVar("--ink-2");
@@ -785,8 +858,8 @@
       var y = padT + i * rowH + 6, h = 16;
       var w = Math.max(2, r.v / max * (W - padL - padR));
       svg.appendChild(Object.assign(svgEl("text", {x:0, y:y + 12,
-        "font-size":W < 420 ? 10.5 : 11.5, fill:ink2, "font-family":"var(--body)"}),
-        {textContent:r.name + (TAG[r.id] ? " (기존)" : "")}));
+        "font-size":fsLab, fill:ink2, "font-family":"var(--body)"}),
+        {textContent:r.label}));
       svg.appendChild(svgEl("rect", {x:padL, y:y, width:w, height:h, rx:4,
         fill:i === 0 ? topC : barC}));
       svg.appendChild(Object.assign(svgEl("text", {x:padL + w + 8, y:y + 12, "font-size":12,
@@ -796,7 +869,9 @@
       hit.addEventListener("mousemove", function(ev){
         var rect = svg.getBoundingClientRect(), sc = W / rect.width;
         tip.innerHTML = '<b>' + r.name + '</b><div class="row">' + r.full + '</div>' +
-          '<div class="row">' + unit + ' ' + fmt(r.v, 1) + ' · ' + r.gold + 'g</div>';
+          '<div class="row">' + unit + ' ' + fmt(r.v, 1) + ' · ' + r.gold + 'g</div>' +
+          (r.alts.length ? '<div class="row">같은 집합 · 순서만 다름: ' +
+            r.alts.map(function(x){ return byId[x].name; }).join(", ") + '</div>' : '');
         tip.style.left = ((ev.clientX - rect.left)) + "px";
         tip.style.top = ((y + 8) / sc) + "px";
         tip.style.opacity = 1;
@@ -812,21 +887,9 @@
     group().ids.forEach(function(id){
       var b = byId[id];
       var d = document.createElement("span"); d.className = "lg";
+      var shown = SHORT[id].split("-").length;
       d.innerHTML = '<i style="background:' + slotVar(id) + '"></i>' + SHORT[id] + tagHtml(id) +
-        ' <small>→' + b.path_ko.slice(3).join("-") + '</small>';
-      host.appendChild(d);
-    });
-  }
-
-
-
-  function renderLegend(host){
-    host.innerHTML = "";
-    LINE_IDS.forEach(function(id){
-      var b = byId[id];
-      var d = document.createElement("span"); d.className = "lg";
-      d.innerHTML = '<i style="background:' + slotVar(id) + '"></i>' + SHORT[id] + tagHtml(id) +
-        ' <small>→' + b.path_ko.slice(3).join("-") + '</small>';
+        ' <small>→' + b.path_ko.slice(shown).join("-") + '</small>';
       host.appendChild(d);
     });
   }
@@ -834,16 +897,9 @@
   function renderKpis(){
     var host = el("kpis"); host.innerHTML = "";
     var base = byId.meta_krk.series[state.arch][state.scen];
-    var baseEnd = base[base.length - 1];
-    var rows = BAR_IDS.map(function(id){
-      var pts = byId[id].series[state.arch][state.scen];
-      return {id:id, end:pts[pts.length - 1],
-              mid:pts.filter(function(p){ return p.step === "3C"; })[0]};
-    }).sort(function(a, b){ return b.end.dpg - a.end.dpg; });
-    var top = rows[0];
-    rows.forEach(function(r){
-      if (r.end.dpg >= top.end.dpg * 0.9985 && r.mid.dpg > top.mid.dpg) top = r;
-    });
+    var baseEnd = base[base.length - 1], baseMid = stepOf(base, "3C");
+    var pts = byId.dp_best.series[state.arch][state.scen];
+    var end = pts[pts.length - 1], mid = stepOf(pts, "3C");
     function tile(label, value, sub, lead){
       var d = document.createElement("div");
       d.className = "kpi" + (lead ? " lead" : "");
@@ -851,29 +907,29 @@
         '</span><span class="k-sub">' + sub + '</span>';
       host.appendChild(d);
     }
-    tile("이 조건 최고 골드효율", SHORT[top.id] + tagHtml(top.id),
-         "전체 " + byId[top.id].path_ko.join(" → "), true);
-    tile("5코어 DPS", fmt(top.end.dps),
-         SHORT.meta_krk + " 대비 " + deltaHtml(pct(top.end.dps, baseEnd.dps)));
-    tile("5코어 DPG", fmt(top.end.dpg, 1),
-         SHORT.meta_krk + " 대비 " + deltaHtml(pct(top.end.dpg, baseEnd.dpg)));
-    tile("3코어 DPS", fmt(top.mid.dps),
-         SHORT.meta_krk + " 대비 " + deltaHtml(pct(top.mid.dps,
-           base.filter(function(p){ return p.step === "3C"; })[0].dps)));
+    tile("이 조건 1위 트리", SHORT.dp_best,
+         "전체 " + byId.dp_best.path_ko.join(" → "), true);
+    tile("5코어 DPS", fmt(end.dps),
+         SHORT.meta_krk + " 대비 " + deltaHtml(pct(end.dps, baseEnd.dps)));
+    tile("5코어 DPG", fmt(end.dpg, 1),
+         SHORT.meta_krk + " 대비 " + deltaHtml(pct(end.dpg, baseEnd.dpg)));
+    tile("3코어 DPS", fmt(mid.dps),
+         SHORT.meta_krk + " 대비 " + deltaHtml(pct(mid.dps, baseMid.dps)));
   }
 
   function renderTable(){
     var t = el("tbl");
     var pts = byId.meta_krk.series[state.arch][state.scen];
-    var head = '<thead><tr><th>구간</th>' + BAR_IDS.map(function(id){
+    var ids = barIds();
+    var head = '<thead><tr><th>구간</th>' + ids.map(function(id){
       var inGroup = group().ids.indexOf(id) > -1;
       var c = inGroup ? '<span class="swatch" style="background:' + slotVar(id) + '"></span>' : '';
       return '<th' + (inGroup ? ' class="on"' : '') + '>' + c + SHORT[id] + tagHtml(id) + '</th>';
     }).join("") + '</tr></thead>';
     var rows = pts.map(function(_, i){
       var isHalf = pts[i].step.indexOf("half") > -1;
-      var cells = BAR_IDS.map(function(id){
-        var p = byId[id].series[state.arch][state.scen][i];
+      var cells = ids.map(function(id){
+        var p = pointAt(id, pts[i].step);
         if (!p) return "<td>—</td>";
         return "<td>" + fmt(p.dps) + " <span style='color:var(--muted)'>/ " + fmt(p.dpg, 1) + "</span></td>";
       }).join("");
@@ -881,7 +937,7 @@
       return '<tr class="' + (isHalf ? "half" : "core") + '"><td>' + lab + "</td>" + cells + "</tr>";
     }).join("");
     t.innerHTML = head + "<tbody>" + rows + "</tbody>" +
-      '<tfoot><tr><td colspan="8" style="text-align:left; color:var(--muted); font-size:11.5px; border:0; padding-top:10px;">각 칸 = DPS / DPG. 빌드마다 같은 구간이라도 아이템이 달라 누적 골드가 다르다 — 정확한 골드는 곡선 위 점에 올려 확인.</td></tr></tfoot>';
+      '<tfoot><tr><td colspan="' + (ids.length + 1) + '" style="text-align:left; color:var(--muted); font-size:11.5px; border:0; padding-top:10px;">각 칸 = DPS / DPG. 빌드마다 같은 구간이라도 아이템이 달라 누적 골드가 다르다 — 정확한 골드는 곡선 위 점에 올려 확인.</td></tr></tfoot>';
   }
 
 
@@ -896,6 +952,7 @@
   }
 
   function render(){
+    buildDpBest();
     renderExplorerNote();
     renderChain();
     renderState();
