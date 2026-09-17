@@ -208,6 +208,7 @@
   }
   .foot{font-size:12px; line-height:1.75; color:var(--muted);
         border-top:1px dashed var(--line); padding-top:10px;}
+  .foot-list{list-style:none; display:flex; flex-direction:column; gap:4px;}
   .foot b{color:var(--ink-2); font-weight:600;}
   .tie{display:inline-block; font-family:var(--mono); font-size:10.5px; color:var(--accent-ink);
        border:1px solid var(--accent); border-radius:5px; padding:0 4px; margin-left:5px;}
@@ -280,13 +281,11 @@
       <div class="tablewrap"><table id="minorTable"></table></div>
     </div>
 
-    <p class="foot">읽는 법 — <b>DPS</b> 는 같은 체력바를 두 번 잡을 때의 초당 피해,
-      <b>DPG</b> 는 그때까지 쓴 골드 1000당 DPS(골드 효율)다.
-      <b>mDPG</b> 는 <i>이 한 칸</i>의 골드 효율이다: 이 아이템으로 늘어난 DPS ÷ (이 칸에 쓴 골드 ÷ 1000).
-      <b>score</b> 는 이걸 사고 5코어까지 최적으로 이어갔을 때 <i>남은 칸의 mDPG 까지 다 더한</i> 값이다 —
-      뒤 칸일수록 0.8배씩 줄여 반영하고, 아이템 사이 하위템 구간도 여기에 녹아 있다.
-      둘 다 클수록 좋다. 앞을 보는 건 score, 지금 당장을 보는 건 mDPG 이고,
-      score 가 0.5% 안쪽으로 붙으면 측정 잡음에 묻히는 차이라 mDPG 로 순서를 세운다.</p>
+    <ul class="foot foot-list">
+      <li><b>mDPG</b> — 현재 시점 이 아이템의 골드 효율. 늘어난 DPS ÷ 이 아이템에 쓴 골드(1000단위).</li>
+      <li><b>score</b> — 현재 시점 이 아이템부터 5코어까지의 mDPG 합. 할인율 γ=0.8, 하위템 구간 포함.</li>
+      <li><b>동률</b> — score 차 0.5% 안이면 mDPG 순.</li>
+    </ul>
   </section>
 
   <section class="card">
