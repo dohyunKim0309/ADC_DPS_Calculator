@@ -180,6 +180,8 @@
   .cands{display:flex; flex-direction:column; gap:8px;}
   .cands-head{font-size:11px; letter-spacing:.12em; text-transform:uppercase;
               color:var(--muted); font-weight:600;}
+  .cands-head .head-note{letter-spacing:0; text-transform:none; font-weight:400;
+              font-family:var(--mono); font-size:10.5px;}
   .cand{display:grid; grid-template-columns:auto 1fr auto; gap:2px 10px; align-items:baseline;
         width:100%; text-align:left; cursor:pointer; font-family:var(--body); color:var(--ink);
         background:var(--panel); border:1px solid var(--line); border-radius:12px;
@@ -332,7 +334,7 @@
           <ul>
             <li>적 2·3 값은 <b>메인 타깃에 꽂히는 DPS</b>다. 루난 볼트가 서브 타깃에 준 피해는 집계하지 않고, Q 확산이 메인으로 되돌린 분량만 더한다.</li>
             <li>윤탈 치명타는 <b>구매 코어 0% → 다음 코어 25%</b> 가정이다. 1~2코어 순서 결론을 직접 지배한다.</li>
-            <li>K=2 처치 타이밍 양자화로 ±2%p 잡음이 있다. score 차 0.5% 안쪽은 동률(<span class="tie">≈</span>)로 표시한다.</li>
+            <li>K=2 처치 타이밍 양자화로 ±2%p 잡음이 있다. score 차 0.5% 안쪽은 동률(<span class="tie">≈</span>)로 보고, 그 묶음은 <b>미래 가치가 아니라 당장의 mDPG 순</b>으로 세운다.</li>
             <li>각 노드에서 <b>상위 3개만</b> 다음 단계로 전개했다. 나머지도 점수는 같은 방식으로 계산했고, 그 뒤 가지만 <b>전개하지 않았다</b>.</li>
             <li>라인 클리어·생존력·사거리 가치는 모델 밖이다.</li>
           </ul>
@@ -457,33 +459,33 @@
     var node = nodeAt(state.path);
     var head = document.createElement("div");
     head.className = "cands-head";
-    head.textContent = (state.path.length + 1) + "코어 후보";
+    head.innerHTML = (state.path.length + 1) + '코어 후보' +
+      '<span class="head-note"> · score 동률(' + TIE + '% 이내)은 mDPG 순</span>';
     if (!node || !Object.keys(node).length){
       host.innerHTML = '<div class="done">다섯 코어를 다 채웠다.<br>경로의 아이템을 눌러 되감을 수 있다.</div>';
       el("minorWrap").hidden = true;
       return;
     }
     host.appendChild(head);
-    var rows = Object.keys(node).map(function(k){ var r = node[k]; r.item = k; return r; })
-      .sort(function(a, b){ return b.score - a.score; });
-    var mains = rows.filter(function(r){ return r.tier === "main"; });
+    var rows = sortedRows(node);
+    var mains = orderRows(rows.filter(function(r){ return r.tier === "main"; }));
     var minors = rows.filter(function(r){ return r.tier !== "main"; });
+    var tiedCount = mains.filter(function(r){ return r.rel > -TIE; }).length;
 
     mains.forEach(function(r, i){
       var b = document.createElement("button");
       b.type = "button";
       b.className = "cand" + (i === 0 ? " lead" : "");
-      var tiedTop = mains.length > 1 && mains[1].rel > -TIE;
-      var tie = (i > 0 && r.rel > -TIE) ? '<span class="tie">≈ 동률</span>' : '';
+      var inTie = tiedCount > 1 && r.rel > -TIE;
       b.innerHTML =
         '<span class="rank">' + (i + 1) + '</span>' +
-        '<span class="name">' + (ITEM[r.item] || r.item) + tie + '</span>' +
+        '<span class="name">' + (ITEM[r.item] || r.item) + '</span>' +
         '<span class="score">' + fmt(r.score, 1) + '</span>' +
         '<span class="sub">누적 ' + r.gold + 'g · mDPG ' + fmt(r.mdpg, 1) + '<br>' +
           'DPS ' + fmt(r.dps) + ' · DPG ' + fmt(r.dpg, 1) + '</span>' +
-        '<span class="rel">' + (i === 0
-            ? (tiedTop ? '<span class="tie">≈ 동률</span>' : "score 1위")
-            : fmt(r.rel, 1) + "%") + '</span>';
+        '<span class="rel">' + (inTie
+            ? '<span class="tie">≈ 동률</span>'
+            : (i === 0 ? "score 1위" : fmt(r.rel, 1) + "%")) + '</span>';
       b.addEventListener("click", function(){
         state.path = state.path.concat([r.item]);
         render();
@@ -533,12 +535,21 @@
     return Object.keys(node).map(function(k){ var r = node[k]; r.item = k; return r; })
       .sort(function(a, b){ return b.score - a.score; });
   }
+  // 미래 가치(score)가 TIE 안쪽이면 동률로 보고, 그 묶음은 당장의 mDPG 로 세운다.
+  function orderRows(rows){
+    var tied = rows.filter(function(r){ return r.rel > -TIE; })
+      .sort(function(a, b){ return b.mdpg - a.mdpg; });
+    return tied.concat(rows.filter(function(r){ return r.rel <= -TIE; }));
+  }
+  function mainRows(node){
+    return orderRows(sortedRows(node).filter(function(r){ return r.tier === "main"; }));
+  }
   function bestPathFrom(prefix){
     var p = prefix.slice();
     for (;;){
       var n = nodeAt(p);
       if (!n || !Object.keys(n).length) return p;
-      p.push(sortedRows(n)[0].item);
+      p.push(mainRows(n)[0].item);
     }
   }
   function finalSet(prefix){
@@ -558,26 +569,31 @@
   function renderRules(){
     var host = el("rules"); host.innerHTML = "";
     el("rulesNote").textContent = arch().label + " 상대 · " + SCEN_LABEL[state.scen] +
-      " 기준. score 1위를 따라간 경로에서, 같은 칸의 형제 후보끼리만 비교한다.";
+      " 기준. 매 칸 1위를 따라간 경로에서, 같은 칸의 형제 후보끼리만 비교한다.";
     var path = [];
     for (var d = 0; d < 5; d++){
       var node = nodeAt(path);
       if (!node || !Object.keys(node).length) break;
-      var rows = sortedRows(node), a = rows[0], b = rows[1], c = rows[2];
+      var rows = mainRows(node), a = rows[0], b = rows[1], c = rows[2];
       var pre = d ? path.map(nm).join("-") + " 뒤, " : "";
       var txt = pre + "<b>" + nm(a.item) + " " + fmt(a.score, 1) + "</b>";
       if (b){
-        var gapAB = Math.abs(b.rel), tied = gapAB < TIE;
+        var gapAB = Math.abs(a.score / b.score - 1) * 100, tied = a.rel > -TIE && b.rel > -TIE;
         txt += (tied ? " ≈ " : " > ") + nm(b.item) + " " + fmt(b.score, 1) +
                " (" + fmt(gapAB, 1) + "% 차)";
         if (c && Math.abs(c.rel - b.rel) < TIE)
           txt += " (3위 " + nm(c.item) + " " + fmt(c.score, 1) + " 는 2위와 동률)";
         txt += ". ";
-        if (b.mdpg > a.mdpg){
+        if (tied){
+          txt += "미래 가치가 동률이라 mDPG 로 갈랐다 — " + nm(a.item) + " " + fmt(a.mdpg, 1) +
+                 " > " + nm(b.item) + " " + fmt(b.mdpg, 1) +
+                 (b.score > a.score
+                   ? ". score 만 보면 " + subj(b.item) + " 근소하게 위다."
+                   : ".");
+        } else if (b.mdpg > a.mdpg){
           txt += "mDPG 는 " + nm(b.item) + " " + fmt(b.mdpg, 1) + " > " +
                  nm(a.item) + " " + fmt(a.mdpg, 1) +
-                 (tied ? " — <b>지금 파워가 급하면 " + nm(b.item) + ", 뒤를 보면 " + nm(a.item) + "</b>."
-                       : " — 이 칸 골드만 보면 " + subj(b.item) + " 싸게 오른다.");
+                 " — 이 칸 골드만 보면 " + subj(b.item) + " 싸게 오른다.";
         } else {
           txt += "mDPG 도 " + subj(a.item) + " " + fmt(a.mdpg, 1) + " 로 앞선다.";
         }
