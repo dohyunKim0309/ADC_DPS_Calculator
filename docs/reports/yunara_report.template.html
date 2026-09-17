@@ -282,7 +282,8 @@
     </div>
 
     <ul class="foot foot-list">
-      <li><b>mDPG</b> — 현재 시점 이 아이템의 골드 효율. 늘어난 DPS ÷ 이 아이템에 쓴 골드(1000단위).</li>
+      <li><b>mDPG</b> — 현재 시점 이 아이템의 골드 효율. 늘어난 DPS ÷ 이 아이템에 쓴 골드(1000단위).
+        1코어는 앞 상태가 없어 시작 아이템(도란활·신발·민첩함) 값까지 분모에 들어가고, 그래서 DPG 와 같은 값이 된다.</li>
       <li><b>score</b> — 현재 시점 이 아이템부터 5코어까지의 mDPG 합. 할인율 γ=0.8, 하위템 구간 포함.</li>
       <li><b>동률</b> — score 차 0.5% 안이면 mDPG 순.</li>
     </ul>
@@ -306,7 +307,7 @@
   </details>
 
   <details class="fold">
-    <summary><b>파워 곡선</b> <span>지금 1위 경로와 기존 트리의 누적 골드별 DPS·DPG</span></summary>
+    <summary><b>파워 곡선</b> <span>지금 1위 경로와 비교 트리의 누적 골드별 DPS·DPG</span></summary>
     <div class="fold-body">
       <div class="legend" id="legend1"></div>
       <div class="plot" id="plotDps"><div class="tip" id="tipDps"></div></div>
@@ -314,7 +315,7 @@
       <div class="plot" id="plotDpg"><div class="tip" id="tipDpg"></div></div>
       <p class="foot">가로축은 그 시점까지 쓴 누적 골드다. 위 그래프의 세로축 DPS 는 절대 파워,
         아래 그래프의 DPG 는 골드 1000당 DPS 라 "같은 돈으로 얼마나 셌는가" 를 뜻한다.
-        계단이 튀는 지점이 아이템이 완성되는 순간이다.</p>
+        점이 찍힌 곳이 하프·완성 시점이고, 그 사이는 직선으로 이었다.</p>
     </div>
   </details>
 
@@ -327,7 +328,7 @@
       </div>
       <p class="foot">다섯 아이템을 다 갖춘 시점만 잘라 세운 값이다. 왼쪽은 DPS(절대 파워),
         오른쪽은 DPG(골드 1000당 DPS). 트리마다 총 골드가 달라 두 순위는 어긋날 수 있다.
-        여기 1위와 탐색기의 "지금 1위" 가 다를 수 있는데, 탐색기는 1~5코어 전 구간의 할인 합(score)으로
+        여기 1위와 맨 위 "경로" 카드의 지금 1위가 다를 수 있는데, 경로 쪽은 1~5코어 전 구간의 할인 합(score)으로
         세우고 이 막대는 마지막 한 점만 보기 때문이다.
         이 시점 값은 든 아이템 집합에만 달려 있어, 순서만 다른 트리는 한 줄로 합쳤다(막대에 올리면 목록이 뜬다).</p>
     </div>
@@ -350,20 +351,21 @@
       <div class="notes">
         <div class="note">
           <h3>두 지표</h3>
-          <p><b>score</b> 는 이 아이템을 사고 5코어까지 최적으로 이어갔을 때의 <b>γ-할인 마지널 DPG 합</b>이다(γ=0.8, 하프 구간 √γ). 미래까지 본 값이라 정렬 기준으로 쓴다.</p>
-          <p><b>mDPG</b> 는 이 한 칸의 값이다 — (늘어난 DPS) ÷ (이 칸에 쓴 골드/1000). 미래를 보지 않는다. 둘이 엇갈리는 칸이 판단이 갈리는 지점이다.</p>
-          <p>아이템 사이 <b>하프 구간</b>(하위템만 든 상태)은 score 에 이미 녹아 있어 따로 표기하지 않는다. 목표 아이템 가격의 절반 근처에서 마지널 DPG 가 가장 높은 하위템 조합을 고른다.</p>
+          <p><b>score</b> 는 이 아이템을 사고 5코어까지 최적으로 이어갔을 때의 <b>γ-할인 마지널 DPG 합</b>이다(γ=0.8, 하프 구간 √γ). 미래까지 본 값이라 1차 정렬 기준으로 쓰되, 차이가 0.5% 안쪽이면 동률로 보고 mDPG 로 가른다.</p>
+          <p><b>mDPG</b> 는 이 한 칸의 값이다 — (늘어난 DPS) ÷ (이 칸에 쓴 골드/1000). 미래를 보지 않는다. 둘이 엇갈리는 칸이 판단이 갈리는 지점이다. 1코어만은 앞 상태가 없어 시작 아이템 값이 분모에 포함되고, 그 칸에서는 mDPG 와 DPG 가 같다.</p>
+          <p>아이템 사이 <b>하프 구간</b>(하위템만 든 상태)은 score 에 이미 녹아 있어 <b>후보 카드에는 따로 적지 않는다</b> — 구간별 값은 아래 파워 곡선과 수치 표에 있다. 목표 아이템 가격의 절반 근처에서 마지널 DPG 가 가장 높은 하위템 조합을 고르며, <b>5코어 직전 하프는 재지 않는다</b>(아이템 칸이 모자라 계획대로 사기 어렵고 가중도 가장 낮다).</p>
         </div>
         <div class="note">
           <h3>상대 타깃</h3>
           <p id="archNote"></p>
           <div class="meta" id="archTiers"></div>
+          <p>여기 적힌 레벨·스탯은 <b>상대</b> 기준이다. 유나라 자신의 레벨은 아래 "측정 방식" 에 있다.</p>
           <p>도미닉의 거인 학살자 증폭이 타깃 추가 체력(최대체력 − 1600)에 비례하므로, 물렁한 상대일수록 도미닉이 약해지고 무한·C44 가 유리해진다.</p>
         </div>
         <div class="note">
           <h3>측정 방식</h3>
           <p>유나라 레벨은 하프 8/10/12/14/16 · 완성 9/11/13/15/17. DPS 는 같은 체력바를 2회 처치하는 지속딜(K=2). 시작은 도란활 + 탐욕의 군화 + 민첩함, 룬은 치명적 속도 + 체력차 극복, 파편은 공속 10% + 적응형 AD 5.4.</p>
-          <p>후보 풀은 17종이며 관통 배타(방관·마관 각 1개)를 지킨다. 윤탈은 1~2코어에서만 살 수 있다.</p>
+          <p>후보 풀은 17종이며 관통 배타(방관·마관 각 1개)를 지킨다. 윤탈은 1~2코어에서만 살 수 있고, 1코어에는 라바돈·그림자불꽃·공허·도미닉·징수의총이 빠져 12종만 뜬다.</p>
         </div>
         <div class="note">
           <h3>믿으면 안 되는 것</h3>
@@ -397,6 +399,7 @@
     meta_krk:"크라켄-루난-무한"
   };
   var TAG = {meta_yun:"기존", meta_krk:"기존", dp_best:"지금 1위"};
+  function bestLabel(){ return state.path.length ? "고른 경로" : "지금 1위"; }
   // 곡선은 4줄까지 — 탐색기 1위 + 기존 메타 둘 + 흔한 대안 하나.
   var LINE_IDS = ["dp_best", "meta_krk", "meta_yun", "late_run"];
   var SLOT = ["var(--s1)","var(--s2)","var(--s3)","var(--s4)"];
@@ -548,7 +551,7 @@
     el("minorWrap").hidden = minors.length === 0;
     el("minorCount").textContent = minors.length ? "(" + minors.length + "종 · 전개 없음)" : "";
     el("minorTable").innerHTML =
-      '<thead><tr><th>아이템</th><th>score</th><th>1위 대비</th><th>mDPG</th>' +
+      '<thead><tr><th>아이템</th><th>score</th><th>최고 score 대비</th><th>mDPG</th>' +
       '<th>DPS</th><th>DPG</th><th>상태</th></tr></thead><tbody>' +
       minors.map(function(r){
         return '<tr><td>' + (ITEM[r.item] || r.item) + '</td><td>' + fmt(r.score, 1) + '</td>' +
@@ -621,15 +624,32 @@
   function renderRules(){
     var host = el("rules"); host.innerHTML = "";
     el("rulesNote").textContent = arch().label + " 상대 · " + SCEN_LABEL[state.scen] +
-      " 기준. 매 칸 1위를 따라간 경로에서, 같은 칸의 형제 후보끼리만 비교한다.";
+      " 기준. 고른 칸은 그대로 따라가고 나머지는 매 칸 1위로 채운 경로에서, " +
+      "같은 칸의 형제 후보끼리만 비교한다.";
     var path = [];
     for (var d = 0; d < 5; d++){
       var node = nodeAt(path);
       if (!node || !Object.keys(node).length) break;
-      var rows = mainRows(node), a = rows[0], b = rows[1], c = rows[2];
+      var rows = mainRows(node);
+      var picked = null;
+      if (state.path[d]){
+        picked = rows.filter(function(r){ return r.item === state.path[d]; })[0];
+        if (!picked && node[state.path[d]]){          // 혹시 상위 3개 밖을 고른 경우
+          picked = node[state.path[d]]; picked.item = state.path[d];
+        }
+      }
+      var a = picked || rows[0];
+      var rest = rows.filter(function(r){ return r.item !== a.item; });
+      var b = rest[0], c = rest[1];
+      var lead = rows[0].item !== a.item ? rows[0] : null;   // 고른 칸이 1위가 아닐 때
       var pre = d ? path.map(nm).join("-") + " 뒤, " : "";
-      var txt = pre + "<b>" + nm(a.item) + " " + fmt(a.score, 1) + "</b>";
-      if (b){
+      var txt = pre + (lead ? "고른 " : "") + "<b>" + nm(a.item) + " " + fmt(a.score, 1) + "</b>";
+      if (lead){
+        txt += " — 이 칸 1위는 " + nm(lead.item) + " " + fmt(lead.score, 1) +
+               " (" + fmt(Math.abs(lead.score / a.score - 1) * 100, 1) + "% 위). " +
+               "mDPG 는 " + nm(a.item) + " " + fmt(a.mdpg, 1) + " vs " +
+               nm(lead.item) + " " + fmt(lead.mdpg, 1) + ".";
+      } else if (b){
         var gapAB = Math.abs(a.score / b.score - 1) * 100, tied = a.rel > -TIE && b.rel > -TIE;
         txt += (tied ? " ≈ " : " > ") + nm(b.item) + " " + fmt(b.score, 1) +
                " (" + fmt(gapAB, 1) + "% 차)";
@@ -651,7 +671,7 @@
         }
         if (tied && finalSet(path.concat([a.item])) === finalSet(path.concat([b.item])))
           txt += " 두 경로는 5코어에서 같은 집합으로 만나므로 갈리는 건 순서뿐이다.";
-      } else {
+      } else if (!lead){
         txt += ". 이 칸엔 다른 후보가 없다.";
       }
       var row = document.createElement("div"); row.className = "rule-item";
@@ -665,7 +685,8 @@
   // 접이식 섹션이 보던 고정 7트리에는 "지금 조건의 1위" 가 없어 KPI 와 탐색기가 어긋났다.
   // 탐색기 노드에서 같은 모양의 시리즈를 만들어 비교군 맨 앞에 넣는다.
   function buildDpBest(){
-    var path = bestPathFrom([]), prefix = [], pts = [];
+    // 고른 칸이 있으면 그 경로를 이어서 최적으로 채운다 — 아래 섹션이 위 선택과 어긋나지 않게.
+    var path = bestPathFrom(state.path), prefix = [], pts = [];
     path.forEach(function(item, i){
       var info = nodeAt(prefix)[item], tier = i + 1;
       if (info.half_dps && info.half_gold)
@@ -679,6 +700,7 @@
     series[state.arch] = {}; series[state.arch][state.scen] = pts;
     byId.dp_best = {id:"dp_best", name:full, kind:"dp", group:"dp",
                     path_ko:ko, series:series};
+    TAG.dp_best = bestLabel();
     // 앞 3개가 고정 트리와 겹치면(같은 트리는 아닌데) 한 칸 더 보여 구분한다.
     var taken = BAR_IDS.filter(function(id){
       return id !== "dp_best" && byId[id] && byId[id].name !== full;
@@ -907,7 +929,7 @@
         '</span><span class="k-sub">' + sub + '</span>';
       host.appendChild(d);
     }
-    tile("이 조건 1위 트리", SHORT.dp_best,
+    tile(bestLabel() + " 트리", SHORT.dp_best,
          "전체 " + byId.dp_best.path_ko.join(" → "), true);
     tile("5코어 DPS", fmt(end.dps),
          SHORT.meta_krk + " 대비 " + deltaHtml(pct(end.dps, baseEnd.dps)));
