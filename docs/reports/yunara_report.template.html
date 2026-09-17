@@ -182,21 +182,33 @@
               color:var(--muted); font-weight:600;}
   .cands-head .head-note{letter-spacing:0; text-transform:none; font-weight:400;
               font-family:var(--mono); font-size:10.5px;}
-  .cand{display:grid; grid-template-columns:auto 1fr auto; gap:2px 10px; align-items:baseline;
+  .cand{display:grid; grid-template-columns:auto 1fr auto auto; gap:2px 10px; align-items:baseline;
         width:100%; text-align:left; cursor:pointer; font-family:var(--body); color:var(--ink);
         background:var(--panel); border:1px solid var(--line); border-radius:12px;
         padding:10px 12px; transition:border-color .15s, box-shadow .15s, transform .08s;}
   .cand:hover{border-color:var(--accent); transform:translateX(1px);}
   .cand:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
   .cand.lead{border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset;}
-  .cand .rank{font-family:var(--mono); font-size:11px; color:var(--muted); grid-row:span 2;}
+  .cand .rank{font-family:var(--mono); font-size:11px; color:var(--muted); grid-row:span 3;}
   .cand .name{font-family:var(--display); font-size:15px; font-weight:700;}
-  .cand .score{font-family:var(--mono); font-size:17px; font-weight:600; letter-spacing:-.01em;
-        font-variant-numeric:tabular-nums; text-align:right;}
-  .cand .sub{grid-column:2; font-family:var(--mono); font-size:11px; color:var(--muted);
-        font-variant-numeric:tabular-nums;}
-  .cand .rel{grid-column:3; font-family:var(--mono); font-size:11px; text-align:right;
+  .cand .score, .cand .mdpg{font-family:var(--mono); font-size:17px; font-weight:600;
+        letter-spacing:-.01em; font-variant-numeric:tabular-nums; text-align:right;}
+  .cand .mdpg{color:var(--ink-2);}
+  .cand .sub{grid-row:3; grid-column:2 / -1; font-family:var(--mono); font-size:11px;
         color:var(--muted); font-variant-numeric:tabular-nums;}
+  .cand .unit{grid-row:2; font-family:var(--mono); font-size:10px; color:var(--muted);
+        text-align:right; letter-spacing:.04em;}
+  .cand .unit-score{grid-column:3;}
+  .cand .unit-mdpg{grid-column:4;}
+  .cand .rel{font-family:var(--mono); font-size:11px; margin-left:6px;
+        color:var(--muted); font-variant-numeric:tabular-nums; font-weight:400;}
+  @media (max-width:420px){
+    .cand{gap:2px 7px; padding:9px 10px;}
+    .cand .score, .cand .mdpg{font-size:15px;}
+  }
+  .foot{font-size:12px; line-height:1.75; color:var(--muted);
+        border-top:1px dashed var(--line); padding-top:10px;}
+  .foot b{color:var(--ink-2); font-weight:600;}
   .tie{display:inline-block; font-family:var(--mono); font-size:10.5px; color:var(--accent-ink);
        border:1px solid var(--accent); border-radius:5px; padding:0 4px; margin-left:5px;}
   .cands .done{border:1px dashed var(--line); border-radius:12px; padding:14px;
@@ -267,6 +279,14 @@
       <h3 class="minor-title">나머지 후보 <span id="minorCount"></span></h3>
       <div class="tablewrap"><table id="minorTable"></table></div>
     </div>
+
+    <p class="foot">읽는 법 — <b>DPS</b> 는 같은 체력바를 두 번 잡을 때의 초당 피해,
+      <b>DPG</b> 는 그때까지 쓴 골드 1000당 DPS(골드 효율)다.
+      <b>mDPG</b> 는 <i>이 한 칸</i>의 골드 효율이다: 이 아이템으로 늘어난 DPS ÷ (이 칸에 쓴 골드 ÷ 1000).
+      <b>score</b> 는 이걸 사고 5코어까지 최적으로 이어갔을 때 <i>남은 칸의 mDPG 까지 다 더한</i> 값이다 —
+      뒤 칸일수록 0.8배씩 줄여 반영하고, 아이템 사이 하위템 구간도 여기에 녹아 있다.
+      둘 다 클수록 좋다. 앞을 보는 건 score, 지금 당장을 보는 건 mDPG 이고,
+      score 가 0.5% 안쪽으로 붙으면 측정 잡음에 묻히는 차이라 mDPG 로 순서를 세운다.</p>
   </section>
 
   <section class="card">
@@ -279,7 +299,11 @@
 
   <details class="fold">
     <summary><b>KPI</b> <span>다섯 아이템을 다 갖췄을 때의 절대 파워와 골드효율</span></summary>
-    <div class="fold-body"><div class="kpis" id="kpis"></div></div>
+    <div class="fold-body">
+      <div class="kpis" id="kpis"></div>
+      <p class="foot">지금 고른 상대·적 수에서 다섯 아이템을 다 갖췄을 때의 값이다.
+        DPS 는 절대 파워, DPG 는 골드 1000당 DPS.</p>
+    </div>
   </details>
 
   <details class="fold">
@@ -289,6 +313,9 @@
       <div class="plot" id="plotDps"><div class="tip" id="tipDps"></div></div>
       <div class="legend" id="legend2"></div>
       <div class="plot" id="plotDpg"><div class="tip" id="tipDpg"></div></div>
+      <p class="foot">가로축은 그 시점까지 쓴 누적 골드다. 위 그래프의 세로축 DPS 는 절대 파워,
+        아래 그래프의 DPG 는 골드 1000당 DPS 라 "같은 돈으로 얼마나 셌는가" 를 뜻한다.
+        계단이 튀는 지점이 아이템이 완성되는 순간이다.</p>
     </div>
   </details>
 
@@ -299,12 +326,19 @@
         <div class="plot" id="barDps"><div class="tip" id="tipBarDps"></div></div>
         <div class="plot" id="barDpg"><div class="tip" id="tipBarDpg"></div></div>
       </div>
+      <p class="foot">다섯 아이템을 다 갖춘 시점만 잘라 세운 값이다. 왼쪽은 DPS(절대 파워),
+        오른쪽은 DPG(골드 1000당 DPS). 트리마다 총 골드가 달라 두 순위는 어긋날 수 있다.</p>
     </div>
   </details>
 
   <details class="fold">
     <summary><b>수치 표</b> <span>하프 코어까지 포함한 구간별 DPS와 DPG</span></summary>
-    <div class="fold-body"><div class="tablewrap"><table id="tbl"></table></div></div>
+    <div class="fold-body">
+      <div class="tablewrap"><table id="tbl"></table></div>
+      <p class="foot"><b>하프</b> 는 코어 사이 구간, 즉 다음 아이템의 하위템만 들고 있는 상태다
+        (목표 아이템 값의 절반 근처에서 가장 효율 좋은 하위템 조합을 골랐다).
+        DPG 는 DPS ÷ (누적 골드 ÷ 1000) 이다.</p>
+    </div>
   </details>
 
   <details class="fold">
@@ -477,15 +511,17 @@
       b.type = "button";
       b.className = "cand" + (i === 0 ? " lead" : "");
       var inTie = tiedCount > 1 && r.rel > -TIE;
+      var badge = inTie ? '<span class="tie">≈ 동률</span>'
+        : '<span class="rel">' + (i === 0 ? "score 1위" : fmt(r.rel, 1) + "%") + '</span>';
       b.innerHTML =
         '<span class="rank">' + (i + 1) + '</span>' +
-        '<span class="name">' + (ITEM[r.item] || r.item) + '</span>' +
+        '<span class="name">' + (ITEM[r.item] || r.item) + badge + '</span>' +
         '<span class="score">' + fmt(r.score, 1) + '</span>' +
-        '<span class="sub">누적 ' + r.gold + 'g · mDPG ' + fmt(r.mdpg, 1) + '<br>' +
-          'DPS ' + fmt(r.dps) + ' · DPG ' + fmt(r.dpg, 1) + '</span>' +
-        '<span class="rel">' + (inTie
-            ? '<span class="tie">≈ 동률</span>'
-            : (i === 0 ? "score 1위" : fmt(r.rel, 1) + "%")) + '</span>';
+        '<span class="mdpg">' + fmt(r.mdpg, 1) + '</span>' +
+        '<span class="sub">누적 ' + r.gold + 'g · DPS ' + fmt(r.dps) +
+          ' · DPG ' + fmt(r.dpg, 1) + '</span>' +
+        '<span class="unit unit-score">score</span>' +
+        '<span class="unit unit-mdpg">mDPG</span>';
       b.addEventListener("click", function(){
         state.path = state.path.concat([r.item]);
         render();
@@ -509,7 +545,7 @@
   function renderState(){
     var host = el("stateBox");
     if (!state.path.length){
-      host.innerHTML = '<p class="hint">아직 아무것도 안 샀다. 오른쪽 1코어 후보에서 하나를 고르면 ' +
+      host.innerHTML = '<p class="hint">아직 아무것도 안 샀다. 1코어 후보에서 하나를 고르면 ' +
         '그 선택을 전제로 다음 칸 후보가 다시 계산된다.</p>';
       return;
     }
