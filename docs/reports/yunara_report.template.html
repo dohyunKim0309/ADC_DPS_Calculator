@@ -1,9 +1,9 @@
 <title>유나라 코어 결정 탐색기</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@500;700;900&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@500;700;900&amp;family=IBM+Plex+Sans+KR:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap">
 <style>
   :root{
     --bg:#f4f6f9; --panel:#ffffff; --panel-2:#eef1f6; --line:#dde3ec; --line-soft:#e9edf3;
-    --ink:#0e141c; --ink-2:#48525f; --muted:#7b8695;
+    --ink:#0e141c; --ink-2:#48525f; --muted:#5f6b7a;
     --accent:#2a78d6; --accent-ink:#1c5cab;
     --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100;
     --bar:#9ec5f4; --bar-top:#2a78d6;
@@ -92,7 +92,14 @@
 
   .bars{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:18px;}
 
-  .tablewrap{overflow-x:auto;}
+  /* 옆으로 더 있다는 표시 — 가장자리 그림자(내용이 끝나면 저절로 사라진다). */
+  .tablewrap{overflow-x:auto;
+    background:
+      linear-gradient(to right, var(--panel), rgba(127,127,127,0)) 0 0/20px 100% no-repeat,
+      linear-gradient(to left, var(--panel), rgba(127,127,127,0)) 100% 0/20px 100% no-repeat,
+      radial-gradient(farthest-side at 0 50%, rgba(15,23,32,.14), rgba(15,23,32,0)) 0 0/10px 100% no-repeat,
+      radial-gradient(farthest-side at 100% 50%, rgba(15,23,32,.14), rgba(15,23,32,0)) 100% 0/10px 100% no-repeat;
+    background-attachment:local, local, scroll, scroll;}
   table{border-collapse:collapse; width:100%; min-width:1080px; font-size:12.5px;}
   th,td{text-align:right; padding:7px 10px; border-bottom:1px solid var(--line-soft); white-space:nowrap;}
   th:first-child, td:first-child{text-align:left; position:sticky; left:0; background:var(--panel);}
@@ -244,6 +251,14 @@
   .fold-body{padding:0 18px 18px; display:flex; flex-direction:column; gap:14px;}
 </style>
 <div class="wrap">
+
+  <noscript>
+    <p style="padding:14px 16px; border:1px solid var(--line); border-radius:12px;
+              background:var(--panel); font-size:13px; line-height:1.7;">
+      이 리포트는 표·그래프를 브라우저에서 그린다. <b>자바스크립트가 꺼져 있어 내용이 보이지 않는다.</b>
+      브라우저 설정에서 자바스크립트를 켜고 새로고침하면 된다.
+    </p>
+  </noscript>
 
   <header class="head">
     <span class="eyebrow">ADC DPS Calculator · 유나라</span>
@@ -805,9 +820,10 @@
       });
     }
 
-    svg.addEventListener("mousemove", function(ev){
+    function onMove(ev){
+      var pt = (ev.touches && ev.touches[0]) ? ev.touches[0] : ev;
       var r = svg.getBoundingClientRect(), sc = W / r.width;
-      var mx = (ev.clientX - r.left) * sc, my = (ev.clientY - r.top) * sc;
+      var mx = (pt.clientX - r.left) * sc, my = (pt.clientY - r.top) * sc;
       var best = null, bd = 1e9;
       hits.forEach(function(h){
         var d = Math.pow(h.x - mx, 2) + Math.pow(h.y - my, 2);
@@ -821,7 +837,11 @@
         tip.style.top = (best.y / sc) + "px";
         tip.style.opacity = 1;
       } else { tip.style.opacity = 0; }
-    });
+    }
+    svg.addEventListener("mousemove", onMove);
+    // 터치 기기엔 hover 가 없다 — 같은 핸들러를 탭에도 물린다.
+    svg.addEventListener("touchstart", onMove, {passive:true});
+    svg.addEventListener("touchmove", onMove, {passive:true});
     svg.addEventListener("mouseleave", function(){ tip.style.opacity = 0; });
     host.appendChild(svg);
   }
@@ -888,16 +908,19 @@
         fill:i === 0 ? ink : ink2, "font-family":"var(--mono)",
         "font-weight":i === 0 ? "600" : "400"}), {textContent:fmt(r.v, key === "dpg" ? 1 : 0)}));
       var hit = svgEl("rect", {x:0, y:y - 6, width:W, height:rowH - 2, fill:"transparent"});
-      hit.addEventListener("mousemove", function(ev){
+      function onBar(ev){
+        var pt = (ev.touches && ev.touches[0]) ? ev.touches[0] : ev;
         var rect = svg.getBoundingClientRect(), sc = W / rect.width;
         tip.innerHTML = '<b>' + r.name + '</b><div class="row">' + r.full + '</div>' +
           '<div class="row">' + unit + ' ' + fmt(r.v, 1) + ' · ' + r.gold + 'g</div>' +
           (r.alts.length ? '<div class="row">같은 집합 · 순서만 다름: ' +
             r.alts.map(function(x){ return byId[x].name; }).join(", ") + '</div>' : '');
-        tip.style.left = ((ev.clientX - rect.left)) + "px";
+        tip.style.left = ((pt.clientX - rect.left)) + "px";
         tip.style.top = ((y + 8) / sc) + "px";
         tip.style.opacity = 1;
-      });
+      }
+      hit.addEventListener("mousemove", onBar);
+      hit.addEventListener("touchstart", onBar, {passive:true});
       hit.addEventListener("mouseleave", function(){ tip.style.opacity = 0; });
       svg.appendChild(hit);
     });
@@ -990,6 +1013,12 @@
     drawBars(el("barDpg"), el("tipBarDpg"), "dpg", "DPG", "DPG");
     renderTable();
   }
+
+  // 인쇄·PDF 저장: 접힌 섹션이 통째로 빠지지 않게 펼치고 다시 그린다.
+  window.addEventListener("beforeprint", function(){
+    document.querySelectorAll("details.fold").forEach(function(d){ d.open = true; });
+    render();
+  });
 
   var rt;
   window.addEventListener("resize", function(){

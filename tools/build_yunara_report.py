@@ -24,6 +24,32 @@ DEFAULT_OUT = ROOT / "docs" / "reports" / "yunara_report.html"
 PLACEHOLDER = "__CURVES_JSON__"
 EXPLORER_PLACEHOLDER = "__EXPLORER_JSON__"
 
+# 템플릿은 Artifact 로 publish 할 때를 기준으로 쓴 **조각**이라 doctype·charset 이 없다
+# (Artifact 호스트가 감싸 준다). 파일로 받아 file:// 로 열면 브라우저가 인코딩을 지역
+# 기본값으로 찍어 한글이 깨지고 쿼크 모드로 떨어진다 → 빌드가 문서 껍데기를 씌운다.
+DOC_HEAD = """<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+"""
+DOC_TAIL = "\n</body>\n</html>\n"
+BODY_ANCHOR = '<div class="wrap">'      # 여기부터가 본문 — 앞은 head 로 들어간다
+
+
+def _wrap_document(html):
+    """조각이면 완전한 HTML 문서로 감싼다(이미 doctype 이 있으면 그대로).
+
+    브라우저가 알아서 head/body 를 갈라 주긴 하지만, 나중에 본문 앞에 <script> 나
+    주석이 붙으면 소리 없이 head 로 빨려 들어간다. 경계를 명시해 둔다.
+    """
+    if html.lstrip()[:15].lower().startswith("<!doctype"):
+        return html
+    if BODY_ANCHOR in html:
+        head, body = html.split(BODY_ANCHOR, 1)
+        html = head + "</head>\n<body>\n" + BODY_ANCHOR + body
+    return DOC_HEAD + html + DOC_TAIL
+
 
 def _compact(path):
     return json.dumps(json.loads(path.read_text(encoding="utf-8")),
@@ -43,6 +69,7 @@ def build(template_path=TEMPLATE, data_path=DATA, out_path=DEFAULT_OUT,
             raise SystemExit(f"템플릿에 {marker} 자리가 없다: {template_path}")
     html = template.replace(PLACEHOLDER, _compact(data_path))
     html = html.replace(EXPLORER_PLACEHOLDER, _compact(explorer_path))
+    html = _wrap_document(html)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(html, encoding="utf-8")
     return out_path
