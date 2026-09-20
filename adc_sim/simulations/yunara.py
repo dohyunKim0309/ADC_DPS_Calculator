@@ -238,7 +238,7 @@ ITEM_SHORT = {
 CONTROL_COMBO = tuple(sorted(("kraken", "pd", "ie", "ldr")))
 CONTROL_LABEL = "Control Krk-PD-IE-LDR"
 from adc_sim.settings import (  # 코어 가중치 중앙 config(settings.py)
-    CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL, DEFAULT_DISCOUNT_GAMMA,
+    CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL, DEFAULT_DISCOUNT_GAMMA, discount_gamma,
 )
 CORE_WEIGHTS = [w / sum(CORE_WEIGHTS_RAW) for w in CORE_WEIGHTS_RAW]
 _YUNARA_4CORE_TOP1_CACHE = {}  # (target_count, rank_by) -> top1 build summary
@@ -380,7 +380,8 @@ def get_yunara_4core_top1_build(target_count=1, rank_by="dpg"):
     return cached
 
 
-GAMMA = DEFAULT_DISCOUNT_GAMMA
+# 할인율은 settings.RANKING_GAMMA_OVERRIDES 가 단일 출처 — 유나라만 0.7(나머지는 0.8).
+GAMMA = discount_gamma("yunara")
 HORIZON = 5
 # receding-horizon 기본 모드가 훑는 교전 적 수 시나리오.
 # 1=순수 단일 대상, 2=루난 서브타겟 1명, 3=루난 서브타겟 캡(2명) 완전 활용.

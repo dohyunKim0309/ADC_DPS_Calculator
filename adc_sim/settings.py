@@ -57,6 +57,21 @@ def derive_core_weights(scoring, n=4):
     return list(scoring["fixed_raw"][:n])
 
 
+# 챔피언별 할인율 예외 — 적어 두지 않은 챔피언은 전부 DEFAULT_DISCOUNT_GAMMA 를 쓴다.
+# 예외를 두면 그 챔피언의 랭킹만 다른 시간 선호를 갖게 되므로, 챔피언 간 비교
+# (power_compare)에서는 이 차이를 감안해서 읽어야 한다.
+RANKING_GAMMA_OVERRIDES = {
+    # 유나라: 챌린저 원딜 피드백으로 "지금 칸의 마지널 DPG" 비중을 키웠다(사용자 확정 2026-09-20).
+    # 가중(다음 칸부터) 0.8 → [0.80, 0.64, 0.51, 0.41] / 0.7 → [0.70, 0.49, 0.34, 0.24].
+    "yunara": 0.7,
+}
+
+
+def discount_gamma(champion=None):
+    """챔피언 탐색이 쓸 할인율 — 예외가 없으면 프로젝트 기본값."""
+    return RANKING_GAMMA_OVERRIDES.get(champion, DEFAULT_DISCOUNT_GAMMA)
+
+
 CORE_WEIGHTS_RAW = derive_core_weights(RANKING_SCORING)
 _mode_tag = "" if RANKING_SCORING["mode"] == "weighted" else f" (disc γ={RANKING_SCORING['gamma']:g})"
 CORE_WEIGHTS_LABEL = ":".join(f"{w:g}" for w in CORE_WEIGHTS_RAW) + _mode_tag

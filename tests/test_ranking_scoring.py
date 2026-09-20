@@ -2,7 +2,7 @@ import pytest
 
 from adc_sim.simulations import ashe, cogmaw, corki, ezreal, jinx, yunara
 from adc_sim.settings import (
-    RANKING_SCORING, derive_core_weights, CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL,
+    RANKING_SCORING, derive_core_weights, discount_gamma, CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL,
 )
 
 
@@ -67,8 +67,11 @@ def test_remaining_champion_cli_preserves_legacy_ranking(module, monkeypatch):
 
 @pytest.mark.parametrize("module", SLOT_MAP_MODULES)
 def test_remaining_champion_searches_expose_five_slots(module):
-    """모든 신규 기본 탐색이 공통 γ와 1~5코어 후보 맵을 노출하는지 검증한다."""
-    assert module.GAMMA == RANKING_SCORING["gamma"]
+    """모든 신규 기본 탐색이 (예외 포함) 선언된 γ와 1~5코어 후보 맵을 노출하는지 검증한다."""
+    champion = module.__name__.rsplit(".", 1)[-1]
+    # 기본은 공통 γ. 다르게 쓰려면 settings.RANKING_GAMMA_OVERRIDES 에 적어야 한다
+    # (모듈 안에 숫자를 박아 두면 여기서 걸린다).
+    assert module.GAMMA == discount_gamma(champion)
     assert module.HORIZON == 5
     assert set(module.CANDIDATES_BY_SLOT) == {1, 2, 3, 4, 5}
     assert all(module.CANDIDATES_BY_SLOT[slot] for slot in range(1, 6))

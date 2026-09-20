@@ -299,7 +299,7 @@
     <ul class="foot foot-list">
       <li><b>mDPG</b> — 현재 시점 이 아이템의 골드 효율. 늘어난 DPS ÷ 이 아이템에 쓴 골드(1000단위).
         1코어는 앞 상태가 없어 시작 아이템(도란활·신발·민첩함) 값까지 분모에 들어가고, 그래서 DPG 와 같은 값이 된다.</li>
-      <li><b>score</b> — 현재 시점 이 아이템부터 5코어까지의 mDPG 합. 할인율 γ=0.8, 하위템 구간 포함.</li>
+      <li><b>score</b> — 현재 시점 이 아이템부터 5코어까지의 mDPG 합. 할인율 <span id="gammaFoot">γ</span>, 하위템 구간 포함.</li>
       <li><b>동률</b> — score 차 0.5% 안이면 mDPG 순.</li>
     </ul>
   </section>
@@ -366,7 +366,7 @@
       <div class="notes">
         <div class="note">
           <h3>두 지표</h3>
-          <p><b>score</b> 는 이 아이템을 사고 5코어까지 최적으로 이어갔을 때의 <b>γ-할인 마지널 DPG 합</b>이다(γ=0.8, 하프 구간 √γ). 미래까지 본 값이라 1차 정렬 기준으로 쓰되, 차이가 0.5% 안쪽이면 동률로 보고 mDPG 로 가른다.</p>
+          <p><b>score</b> 는 이 아이템을 사고 5코어까지 최적으로 이어갔을 때의 <b>γ-할인 마지널 DPG 합</b>이다(<span id="gammaNote">γ</span>, 하프 구간 √γ). 미래까지 본 값이라 1차 정렬 기준으로 쓰되, 차이가 0.5% 안쪽이면 동률로 보고 mDPG 로 가른다.</p>
           <p><b>mDPG</b> 는 이 한 칸의 값이다 — (늘어난 DPS) ÷ (이 칸에 쓴 골드/1000). 미래를 보지 않는다. 둘이 엇갈리는 칸이 판단이 갈리는 지점이다. 1코어만은 앞 상태가 없어 시작 아이템 값이 분모에 포함되고, 그 칸에서는 mDPG 와 DPG 가 같다.</p>
           <p>아이템 사이 <b>하프 구간</b>(하위템만 든 상태)은 score 에 이미 녹아 있어 <b>후보 카드에는 따로 적지 않는다</b> — 구간별 값은 아래 파워 곡선과 수치 표에 있다. 목표 아이템 가격의 절반 근처에서 마지널 DPG 가 가장 높은 하위템 조합을 고르며, <b>5코어 직전 하프는 재지 않는다</b>(아이템 칸이 모자라 계획대로 사기 어렵고 가중도 가장 낮다).</p>
         </div>
@@ -724,6 +724,10 @@
     while (taken.indexOf(label) > -1 && n < ko.length){ n++; label = ko.slice(0, n).join("-"); }
     SHORT.dp_best = label;
   }
+
+  /* ---------- γ 표기(데이터에서) ---------- */
+  el("gammaFoot").textContent = "γ=" + EX.meta.gamma;
+  el("gammaNote").textContent = "γ=" + EX.meta.gamma;
 
   /* ---------- 측정 조건 칩 ---------- */
   [EX.meta.package, EX.meta.rune, "파편 " + EX.meta.shard,
