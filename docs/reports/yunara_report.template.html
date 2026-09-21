@@ -300,7 +300,7 @@
       <li><b>mDPG</b> — 현재 시점 이 아이템의 골드 효율. 늘어난 DPS ÷ 이 아이템에 쓴 골드(1000단위).
         1코어는 앞 상태가 없어 시작 아이템(도란활·신발·민첩함) 값까지 분모에 들어가고, 그래서 DPG 와 같은 값이 된다.</li>
       <li><b>score</b> — 현재 시점 이 아이템부터 5코어까지의 mDPG 합. 할인율 <span id="gammaFoot">γ</span>, 하위템 구간 포함.</li>
-      <li><b>동률</b> — score 차 0.5% 안이면 mDPG 순.</li>
+      <li><b>순위</b> — mDPG 순. mDPG 차 0.5% 안이면 동률로 보고 그 묶음만 score 순.</li>
     </ul>
   </section>
 
@@ -343,8 +343,8 @@
       </div>
       <p class="foot">다섯 아이템을 다 갖춘 시점만 잘라 세운 값이다. 왼쪽은 DPS(절대 파워),
         오른쪽은 DPG(골드 1000당 DPS). 트리마다 총 골드가 달라 두 순위는 어긋날 수 있다.
-        여기 1위와 맨 위 "경로" 카드의 지금 1위가 다를 수 있는데, 경로 쪽은 1~5코어 전 구간의 할인 합(score)으로
-        세우고 이 막대는 마지막 한 점만 보기 때문이다.
+        여기 1위와 맨 위 "경로" 카드의 지금 1위가 다를 수 있는데, 경로 쪽은 매 칸의 mDPG 로
+        세우고 이 막대는 5코어 한 점만 보기 때문이다.
         이 시점 값은 든 아이템 집합에만 달려 있어, 순서만 다른 트리는 한 줄로 합쳤다(막대에 올리면 목록이 뜬다).</p>
     </div>
   </details>
@@ -366,8 +366,8 @@
       <div class="notes">
         <div class="note">
           <h3>두 지표</h3>
-          <p><b>score</b> 는 이 아이템을 사고 5코어까지 최적으로 이어갔을 때의 <b>γ-할인 마지널 DPG 합</b>이다(<span id="gammaNote">γ</span>, 하프 구간 √γ). 미래까지 본 값이라 1차 정렬 기준으로 쓰되, 차이가 0.5% 안쪽이면 동률로 보고 mDPG 로 가른다.</p>
-          <p><b>mDPG</b> 는 이 한 칸의 값이다 — (늘어난 DPS) ÷ (이 칸에 쓴 골드/1000). 미래를 보지 않는다. 둘이 엇갈리는 칸이 판단이 갈리는 지점이다. 1코어만은 앞 상태가 없어 시작 아이템 값이 분모에 포함되고, 그 칸에서는 mDPG 와 DPG 가 같다.</p>
+          <p><b>score</b> 는 이 아이템을 사고 5코어까지 최적으로 이어갔을 때의 <b>γ-할인 마지널 DPG 합</b>이다(<span id="gammaNote">γ</span>, 하프 구간 √γ). 미래까지 본 값이지만 <b>정렬의 2차 키</b>다 — mDPG 가 0.5% 안쪽으로 붙은 묶음에서만 순서를 가른다.</p>
+          <p><b>mDPG</b> 는 이 한 칸의 값이다 — (늘어난 DPS) ÷ (이 칸에 쓴 골드/1000). 미래를 보지 않지만 <b>1차 정렬 기준</b>이다(실전 피드백 반영 — 계획대로 5코어까지 가는 판이 드물다). 둘이 엇갈리는 칸이 판단이 갈리는 지점이다. 1코어만은 앞 상태가 없어 시작 아이템 값이 분모에 포함되고, 그 칸에서는 mDPG 와 DPG 가 같다.</p>
           <p>아이템 사이 <b>하프 구간</b>(하위템만 든 상태)은 score 에 이미 녹아 있어 <b>후보 카드에는 따로 적지 않는다</b> — 구간별 값은 아래 파워 곡선과 수치 표에 있다. 목표 아이템 가격의 절반 근처에서 마지널 DPG 가 가장 높은 하위템 조합을 고르며, <b>5코어 직전 하프는 재지 않는다</b>(아이템 칸이 모자라 계획대로 사기 어렵고 가중도 가장 낮다).</p>
         </div>
         <div class="note">
@@ -387,8 +387,8 @@
           <ul>
             <li>적 2·3 값은 <b>메인 타깃에 꽂히는 DPS</b>다. 루난 볼트가 서브 타깃에 준 피해는 집계하지 않고, Q 확산이 메인으로 되돌린 분량만 더한다.</li>
             <li>윤탈 치명타는 <b>구매 코어 0% → 다음 코어 25%</b> 가정이다. 1~2코어 순서 결론을 직접 지배한다.</li>
-            <li>K=2 처치 타이밍 양자화로 ±2%p 잡음이 있다. score 차 0.5% 안쪽은 동률(<span class="tie">≈</span>)로 보고, 그 묶음은 <b>미래 가치가 아니라 당장의 mDPG 순</b>으로 세운다.</li>
-            <li>각 노드에서 <b>상위 3개만</b> 다음 단계로 전개했다. 나머지도 점수는 같은 방식으로 계산했고, 그 뒤 가지만 <b>전개하지 않았다</b>.</li>
+            <li>K=2 처치 타이밍 양자화로 ±2%p 잡음이 있다. mDPG 차 0.5% 안쪽은 동률(<span class="tie">≈</span>)로 보고, 그 묶음만 <b>미래까지 본 score</b> 로 세운다.</li>
+            <li>각 노드에서 <b>mDPG 상위 3개만</b> 다음 단계로 전개했다. 나머지도 점수는 같은 방식으로 계산했고, 그 뒤 가지만 <b>전개하지 않았다</b>.</li>
             <li>라인 클리어·생존력·사거리 가치는 모델 밖이다.</li>
           </ul>
         </div>
@@ -405,7 +405,9 @@
   var DATA = JSON.parse(document.getElementById("curves").textContent);
   var EX = JSON.parse(document.getElementById("explorer").textContent);
   var ITEM = EX.items;
-  var TIE = 0.5;   // score 차가 이 % 안쪽이면 동률 — K=2 잡음(±2%p)보다 작은 차이는 세우지 않는다
+  // 1차 지표는 mDPG(이 한 칸의 골드 효율). 차이가 이 % 안쪽이면 동률로 보고 score 로 세운다.
+  // rel 필드도 mDPG 1위 대비이고, score 1위 대비는 rel_score 로 따로 들어 있다.
+  var TIE = 0.5;
 
   // 접이식 섹션(구 리포트)이 쓰는 고정 트리 — 탐색기와 달리 완성 트리 비교용이다.
   var SHORT = {
@@ -528,7 +530,7 @@
     var head = document.createElement("div");
     head.className = "cands-head";
     head.innerHTML = (state.path.length + 1) + '코어 후보' +
-      '<span class="head-note"> · score 동률(' + TIE + '% 이내)은 mDPG 순</span>';
+      '<span class="head-note"> · mDPG 동률(' + TIE + '% 이내)은 score 순</span>';
     if (!node || !Object.keys(node).length){
       host.innerHTML = '<div class="done">다섯 코어를 다 채웠다.<br>경로의 아이템을 눌러 되감을 수 있다.</div>';
       el("minorWrap").hidden = true;
@@ -546,16 +548,16 @@
       b.className = "cand" + (i === 0 ? " lead" : "");
       var inTie = tiedCount > 1 && r.rel > -TIE;
       var badge = inTie ? '<span class="tie">≈ 동률</span>'
-        : '<span class="rel">' + (i === 0 ? "score 1위" : fmt(r.rel, 1) + "%") + '</span>';
+        : '<span class="rel">' + (i === 0 ? "mDPG 1위" : fmt(r.rel, 1) + "%") + '</span>';
       b.innerHTML =
         '<span class="rank">' + (i + 1) + '</span>' +
         '<span class="name">' + (ITEM[r.item] || r.item) + badge + '</span>' +
-        '<span class="score">' + fmt(r.score, 1) + '</span>' +
-        '<span class="mdpg">' + fmt(r.mdpg, 1) + '</span>' +
+        '<span class="score">' + fmt(r.mdpg, 1) + '</span>' +
+        '<span class="mdpg">' + fmt(r.score, 1) + '</span>' +
         '<span class="sub">누적 ' + r.gold + 'g · DPS ' + fmt(r.dps) +
           ' · DPG ' + fmt(r.dpg, 1) + '</span>' +
-        '<span class="unit unit-score">score</span>' +
-        '<span class="unit unit-mdpg">mDPG</span>';
+        '<span class="unit unit-score">mDPG</span>' +
+        '<span class="unit unit-mdpg">score</span>';
       b.addEventListener("click", function(){
         state.path = state.path.concat([r.item]);
         render();
@@ -566,11 +568,11 @@
     el("minorWrap").hidden = minors.length === 0;
     el("minorCount").textContent = minors.length ? "(" + minors.length + "종 · 전개 없음)" : "";
     el("minorTable").innerHTML =
-      '<thead><tr><th>아이템</th><th>score</th><th>최고 score 대비</th><th>mDPG</th>' +
+      '<thead><tr><th>아이템</th><th>mDPG</th><th>최고 mDPG 대비</th><th>score</th>' +
       '<th>DPS</th><th>DPG</th><th>상태</th></tr></thead><tbody>' +
       minors.map(function(r){
-        return '<tr><td>' + (ITEM[r.item] || r.item) + '</td><td>' + fmt(r.score, 1) + '</td>' +
-          '<td>' + fmt(r.rel, 1) + '%</td><td>' + fmt(r.mdpg, 1) + '</td>' +
+        return '<tr><td>' + (ITEM[r.item] || r.item) + '</td><td>' + fmt(r.mdpg, 1) + '</td>' +
+          '<td>' + fmt(r.rel, 1) + '%</td><td>' + fmt(r.score, 1) + '</td>' +
           '<td>' + fmt(r.dps) + '</td><td>' + fmt(r.dpg, 1) + '</td>' +
           '<td><span class="unverified">전개 안 함</span></td></tr>';
       }).join("") + '</tbody>';
@@ -603,12 +605,12 @@
   /* ---------- 타이밍별 규칙 (현재 스위치의 데이터에서 생성) ---------- */
   function sortedRows(node){
     return Object.keys(node).map(function(k){ var r = node[k]; r.item = k; return r; })
-      .sort(function(a, b){ return b.score - a.score; });
+      .sort(function(a, b){ return b.mdpg - a.mdpg; });
   }
-  // 미래 가치(score)가 TIE 안쪽이면 동률로 보고, 그 묶음은 당장의 mDPG 로 세운다.
+  // mDPG 가 TIE 안쪽이면 동률로 보고, 그 묶음만 미래 가치(score)로 세운다.
   function orderRows(rows){
     var tied = rows.filter(function(r){ return r.rel > -TIE; })
-      .sort(function(a, b){ return b.mdpg - a.mdpg; });
+      .sort(function(a, b){ return b.score - a.score; });
     return tied.concat(rows.filter(function(r){ return r.rel <= -TIE; }));
   }
   function mainRows(node){
@@ -639,7 +641,7 @@
   function renderRules(){
     var host = el("rules"); host.innerHTML = "";
     el("rulesNote").textContent = arch().label + " 상대 · " + SCEN_LABEL[state.scen] +
-      " 기준. 고른 칸은 그대로 따라가고 나머지는 매 칸 1위로 채운 경로에서, " +
+      " 기준. 고른 칸은 그대로 따라가고 나머지는 매 칸 mDPG 1위로 채운 경로에서, " +
       "같은 칸의 형제 후보끼리만 비교한다.";
     var path = [];
     for (var d = 0; d < 5; d++){
@@ -658,31 +660,28 @@
       var b = rest[0], c = rest[1];
       var lead = rows[0].item !== a.item ? rows[0] : null;   // 고른 칸이 1위가 아닐 때
       var pre = d ? path.map(nm).join("-") + " 뒤, " : "";
-      var txt = pre + (lead ? "고른 " : "") + "<b>" + nm(a.item) + " " + fmt(a.score, 1) + "</b>";
+      var txt = pre + (lead ? "고른 " : "") + "<b>" + nm(a.item) + " mDPG " + fmt(a.mdpg, 1) + "</b>";
       if (lead){
-        txt += " — 이 칸 1위는 " + nm(lead.item) + " " + fmt(lead.score, 1) +
-               " (" + fmt(Math.abs(lead.score / a.score - 1) * 100, 1) + "% 위). " +
-               "mDPG 는 " + nm(a.item) + " " + fmt(a.mdpg, 1) + " vs " +
-               nm(lead.item) + " " + fmt(lead.mdpg, 1) + ".";
+        txt += " — 이 칸 1위는 " + nm(lead.item) + " " + fmt(lead.mdpg, 1) +
+               " (" + fmt(Math.abs(lead.mdpg / a.mdpg - 1) * 100, 1) + "% 위). " +
+               "score 는 " + nm(a.item) + " " + fmt(a.score, 1) + " vs " +
+               nm(lead.item) + " " + fmt(lead.score, 1) + ".";
       } else if (b){
-        var gapAB = Math.abs(a.score / b.score - 1) * 100, tied = a.rel > -TIE && b.rel > -TIE;
-        txt += (tied ? " ≈ " : " > ") + nm(b.item) + " " + fmt(b.score, 1) +
+        var gapAB = Math.abs(a.mdpg / b.mdpg - 1) * 100, tied = a.rel > -TIE && b.rel > -TIE;
+        txt += (tied ? " ≈ " : " > ") + nm(b.item) + " " + fmt(b.mdpg, 1) +
                " (" + fmt(gapAB, 1) + "% 차)";
         if (c && Math.abs(c.rel - b.rel) < TIE)
-          txt += " (3위 " + nm(c.item) + " " + fmt(c.score, 1) + " 는 2위와 동률)";
+          txt += " (3위 " + nm(c.item) + " " + fmt(c.mdpg, 1) + " 는 2위와 동률)";
         txt += ". ";
         if (tied){
-          txt += "미래 가치가 동률이라 mDPG 로 갈랐다 — " + nm(a.item) + " " + fmt(a.mdpg, 1) +
-                 " > " + nm(b.item) + " " + fmt(b.mdpg, 1) +
-                 (b.score > a.score
-                   ? ". score 만 보면 " + subj(b.item) + " 근소하게 위다."
-                   : ".");
-        } else if (b.mdpg > a.mdpg){
-          txt += "mDPG 는 " + nm(b.item) + " " + fmt(b.mdpg, 1) + " > " +
-                 nm(a.item) + " " + fmt(a.mdpg, 1) +
-                 " — 이 칸 골드만 보면 " + subj(b.item) + " 싸게 오른다.";
+          txt += "이 칸 효율이 동률이라 미래까지 본 score 로 갈랐다 — " + nm(a.item) + " " +
+                 fmt(a.score, 1) + " > " + nm(b.item) + " " + fmt(b.score, 1) + ".";
+        } else if (b.score > a.score){
+          txt += "score 는 " + nm(b.item) + " " + fmt(b.score, 1) + " > " +
+                 nm(a.item) + " " + fmt(a.score, 1) +
+                 " — 뒤까지 보면 " + subj(b.item) + " 낫다는 뜻이다.";
         } else {
-          txt += "mDPG 도 " + subj(a.item) + " " + fmt(a.mdpg, 1) + " 로 앞선다.";
+          txt += "score 도 " + subj(a.item) + " " + fmt(a.score, 1) + " 로 앞선다.";
         }
         if (tied && finalSet(path.concat([a.item])) === finalSet(path.concat([b.item])))
           txt += " 두 경로는 5코어에서 같은 집합으로 만나므로 갈리는 건 순서뿐이다.";

@@ -1,56 +1,52 @@
 # -*- coding: utf-8 -*-
-"""유나라 타이밍별 결정 탐색기 데이터 — `docs/reports/yunara_explorer.json`.
+"""카이사 타이밍별 결정 탐색기 데이터 — `docs/reports/kaisa_explorer.json`.
 
-실행: `python -m tools.yunara_explorer_data [출력경로]`  (repo 루트에서)
+실행: `python -m tools.kaisa_explorer_data [출력경로]`  (repo 루트에서, 수 분)
 
-리포트의 탐색기는 "지금까지 산 코어(프리픽스)" 마다 **다음 코어 후보 전부**의 점수를
-보여준다. 그래서 완성 트리 몇 개가 아니라 **노드별 후보 표**를 통째로 내보낸다.
-
-── score 정의 (yunara._score_combo_half 와 동일) ──────────────────────────────
-노드에서 미래를 하프·완성 번갈아 밟으며 **직전 상태 대비 마지널 DPG** 를 γ-할인해 더한다:
-
-    score = Σ γ^(step/2) · (DPS_step − DPS_prev) / ((Gold_step − Gold_prev)/1000)
-
-하프 한 칸이 √γ, 코어 하나가 γ(=0.8). 5코어 하프는 생략하되 step 은 그대로 증가시켜
-뒤 항의 할인 지수를 흔들지 않는다(원본과 같은 규약).
-
-원본 `solve_greedy_half` 는 미래를 **순열로 전수 열거**해 최대값을 찾는다. 여기서는 같은
-값을 주는 **집합 단위 DP** 로 바꾼다 — 마지널 항이 장착 집합(+윤탈 구매시점)에만 의존하므로
-순열까지 볼 필요가 없다:
+`tools/yunara_explorer_data.py` 의 미러다. 카이사에도 하프 코어 receding-horizon
+(`solve_greedy_half_kaisa` / `_score_combo_half` / `kaisa_sim_half`)이 이미 있어서
+점수식은 그대로 쓰고, 순열 전수 대신 **집합 단위 DP** 로 같은 값을 구한다:
 
     V(노드) = max_x [ half(노드,x) + √γ·full(노드,x) + γ·V(노드+x) ]
     후보 x 의 score = half + √γ·full + γ·V(노드+x)
 
-`--verify` 로 원본 greedy 와 1코어 후보 점수·순위가 일치하는지 확인할 수 있다.
+유나라와 다른 점(카이사 고유):
+· **하프 구간을 5코어에서도 잰다** — 카이사 `_score_combo_half` 규약 그대로(유나라는 생략).
+· **적 수 축이 없다** — 카이사 시뮬은 단일 대상이라 시나리오는 `solo` 하나뿐이다.
+· 슬롯별 후보 목록이 유나라보다 좁고(`CANDIDATES_BY_SLOT`), **2코어 스탯 하한**
+  (AD 75·공속 65%) 필터가 추가로 걸린다. 윤탈 키는 `yuntal`(유나라는 `yuntal25`).
+· γ 는 프로젝트 기본값(0.8) — 유나라만 0.7 예외다(`settings.RANKING_GAMMA_OVERRIDES`).
 
-── 순위·전개 기준 (사용자 확정 2026-09-21) ──────────────────────────────────
-**1차 = mDPG(이 한 칸의 골드 효율), 동률일 때만 score(미래 할인합)** — 한국 서버 챌린저
-원딜 피드백. mDPG 차가 MDPG_TIE_PCT(0.5%) 안쪽이면 동률로 보고 그 묶음만 score 로 세운다.
-score 는 여전히 같은 공식으로 계산·표기하되 정렬의 2차 키로 내려간다.
+순위·전개 기준은 유나라와 같다: **1차 mDPG, 차이 0.5% 안쪽이면 동률로 보고 score 로**
+세우며, 그 순서의 상위 3개만 자식 노드로 전개한다(나머지는 tier="minor").
 
-── 노드 전개 (사용자 확정 2026-09-16) ────────────────────────────────────────
-· 각 노드에서 **위 순서 기준 상위 3개만 자식 노드로 전개**(tier="main"), 나머지는
-  tier="minor" 로 점수만 싣는다. 탐색기는 minor 를 후보 열 아래 표로 보여주고 더
-  파고들지 않는다.
-· 그래서 노드 수가 1+3+9+27+81 = 121 개(상황 하나당)로 묶인다. 전개 안 된 가지는
-  리포트에서 "미검증" 으로 표기된다.
+`--verify` 로 원본 `solve_greedy_half_kaisa` 와 1코어 후보 점수가 맞는지 확인한다.
 """
 import json
 import sys
 from math import sqrt
 
-from adc_sim.simulations import yunara as Y
-from adc_sim.simulations.yunara import (
-    CANDIDATES_BY_SLOT, GAMMA, HORIZON, MixedSimCache, SHARD_SCENARIOS, SimCache,
-    _half_enabled_for_slot, sim_half, solve_greedy_half,
+from adc_sim.simulations import kaisa as K
+from adc_sim.simulations.kaisa import (
+    CANDIDATES_BY_SLOT, GAMMA, HORIZON, KAISA_SHARD_SCENARIOS, SimCache,
+    _kaisa_two_core_stats_ok, kaisa_sim_half, solve_greedy_half_kaisa,
 )
-from adc_sim.data.items_data import ADC_PACKAGES_VIABLE, pen_rule_ok
+from adc_sim.data.items_data import ADC_PACKAGES, pen_rule_ok
 from adc_sim.simulations.target_archetypes import TARGET_ARCHETYPES
 
-PKG = [p for p in ADC_PACKAGES_VIABLE if p["label"] == "Bow+Glut"][0]   # 도란활+탐욕+민첩함
-SHARD = SHARD_SCENARIOS["AS10%+AD5.4"]
+# 정배 패키지 A(도란검 + 광전사 + 핏빛길) · 파편 공속10%+AD5.4 · 치명적속도 + 체력차극복.
+PKG = [p for p in ADC_PACKAGES if p["key"] == "A"][0]   # Bld+Zerk = 도란검+광전사+핏빛길
+SHARD = KAISA_SHARD_SCENARIOS["AS10%+AD5.4"]
 MAIN_TOP_N = 3            # 자식 노드로 전개할 상위 후보 수 (나머지는 minor)
 MDPG_TIE_PCT = 0.5        # mDPG 차가 이 % 안쪽이면 동률 — 그 묶음만 score 로 세운다
+
+ITEM_KO = {
+    "kraken": "크라켄", "yuntal": "윤탈", "statikk": "스태틱", "guinsoo": "구인수",
+    "terminus": "경계", "pd": "유령무희", "bot": "몰왕검", "nashor": "내셔",
+    "ie": "무한", "c44": "C44", "ldr": "도미닉", "mortal": "징수의총",
+    "storm": "폭풍갈퀴", "rabadon": "라바돈", "shadowflame": "그림자불꽃",
+    "shieldbow": "방패검",
+}
 
 
 def _order_rows(rows):
@@ -64,18 +60,17 @@ def _order_rows(rows):
     tied = sorted((r for r in rows if r["mdpg"] >= cut), key=lambda r: -r["score"])
     rest = sorted((r for r in rows if r["mdpg"] < cut), key=lambda r: -r["mdpg"])
     return tied + rest
-SCENARIOS = [("tc1", 1), ("tc2", 2), ("tc3", 3), ("mix", None)]   # None = 1:1:1 혼합
-
-ITEM_KO = {
-    "kraken": "크라켄", "yuntal25": "윤탈", "runaan": "루난", "ie": "무한", "ldr": "도미닉",
-    "c44": "C44", "pd": "유령무희", "guinsoo": "구인수", "terminus": "경계", "bot": "몰왕검",
-    "storm": "폭풍갈퀴", "statikk": "스태틱", "nashor": "내셔", "shadowflame": "그림자불꽃",
-    "rabadon": "라바돈", "void": "공허", "mortal": "징수의총",
-}
 
 
 def _legal_next(prefix, depth):
-    """다음 슬롯(depth+1)에서 살 수 있는 아이템 — 슬롯 제약 + 관통 배타."""
+    """다음 슬롯(depth+1) 후보 — 슬롯 제약 + 관통 배타 + 카이사 2코어 스탯 하한.
+
+    **막다른 길은 뺀다**: 5코어 전인데 그걸 사면 다음 칸에 살 게 하나도 없는 아이템
+    (예: 1코어 내셔·C44 — 2코어 스탯 하한 AD 75 를 둘이 합쳐 못 넘긴다)은 애초에
+    완주 불가능한 빌드다. 원본 `_enumerate_future_combos` 도 그런 경로를 아예 만들지
+    않으므로, 여기서 빼야 원본과 같은 후보 집합이 된다. (안 빼면 그 가지의 score 가
+    미래 항 없이 잘려 나와 순위가 왜곡되고, 탐색기에서 눌러도 다음 칸이 비어 있다.)
+    """
     slot = depth + 1
     if slot > HORIZON:        # 5코어 도달 — 더 살 칸이 없다
         return []
@@ -83,24 +78,37 @@ def _legal_next(prefix, depth):
     for key in CANDIDATES_BY_SLOT[slot]:
         if key in prefix:
             continue
-        if not pen_rule_ok(tuple(prefix) + (key,)):
+        path = tuple(prefix) + (key,)
+        if not pen_rule_ok(path):
+            continue
+        if not _kaisa_two_core_stats_ok(path):
+            continue
+        if slot < HORIZON and not _next_exists(path, slot):
             continue
         out.append(key)
     return out
 
 
+def _next_exists(path, slot):
+    """path 를 산 뒤 slot+1 에 살 수 있는 아이템이 하나라도 있는지(한 칸만 본다)."""
+    for key in CANDIDATES_BY_SLOT[slot + 1]:
+        if key in path:
+            continue
+        nxt = tuple(path) + (key,)
+        if pen_rule_ok(nxt) and _kaisa_two_core_stats_ok(nxt):
+            return True
+    return False
+
+
 def _marginal(cache, prefix, item):
-    """(하프 항, 완성 항, 완성 시점 dps/gold, 하프 dps/gold) — 직전 상태 대비 마지널 DPG."""
-    depth = len(prefix)
+    """(하프 항, 완성 항, 완성 dps/gold, 하프 dps/gold) — 직전 상태 대비 마지널 DPG."""
     d_prev, g_prev = cache.sim(tuple(prefix)) if prefix else (0.0, 0.0)
-    half_dps = half_gold = None
+    half_dps, half_gold, _comps = kaisa_sim_half(cache, tuple(prefix), item)
     h_term = 0.0
-    if _half_enabled_for_slot(depth + 1, HORIZON):
-        half_dps, half_gold, _comps = sim_half(cache, tuple(prefix), item)
-        d_gold = half_gold - g_prev
-        if d_gold > 0:
-            h_term = (half_dps - d_prev) / (d_gold / 1000.0)
-        d_prev, g_prev = max(d_prev, half_dps), max(g_prev, half_gold)
+    d_gold = half_gold - g_prev
+    if d_gold > 0:
+        h_term = (half_dps - d_prev) / (d_gold / 1000.0)
+    d_prev, g_prev = max(d_prev, half_dps), max(g_prev, half_gold)
 
     full_dps, full_gold = cache.sim(tuple(prefix) + (item,))
     d_gold = full_gold - g_prev
@@ -109,7 +117,7 @@ def _marginal(cache, prefix, item):
 
 
 class Explorer:
-    """노드별 후보 점수를 만드는 집합 단위 DP."""
+    """노드별 후보 점수를 만드는 집합 단위 DP (유나라 Explorer 미러)."""
 
     def __init__(self, cache, gamma=GAMMA):
         self.cache = cache
@@ -120,10 +128,9 @@ class Explorer:
 
     def _key(self, prefix):
         # DPS 는 장착 집합에만 의존하되, 윤탈은 "방금 산 코어"인지에 따라 치확이 갈린다.
-        return tuple(sorted(prefix)), bool(prefix) and prefix[-1] == "yuntal25"
+        return tuple(sorted(prefix)), bool(prefix) and prefix[-1] == "yuntal"
 
     def candidates(self, prefix):
-        """프리픽스에서 고를 수 있는 후보 전부 — [{item, score, gold, dps, dpg, half_*}]."""
         key = self._key(prefix)
         if key in self._cand:
             return self._cand[key]
@@ -132,8 +139,6 @@ class Explorer:
         for item in _legal_next(prefix, len(prefix)):
             h, f, dps, gold, h_dps, h_gold = _marginal(self.cache, prefix, item)
             score = h + self.root_gamma * f + self.gamma * self.value(tuple(prefix) + (item,))
-            # 이 한 칸의 **마지널 DPG** — 직전 완성 상태 대비 늘어난 DPS 를 그 사이 쓴 골드로 나눈 값.
-            # score 가 미래까지 본 할인합이라면 이쪽은 "지금 이 아이템이 산 골드효율"이다.
             cost = gold - prev_gold
             ddps = dps - prev_dps
             rows.append({
@@ -155,7 +160,7 @@ class Explorer:
         key = self._key(prefix)
         if key in self._v:
             return self._v[key]
-        self._v[key] = 0.0          # 재귀 진입 가드(같은 깊이에서 순환 없음)
+        self._v[key] = 0.0          # 재귀 진입 가드
         best = 0.0
         for item in _legal_next(prefix, len(prefix)):
             h, f, _dps, _gold, _hd, _hg = _marginal(self.cache, prefix, item)
@@ -172,7 +177,7 @@ class Explorer:
             return out
         rows = self.candidates(prefix)
         if not rows:
-            return out          # 5코어 도달 — 노드를 만들지 않는다(탐색기가 "후보 없음"으로 처리)
+            return out          # 5코어 도달 — 노드를 만들지 않는다
         best_m = max(r["mdpg"] for r in rows) or 0.0
         best_s = max(r["score"] for r in rows) or 0.0
         out[node_id] = {
@@ -187,7 +192,6 @@ class Explorer:
                 "half_dps": round(r["half_dps"], 1) if r["half_dps"] else None,
                 "half_gold": int(r["half_gold"]) if r["half_gold"] else None,
                 "half_dpg": round(r["half_dpg"], 1) if r["half_dpg"] else None,
-                # rel = 1차 지표(mDPG) 1위 대비. score 대비는 rel_score 로 따로 싣는다.
                 "rel": round(100.0 * (r["mdpg"] / best_m - 1.0), 1) if best_m else 0.0,
                 "rel_score": round(100.0 * (r["score"] / best_s - 1.0), 1) if best_s else 0.0,
                 "tier": "main" if i < MAIN_TOP_N else "minor",
@@ -199,56 +203,60 @@ class Explorer:
         return out
 
 
-def _cache_for(tc):
-    if tc is None:
-        caches = {t: SimCache(PKG, t, SHARD) for t in (1, 2, 3)}
-        return MixedSimCache(PKG, shards=SHARD, caches=caches)
-    return SimCache(PKG, tc, SHARD)
+def _cache():
+    return SimCache(
+        doran_key=PKG["doran"], boots_key=PKG["boots"], rune_as_bonus=PKG["rune_as"],
+        bloodline_lifesteal=PKG["bloodline_lifesteal"], shard_as=SHARD["shard_as"],
+        shard_ad=SHARD["shard_ad"],
+    )
 
 
-def verify(archetype="bruiser", tc=2):
-    """원본 greedy(순열 전수)와 1코어 후보 점수가 일치하는지 확인."""
-    Y.set_target_archetype(archetype)
-    cache = _cache_for(tc)
-    ref = solve_greedy_half(cache, gamma=GAMMA)
+def verify():
+    """원본 greedy(순열 전수)와 1코어 후보 score 가 같은지 확인한다."""
+    K.set_target_archetype("bruiser")
+    cache = _cache()
+    ref = solve_greedy_half_kaisa(cache, gamma=GAMMA)
     ref_alts = {a["item"]: a["score"] for a in ref["steps"][0]["alternatives"]}
     mine = {r["item"]: r["score"] for r in Explorer(cache).candidates(())}
-    print(f"[verify] {archetype}/tc{tc} — greedy 1코어 궤적 {ref['trajectory'][0]}")
     ok = True
+    print("[verify] 1코어 후보 score — greedy vs DP")
     for item, score in sorted(ref_alts.items(), key=lambda kv: -kv[1]):
         delta = mine[item] - score
-        flag = "OK " if abs(delta) < 1e-6 else "DIFF"
-        ok &= abs(delta) < 1e-6
+        if abs(delta) > 1e-6:
+            ok = False
+        flag = "OK " if abs(delta) <= 1e-6 else "DIFF"
         print(f"   {flag} {item:<10} greedy {score:9.3f}  dp {mine[item]:9.3f}  Δ{delta:+.6f}")
-    print("[verify]", "일치" if ok else "불일치 — 점수식 재확인 필요")
+    print("[verify]", "일치" if ok else "불일치")
     return ok
 
 
 def build():
     out = {
+        "champion": "kaisa",
         "meta": {
             "gamma": GAMMA, "horizon": HORIZON, "main_top_n": MAIN_TOP_N,
-            "package": "도란활 + 탐욕의 군화 + 민첩함",
+            "package": "도란검 + 광전사 + 핏빛길",
             "shard": "공속10% + 적응형AD 5.4",
             "rune": "치명적 속도 + 체력차 극복",
             "order": f"1차 mDPG, 차이 {MDPG_TIE_PCT}% 안쪽이면 동률로 보고 score 로 세운다.",
             "mdpg_tie_pct": MDPG_TIE_PCT,
-            "score": "γ-할인 마지널 DPG 합(하프 √γ, 코어 γ). 미래 코어까지 본 값. 하프는 점수에만 반영.",
-            "mdpg": "이 한 칸의 마지널 DPG — (늘어난 DPS) / (이 칸에 쓴 골드/1000). 미래를 보지 않는 즉시 효율.",
+            "score": "γ-할인 마지널 DPG 합(하프 √γ, 코어 γ). 카이사는 5코어 하프도 센다.",
+            "mdpg": "이 한 칸의 마지널 DPG — (늘어난 DPS) / (이 칸에 쓴 골드/1000).",
+            "note": "단일 대상 시뮬이라 교전 적 수 축이 없다.",
         },
         "items": ITEM_KO,
         "archetypes": [{"id": k, "label": v["label"], "desc": v["desc"],
                         "tiers": {str(t): list(s) for t, s in v["tiers"].items()}}
                        for k, v in TARGET_ARCHETYPES.items()],
-        "scenarios": [s for s, _ in SCENARIOS],
+        "scenarios": ["solo"],
         "nodes": {},
     }
     for arch in TARGET_ARCHETYPES:
-        Y.set_target_archetype(arch)
-        for scen, tc in SCENARIOS:
-            explorer = Explorer(_cache_for(tc))
-            out["nodes"][f"{arch}|{scen}"] = explorer.walk()
-            print(f"  done {arch}/{scen}: 노드 {len(out['nodes'][f'{arch}|{scen}'])}")
+        K.set_target_archetype(arch)
+        explorer = Explorer(_cache())
+        out["nodes"][f"{arch}|solo"] = explorer.walk()
+        print(f"  done {arch}: 노드 {len(out['nodes'][f'{arch}|solo'])}")
+    K.set_target_archetype("bruiser")
     return out
 
 
@@ -256,7 +264,7 @@ if __name__ == "__main__":
     args = sys.argv[1:]
     if "--verify" in args:
         raise SystemExit(0 if verify() else 1)
-    dest = args[0] if args else "docs/reports/yunara_explorer.json"
+    dest = args[0] if args else "docs/reports/kaisa_explorer.json"
     data = build()
     with open(dest, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, separators=(",", ":"))

@@ -6,18 +6,31 @@ from functools import lru_cache
 import matplotlib.pyplot as plt
 from adc_sim.runes import LethalTempo, CutDown, PressTheAttack, CoupDeGrace
 from adc_sim.settings import CORE_WEIGHTS_RAW, CORE_WEIGHTS_LABEL, DEFAULT_DISCOUNT_GAMMA
+from adc_sim.simulations.target_archetypes import (
+    DEFAULT_ARCHETYPE, bonus_hp, core_target_stats,
+)
 from adc_sim.engine import run_simulation
 
 
-# 코어 단계별 고정 타겟 스탯 (Ashe 시뮬레이션과 동일)
-CORE_TARGET_STATS = {
-    # 마저 +5 일괄 상향(25/30/50/70/90 → 30/35/55/75/95) — 원딜 마저 버프 반영, 사용자 확정 2026-08-31.
-    1: {"hp": 1700, "armor": 50, "mr": 30},
-    2: {"hp": 1900, "armor": 70, "mr": 35},
-    3: {"hp": 2400, "armor": 100, "mr": 55},
-    4: {"hp": 2600, "armor": 120, "mr": 75},
-    5: {"hp": 3000, "armor": 150, "mr": 95},
-}
+# 코어 단계별 타깃 스탯 — **아키타입 모듈이 단일 출처**(유나라와 같은 표, 사용자 확정 2026-09-21).
+# 옛 고정표(1700/50/30 … 3000/150/95)를 대체한다 → KaiSa 절대 DPS 가 바뀌므로
+# tests/_baseline_dps.json 의 KaiSa 행을 재캡처했다.
+ACTIVE_ARCHETYPE = DEFAULT_ARCHETYPE
+CORE_TARGET_STATS = core_target_stats(ACTIVE_ARCHETYPE)
+
+
+def set_target_archetype(name):
+    """활성 타깃 아키타입 교체 — CORE_TARGET_STATS 를 제자리 갱신한다(유나라 미러).
+
+    완성 코어(build_target_for_core)와 하프 구간(_kaisa_half_tier_target) 이 같은 표를
+    읽으므로 이 함수 하나로 두 경로가 함께 바뀐다.
+    """
+    global ACTIVE_ARCHETYPE
+    stats = core_target_stats(name)      # 미지의 이름이면 여기서 ValueError
+    ACTIVE_ARCHETYPE = name
+    CORE_TARGET_STATS.clear()
+    CORE_TARGET_STATS.update(stats)
+    return ACTIVE_ARCHETYPE
 
 # 코어 타이밍별 레벨 (Ashe 시뮬레이션과 동일)
 CORE_LEVELS = {
@@ -50,7 +63,7 @@ def build_target_for_core(core_tier):
         hp=stats["hp"],
         armor=stats["armor"],
         magic_resist=stats["mr"],
-        bonus_hp=max(0, stats["hp"] - 1600),
+        bonus_hp=bonus_hp(stats["hp"]),
     )
 
 
@@ -1941,7 +1954,7 @@ def _kaisa_half_tier_target(k):
         hp = (a["hp"] + b["hp"]) / 2.0
         armor = (a["armor"] + b["armor"]) / 2.0
         mr = (a["mr"] + b["mr"]) / 2.0
-    return Target(hp=hp, armor=armor, magic_resist=mr, bonus_hp=max(0, hp - 1600))
+    return Target(hp=hp, armor=armor, magic_resist=mr, bonus_hp=bonus_hp(hp))
 
 
 def simulate_kaisa_half_tier(done_keys, next_key, comp_names, doran_key=None, boots_key="berserker",
