@@ -32,8 +32,8 @@ drafts/
 patch_data/
 # 리포트 빌드 산출물 — 템플릿(docs/reports/*.template.html) + 데이터(*.json) 만 추적하고
 # 둘을 합친 결과물은 제외한다(150KB 데이터가 박혀 diff 가 리뷰 불가능해진다).
-# 만들려면: python -m tools.build_yunara_report
-docs/reports/yunara_report.html
+# 만들려면: python -m tools.build_explorer_report [all|yunara|kaisa]
+docs/reports/*_report.html
 
 # ── 에이전트 로컬 설정 ─────────────────────
 # Claude Code 의 머신별 권한/설정. 저장소에 공유할 내용이 아니다.
