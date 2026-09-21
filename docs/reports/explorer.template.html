@@ -1,4 +1,4 @@
-<title>유나라 코어 결정 탐색기</title>
+<title>__TITLE__</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@500;700;900&amp;family=IBM+Plex+Sans+KR:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap">
 <style>
   :root{
@@ -42,6 +42,7 @@
   h2{font-size:18px; font-weight:700; letter-spacing:-.01em;}
   h3{font-size:14px; font-weight:700;}
   p{margin:0;}
+  [hidden]{display:none !important;}   /* .sw-group 같은 display 규칙이 hidden 을 덮지 않게 */
   .lede{color:var(--ink-2); font-size:15px; max-width:64ch;}
   .eyebrow{font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted);
            font-weight:600; font-family:var(--body);}
@@ -261,9 +262,9 @@
   </noscript>
 
   <header class="head">
-    <span class="eyebrow">ADC DPS Calculator · 유나라</span>
-    <h1>유나라 코어 결정 탐색기</h1>
-    <p class="lede">지금까지 산 코어에서 <b>다음 한 칸</b>으로 뭘 올릴지, 상대 타깃과 교전 적 수에 따라 후보 전부의 점수를 비교한다.</p>
+    <span class="eyebrow" id="eyebrow"></span>
+    <h1 id="pageTitle"></h1>
+    <p class="lede" id="lede"></p>
   </header>
 
   <section class="switches">
@@ -271,9 +272,9 @@
       <span class="sw-label">상대 타깃</span>
       <div class="switch" id="archSwitch" role="group" aria-label="상대 타깃 선택"></div>
     </div>
-    <div class="sw-group">
-      <span class="sw-label">교전 적 수</span>
-      <div class="switch" id="scenSwitch" role="group" aria-label="교전 적 수 선택"></div>
+    <div class="sw-group" id="scenGroup">
+      <span class="sw-label" id="scenLabel"></span>
+      <div class="switch" id="scenSwitch" role="group" aria-label="시나리오 선택"></div>
     </div>
   </section>
 
@@ -298,7 +299,7 @@
 
     <ul class="foot foot-list">
       <li><b>mDPG</b> — 현재 시점 이 아이템의 골드 효율. 늘어난 DPS ÷ 이 아이템에 쓴 골드(1000단위).
-        1코어는 앞 상태가 없어 시작 아이템(도란활·신발·민첩함) 값까지 분모에 들어가고, 그래서 DPG 와 같은 값이 된다.</li>
+        1코어는 앞 상태가 없어 시작 아이템(도란템·신발·룬) 값까지 분모에 들어가고, 그래서 DPG 와 같은 값이 된다.</li>
       <li><b>score</b> — 현재 시점 이 아이템부터 5코어까지의 mDPG 합. 할인율 <span id="gammaFoot">γ</span>, 하위템 구간 포함.</li>
       <li><b>순위</b> — mDPG 순. mDPG 차 0.5% 안이면 동률로 보고 그 묶음만 score 순.</li>
     </ul>
@@ -321,7 +322,7 @@
     </div>
   </details>
 
-  <details class="fold">
+  <details class="fold" id="foldCurves">
     <summary><b>파워 곡선</b> <span>지금 1위 경로와 비교 트리의 누적 골드별 DPS·DPG</span></summary>
     <div class="fold-body">
       <div class="legend" id="legend1"></div>
@@ -334,7 +335,7 @@
     </div>
   </details>
 
-  <details class="fold">
+  <details class="fold" id="foldBars">
     <summary><b>5코어 시점 비교</b> <span>지금 1위 경로까지 포함한 완성 시점 DPS·DPG 순위</span></summary>
     <div class="fold-body">
       <div class="bars">
@@ -349,13 +350,13 @@
     </div>
   </details>
 
-  <details class="fold">
+  <details class="fold" id="foldTable">
     <summary><b>수치 표</b> <span>하프 코어까지 포함한 구간별 DPS와 DPG</span></summary>
     <div class="fold-body">
       <div class="tablewrap"><table id="tbl"></table></div>
       <p class="foot"><b>하프</b> 는 코어 사이 구간, 즉 다음 아이템의 하위템만 들고 있는 상태다
         (목표 아이템 값의 절반 근처에서 가장 효율 좋은 하위템 조합을 골랐다).
-        DPG 는 DPS ÷ (누적 골드 ÷ 1000) 이다.</p>
+        DPG 는 DPS ÷ (누적 골드 ÷ 1000) 이다. <span id="halfNote"></span></p>
     </div>
   </details>
 
@@ -368,25 +369,22 @@
           <h3>두 지표</h3>
           <p><b>score</b> 는 이 아이템을 사고 5코어까지 최적으로 이어갔을 때의 <b>γ-할인 마지널 DPG 합</b>이다(<span id="gammaNote">γ</span>, 하프 구간 √γ). 미래까지 본 값이지만 <b>정렬의 2차 키</b>다 — mDPG 가 0.5% 안쪽으로 붙은 묶음에서만 순서를 가른다.</p>
           <p><b>mDPG</b> 는 이 한 칸의 값이다 — (늘어난 DPS) ÷ (이 칸에 쓴 골드/1000). 미래를 보지 않지만 <b>1차 정렬 기준</b>이다(실전 피드백 반영 — 계획대로 5코어까지 가는 판이 드물다). 둘이 엇갈리는 칸이 판단이 갈리는 지점이다. 1코어만은 앞 상태가 없어 시작 아이템 값이 분모에 포함되고, 그 칸에서는 mDPG 와 DPG 가 같다.</p>
-          <p>아이템 사이 <b>하프 구간</b>(하위템만 든 상태)은 score 에 이미 녹아 있어 <b>후보 카드에는 따로 적지 않는다</b> — 구간별 값은 아래 파워 곡선과 수치 표에 있다. 목표 아이템 가격의 절반 근처에서 마지널 DPG 가 가장 높은 하위템 조합을 고르며, <b>5코어 직전 하프는 재지 않는다</b>(아이템 칸이 모자라 계획대로 사기 어렵고 가중도 가장 낮다).</p>
+          <p>아이템 사이 <b>하프 구간</b>(하위템만 든 상태)은 score 에 이미 녹아 있어 <b>후보 카드에는 따로 적지 않는다</b> — 구간별 값은 아래 파워 곡선과 수치 표에 있다. 목표 아이템 가격의 절반 근처에서 마지널 DPG 가 가장 높은 하위템 조합을 고른다. <span id="halfNote2"></span></p>
         </div>
         <div class="note">
           <h3>상대 타깃</h3>
           <p id="archNote"></p>
           <div class="meta" id="archTiers"></div>
-          <p>여기 적힌 레벨·스탯은 <b>상대</b> 기준이다. 유나라 자신의 레벨은 아래 "측정 방식" 에 있다.</p>
+          <p id="targetNote"></p>
           <p>도미닉의 거인 학살자 증폭이 타깃 추가 체력(최대체력 − 1600)에 비례하므로, 물렁한 상대일수록 도미닉이 약해지고 무한·C44 가 유리해진다.</p>
         </div>
         <div class="note">
           <h3>측정 방식</h3>
-          <p>유나라 레벨은 하프 8/10/12/14/16 · 완성 9/11/13/15/17. DPS 는 같은 체력바를 2회 처치하는 지속딜(K=2). 시작은 도란활 + 탐욕의 군화 + 민첩함, 룬은 치명적 속도 + 체력차 극복, 파편은 공속 10% + 적응형 AD 5.4.</p>
-          <p>후보 풀은 17종이며 관통 배타(방관·마관 각 1개)를 지킨다. 윤탈은 1~2코어에서만 살 수 있고, 1코어에는 라바돈·그림자불꽃·공허·도미닉·징수의총이 빠져 12종만 뜬다.</p>
+          <div id="methodNote"></div>
         </div>
         <div class="note">
           <h3>믿으면 안 되는 것</h3>
-          <ul>
-            <li>적 2·3 값은 <b>메인 타깃에 꽂히는 DPS</b>다. 루난 볼트가 서브 타깃에 준 피해는 집계하지 않고, Q 확산이 메인으로 되돌린 분량만 더한다.</li>
-            <li>윤탈 치명타는 <b>구매 코어 0% → 다음 코어 25%</b> 가정이다. 1~2코어 순서 결론을 직접 지배한다.</li>
+          <ul id="caveats">
             <li>K=2 처치 타이밍 양자화로 ±2%p 잡음이 있다. mDPG 차 0.5% 안쪽은 동률(<span class="tie">≈</span>)로 보고, 그 묶음만 <b>미래까지 본 score</b> 로 세운다.</li>
             <li>각 노드에서 <b>mDPG 상위 3개만</b> 다음 단계로 전개했다. 나머지도 점수는 같은 방식으로 계산했고, 그 뒤 가지만 <b>전개하지 않았다</b>.</li>
             <li>라인 클리어·생존력·사거리 가치는 모델 밖이다.</li>
@@ -403,6 +401,8 @@
 (function(){
   "use strict";
   var DATA = JSON.parse(document.getElementById("curves").textContent);
+  // 곡선 JSON 은 선택 사항 — 없는 챔피언(카이사)은 탐색기·규칙·KPI 만 돈다.
+  var HAS_CURVES = !!(DATA && DATA.builds && DATA.builds.length);
   var EX = JSON.parse(document.getElementById("explorer").textContent);
   var ITEM = EX.items;
   // 1차 지표는 mDPG(이 한 칸의 골드 효율). 차이가 이 % 안쪽이면 동률로 보고 score 로 세운다.
@@ -422,16 +422,20 @@
   var SLOT = ["var(--s1)","var(--s2)","var(--s3)","var(--s4)"];
   var BAR_IDS = ["dp_best","opt_solo","opt_fight","opt_run3","late_solo","late_run",
                  "meta_krk","meta_yun"];
-  var SCEN_LABEL = {tc1:"적 1명", tc2:"적 2명", tc3:"적 3명", mix:"혼합 1:1:1"};
-  var SCEN_NOTE = {
-    tc1:"순수 단일 대상. 솔로킬·사이드 구도.",
-    tc2:"둘이 붙은 교전. 크라켄 처형 가속과 루난 확산이 살아난다.",
-    tc3:"루난 서브타겟 캡(2명)이 꽉 차는 한타 전제.",
-    mix:"적 1·2·3명을 같은 비중으로 섞은 통합 지표."
-  };
+  // 시나리오 라벨·설명은 챔피언 데이터(copy)에서 온다.
+  var COPY = EX.copy || {};
+  var SCEN_LABEL = {}, SCEN_NOTE = {};
+  Object.keys(COPY.scenarios || {}).forEach(function(k){
+    SCEN_LABEL[k] = COPY.scenarios[k].label;
+    SCEN_NOTE[k] = COPY.scenarios[k].note || "";
+  });
 
-  var byId = {}; DATA.builds.forEach(function(b){ byId[b.id] = b; });
-  var state = {arch:"bruiser", scen:"mix", path:[]};
+  var byId = {};
+  if (HAS_CURVES) DATA.builds.forEach(function(b){ byId[b.id] = b; });
+  // 기본 시나리오: 혼합이 있으면 혼합, 없으면(단일 대상 챔피언) 첫 번째.
+  var state = {arch:"bruiser",
+               scen:(EX.scenarios.indexOf("mix") > -1 ? "mix" : EX.scenarios[0]),
+               path:[]};
 
   function el(id){ return document.getElementById(id); }
   function fmt(n, d){ return Number(n).toFixed(d === undefined ? 0 : d); }
@@ -457,7 +461,9 @@
   function liveIds(ids){
     var best = byId.dp_best;
     return ids.filter(function(id){
-      return id === "dp_best" || !best || byId[id].name !== best.name;
+      if (id === "dp_best") return true;
+      if (!byId[id]) return false;                  // 곡선 데이터가 없는 챔피언
+      return !best || byId[id].name !== best.name;
     });
   }
   function barIds(){ return liveIds(BAR_IDS); }
@@ -467,6 +473,30 @@
   function pointAt(id, step){ return stepOf(byId[id].series[state.arch][state.scen], step); }
   function arch(){
     return EX.archetypes.filter(function(a){ return a.id === state.arch; })[0];
+  }
+
+  /* ---------- 챔피언별 문구(데이터에서) ---------- */
+  function fillCopy(){
+    el("eyebrow").textContent = "ADC DPS Calculator · " + (COPY.champion || "");
+    el("pageTitle").textContent = COPY.title || "코어 결정 탐색기";
+    el("lede").textContent = COPY.lede || "";
+    el("scenLabel").textContent = COPY.scenario_label || "시나리오";
+    el("targetNote").textContent = COPY.target_note || "";
+    el("halfNote").innerHTML = COPY.half_note || "";
+    el("halfNote2").innerHTML = COPY.half_note || "";
+    el("methodNote").innerHTML = (COPY.method || [])
+      .map(function(t){ return "<p>" + t + "</p>"; }).join("");
+    var ul = el("caveats");
+    (COPY.caveats || []).slice().reverse().forEach(function(t){
+      var li = document.createElement("li");
+      li.innerHTML = t;
+      ul.insertBefore(li, ul.firstChild);      // 챔피언 캐비엇을 공통 캐비엇 앞에
+    });
+    // 시나리오가 하나뿐인 챔피언(단일 대상 시뮬)은 스위치를 감춘다.
+    if (EX.scenarios.length < 2) el("scenGroup").hidden = true;
+    // 곡선 JSON 이 없으면 완성 트리 비교 섹션들을 통째로 숨긴다.
+    if (!HAS_CURVES)
+      ["foldCurves", "foldBars", "foldTable"].forEach(function(id){ el(id).hidden = true; });
   }
 
   /* ---------- 스위치 ---------- */
@@ -486,6 +516,7 @@
       host.appendChild(b);
     });
   }
+  fillCopy();
   buildSwitch(el("archSwitch"), EX.archetypes.map(function(a){
     return {id:a.id, label:a.label};
   }), "arch");
@@ -716,7 +747,7 @@
                     path_ko:ko, series:series};
     TAG.dp_best = bestLabel();
     // 앞 3개가 고정 트리와 겹치면(같은 트리는 아닌데) 한 칸 더 보여 구분한다.
-    var taken = BAR_IDS.filter(function(id){
+    var taken = !HAS_CURVES ? [] : BAR_IDS.filter(function(id){
       return id !== "dp_best" && byId[id] && byId[id].name !== full;
     }).map(function(id){ return SHORT[id]; });
     var n = 3, label = ko.slice(0, 3).join("-");
@@ -944,8 +975,9 @@
 
   function renderKpis(){
     var host = el("kpis"); host.innerHTML = "";
-    var base = byId.meta_krk.series[state.arch][state.scen];
-    var baseEnd = base[base.length - 1], baseMid = stepOf(base, "3C");
+    var base = HAS_CURVES ? byId.meta_krk.series[state.arch][state.scen] : null;
+    var baseEnd = base ? base[base.length - 1] : null;
+    var baseMid = base ? stepOf(base, "3C") : null;
     var pts = byId.dp_best.series[state.arch][state.scen];
     var end = pts[pts.length - 1], mid = stepOf(pts, "3C");
     function tile(label, value, sub, lead){
@@ -955,14 +987,16 @@
         '</span><span class="k-sub">' + sub + '</span>';
       host.appendChild(d);
     }
+    function vs(now, was){
+      return base ? SHORT.meta_krk + " 대비 " + deltaHtml(pct(now, was)) : "누적 " + fmt(end.gold) + "g";
+    }
     tile(bestLabel() + " 트리", SHORT.dp_best,
          "전체 " + byId.dp_best.path_ko.join(" → "), true);
-    tile("5코어 DPS", fmt(end.dps),
-         SHORT.meta_krk + " 대비 " + deltaHtml(pct(end.dps, baseEnd.dps)));
-    tile("5코어 DPG", fmt(end.dpg, 1),
-         SHORT.meta_krk + " 대비 " + deltaHtml(pct(end.dpg, baseEnd.dpg)));
+    tile("5코어 DPS", fmt(end.dps), vs(end.dps, baseEnd && baseEnd.dps));
+    tile("5코어 DPG", fmt(end.dpg, 1), vs(end.dpg, baseEnd && baseEnd.dpg));
     tile("3코어 DPS", fmt(mid.dps),
-         SHORT.meta_krk + " 대비 " + deltaHtml(pct(mid.dps, baseMid.dps)));
+         base ? SHORT.meta_krk + " 대비 " + deltaHtml(pct(mid.dps, baseMid.dps))
+              : "누적 " + fmt(mid.gold) + "g");
   }
 
   function renderTable(){
@@ -1008,6 +1042,7 @@
     renderRules();
     renderArchNote();
     renderKpis();
+    if (!HAS_CURVES) return;
     renderLegend(el("legend1"));
     renderLegend(el("legend2"));
     drawLines(el("plotDps"), el("tipDps"), "dps", "DPS");

@@ -28,7 +28,7 @@
   - `… adc_sim.simulations.case_ranking ["케이스필터"]` — **애쉬 케이스 기반 빌드 랭킹**(비-방어 전 아이템 전수조사, 14케이스). 표만 출력(그래프/`plt.show()` 없음)이라 **헤드리스 안전**. 인자로 케이스명 부분일치 필터(예: `"alldps/nohc"`). 전체 ~45초.
 - 각 시뮬 모듈은 `if __name__ == "__main__"` 진입점을 가진다. (`case_ranking` 제외) 실행 끝에 `plt.show()`가 **블로킹**으로 창을 띄운다(헤드리스/자동화 시 유의). import만으로는 안 뜸 — 실행 코드가 main 가드 안에 있어 import 스모크 테스트는 안전.
 - **유나라 템트리 리포트(HTML)**: `python -m tools.yunara_report_data` (곡선 데이터 재생성, 시뮬 ≈2분)
-  → `python -m tools.build_yunara_report` (템플릿+JSON 합쳐 `docs/reports/yunara_report.html`).
+  → `python -m tools.build_explorer_report` (템플릿+JSON 합쳐 `docs/reports/yunara_report.html`).
   산출물은 git 제외이고, 배포는 Artifact 로 **기존 URL 에 publish**(새로 만들지 말 것).
   데이터는 `target_archetypes` 표를 그대로 읽으므로 시뮬과 리포트가 갈라지지 않는다.
   가독성·레이아웃 수정은 **템플릿 파일**에서 한다(데이터가 안 섞여 diff 가 읽힌다).
@@ -56,8 +56,12 @@ adc_sim/                  ← 소스 패키지 (코어 모듈끼리는 서로 im
     cdragon.py ─ Community Dragon에서 패치 데이터 받아오기(소스 연동만; 계수→sim 매핑은 추후)
 tools/ ─ 리포트·데이터 생성 도구(`python -m tools.<모듈>`, repo 루트에서 실행)
   yunara_report_data.py ─ 곡선 데이터 생성(시뮬 ≈2분) → docs/reports/yunara_curves.json
-  build_yunara_report.py ─ 템플릿+JSON → 배포용 HTML(빌드 산출물은 git 제외)
-docs/reports/ ─ 유나라 템트리 리포트: 템플릿(.template.html) + 곡선 데이터(.json). **편집 대상은 템플릿**
+  yunara_explorer_data.py · kaisa_explorer_data.py ─ 탐색기 노드 JSON(+챔피언 문구 `COPY`).
+      순위·전개는 **1차 mDPG, 0.5% 동률이면 score**. `--verify` 로 원본 greedy 와 대조
+  build_explorer_report.py ─ 공용 템플릿+JSON → 배포용 HTML(`all|yunara|kaisa`, 산출물 git 제외)
+docs/reports/ ─ 코어 결정 탐색기 리포트: **챔피언 중립 템플릿**(explorer.template.html) +
+  챔피언별 데이터(<champ>_explorer.json, 선택적 <champ>_curves.json). **편집 대상은 템플릿**,
+  챔피언 이름·문구는 데이터의 `copy` 블록에만 둔다(README.md 참조)
 results/{ashe,yunara}/ ─ 결과 PNG(생성물, git 제외)    reports/ ─ export 리포트(생성물, git 제외)
 experiments/ ─ 비패키지 스크래치(옛 테스트)   Archive/ ─ 수동 보관용   docs/ ─ superpowers 스펙·플랜 문서
 _to_delete/ ─ 교체돼 쓰이지 않는 코드 보관(어디서도 import 안 함; 지우기 전 근거를 남기는 용도)

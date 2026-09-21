@@ -5,7 +5,7 @@
 
 빌드별로 **하프 코어(아이템 사이 하위템 구간)와 완성 코어**의 DPS·누적 골드를,
 타깃 아키타입 3종 × 교전 시나리오 4종으로 전부 뽑아 JSON 한 벌로 만든다.
-그 JSON 을 `tools.build_yunara_report` 가 템플릿에 주입해 배포용 HTML 을 만든다.
+그 JSON 을 `tools.build_explorer_report` 가 템플릿에 주입해 배포용 HTML 을 만든다.
 
 · 아키타입 표는 `adc_sim.simulations.target_archetypes` 에서 그대로 가져온다 —
   여기서 숫자를 다시 적지 말 것(리포트와 시뮬이 다른 표를 보게 된다).
