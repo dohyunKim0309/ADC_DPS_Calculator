@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 """코어 타이밍별 상대 타깃 아키타입 — 딜러 / 브루저 / 탱커 (사용자 확정 2026-09-16).
 
-**지금은 유나라만 이 모듈을 쓴다.** 나머지 챔피언 시뮬(ashe / vayne / cogmaw / kaisa /
-azir / ezreal / corki)은 아직 각자 파일 안에 `CORE_TARGET_STATS` 한 벌(1700/50/30 …
+**유나라·카이사가 이 모듈을 쓴다.** 나머지 챔피언 시뮬(ashe / vayne / cogmaw / azir /
+ezreal / corki)은 아직 각자 파일 안에 `CORE_TARGET_STATS` 한 벌(1700/50/30 …
 3000/150/95)을 복사해 들고 있다. **확장 예정이며, 옮길 때는 표를 새로 쓰지 말고 이 모듈을
 쓸 것** — 챔피언별 표가 갈라지면 `power_compare` 의 챔피언 간 비교가 무의미해진다.
+⚠️ 두 표가 섞인 상태라 **지금 power_compare 의 챔피언 간 비교는 타깃이 다른 값끼리 놓고
+본다** — 이관이 끝날 때까지 그 표는 참고용으로만 읽을 것.
 
 옮기는 방법(챔피언 시뮬 1개 기준):
     from adc_sim.simulations.target_archetypes import core_target_stats, half_target_stats
