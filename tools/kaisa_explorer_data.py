@@ -89,7 +89,19 @@ def _order_rows(rows):
     return tied + rest
 
 
-def _main_items(rows):
+# 슬롯별 **강제 전개** — 유나라와 같은 목록(사용자 지정 2026-09-28).
+# 카이사 풀엔 루난이 없어 그 항목은 무시되고, 1코어 C44 는 2코어 스탯 하한(AD 75)에 걸려
+# `_legal_next` 에서 이미 빠지므로 여기서도 살아나지 않는다 — 고정은 "합법인데 순위에서
+# 밀린 후보" 를 구제하는 장치지, 불가능한 빌드를 만들어내는 장치가 아니다.
+PINNED_BY_SLOT = {
+    1: ("c44",),
+    3: ("runaan", "terminus", "ldr"),
+    4: ("runaan", "terminus", "ldr"),
+    5: ("runaan", "terminus", "ldr"),
+}
+
+
+def _main_items(rows, slot):
     """자식으로 전개할 아이템 집합 — **mDPG 상위 N ∪ score 상위 N**(사용자 확정 2026-09-28).
 
     mDPG 순으로만 자르면 "지금은 밋밋한데 뒤가 좋은" 가지(유나라 1코어 C44·윤탈·무한)가
@@ -99,7 +111,9 @@ def _main_items(rows):
     """
     by_m = sorted(rows, key=lambda r: -r["mdpg"])[:MAIN_TOP_N]
     by_s = sorted(rows, key=lambda r: -r["score"])[:MAIN_TOP_N]
-    return {r["item"] for r in by_m} | {r["item"] for r in by_s}
+    here = {r["item"] for r in rows}
+    pinned = {k for k in PINNED_BY_SLOT.get(slot, ()) if k in here}
+    return {r["item"] for r in by_m} | {r["item"] for r in by_s} | pinned
 
 
 def _legal_next(prefix, depth):
@@ -219,22 +233,18 @@ class Explorer:
         if not rows:
             return out          # 5코어 도달 — 노드를 만들지 않는다
         best_m = max(r["mdpg"] for r in rows) or 0.0
-        best_s = max(r["score"] for r in rows) or 0.0
-        main = _main_items(rows)
+        main = _main_items(rows, len(prefix) + 1)
         out[node_id] = {
             r["item"]: {
                 "score": round(r["score"], 2),
                 "gold": r["gold"],
                 "dps": round(r["dps"], 1),
-                "dpg": round(r["dpg"], 1),
                 "cost": r["cost"],
                 "ddps": round(r["ddps"], 1),
                 "mdpg": round(r["mdpg"], 1),
                 "half_dps": round(r["half_dps"], 1) if r["half_dps"] else None,
                 "half_gold": int(r["half_gold"]) if r["half_gold"] else None,
-                "half_dpg": round(r["half_dpg"], 1) if r["half_dpg"] else None,
                 "rel": round(100.0 * (r["mdpg"] / best_m - 1.0), 1) if best_m else 0.0,
-                "rel_score": round(100.0 * (r["score"] / best_s - 1.0), 1) if best_s else 0.0,
                 "tier": "main" if r["item"] in main else "minor",
             }
             for r in rows
@@ -281,7 +291,8 @@ def build():
             "shard": "공속10% + 적응형AD 5.4",
             "rune": "치명적 속도 + 체력차 극복",
             "order": f"1차 mDPG, 차이 {MDPG_TIE_PCT}% 안쪽이면 동률로 보고 score 로 세운다.",
-            "expand": f"자식 전개 = mDPG 상위 {MAIN_TOP_N} ∪ score 상위 {MAIN_TOP_N}.",
+            "expand": f"전개 = mDPG 상위 {MAIN_TOP_N} ∪ score 상위 {MAIN_TOP_N} ∪ 고정",
+            "pinned": {str(k): list(v) for k, v in PINNED_BY_SLOT.items()},
             "mdpg_tie_pct": MDPG_TIE_PCT,
             "score": "γ-할인 마지널 DPG 합(하프 √γ, 코어 γ). 카이사는 5코어 하프도 센다.",
             "mdpg": "이 한 칸의 마지널 DPG — (늘어난 DPS) / (이 칸에 쓴 골드/1000).",

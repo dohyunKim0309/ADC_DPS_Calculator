@@ -58,8 +58,11 @@ tools/ ─ 리포트·데이터 생성 도구(`python -m tools.<모듈>`, repo �
   yunara_report_data.py ─ 곡선 데이터 생성(시뮬 ≈2분) → docs/reports/yunara_curves.json
   yunara_explorer_data.py · kaisa_explorer_data.py ─ 탐색기 노드 JSON(+챔피언 문구 `COPY`).
       **순위 = 1차 mDPG, 0.5% 동률이면 score**. **전개 = mDPG 상위 3 ∪ score 상위 3 ∪
-      `PINNED_BY_SLOT`**(유나라: 1코어 c44, 3~5코어 runaan·terminus·ldr — 순위와 무관하게
-      항상 전개, 사용자 지정 2026-09-28). `--verify` 로 원본 greedy 와 대조.
+      `PINNED_BY_SLOT`**(두 챔피언 공통: 1코어 c44, 3~5코어 runaan·terminus·ldr — 순위와
+      무관하게 항상 전개, 사용자 지정 2026-09-28. 그 칸에 **합법일 때만** — 이미 보유·관통
+      배타·완주 불가(카이사 2코어 스탯 하한)면 애초에 후보가 아니다. 카이사 풀엔 runaan 이
+      없고 1코어 c44 는 하한에 걸려 실질 대상은 terminus·ldr 뿐). 불변식은
+      `tests/test_explorer_pins.py` 가 배포 JSON 으로 검사한다. `--verify` 로 원본 greedy 와 대조.
       dpg/half_dpg 는 dps·gold 파생이라 JSON 에 없다(리포트가 계산)
   build_explorer_report.py ─ 공용 템플릿+JSON → 배포용 HTML(`all|yunara|kaisa`, 산출물 git 제외)
 docs/reports/ ─ 코어 결정 탐색기 리포트: **챔피언 중립 템플릿**(explorer.template.html) +
