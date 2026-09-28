@@ -14,14 +14,14 @@
 하프 한 칸이 √γ, 코어 하나가 γ(=0.8). 5코어 하프는 생략하되 step 은 그대로 증가시켜
 뒤 항의 할인 지수를 흔들지 않는다(원본과 같은 규약).
 
-원본 `solve_greedy_half` 는 미래를 **순열로 전수 열거**해 최대값을 찾는다. 여기서는 같은
+원본(`receding.solve`)은 미래를 **순열로 전수 열거**해 최대값을 찾는다. 여기서는 같은
 값을 주는 **집합 단위 DP** 로 바꾼다 — 마지널 항이 장착 집합(+윤탈 구매시점)에만 의존하므로
 순열까지 볼 필요가 없다:
 
     V(노드) = max_x [ half(노드,x) + √γ·full(노드,x) + γ·V(노드+x) ]
     후보 x 의 score = half + √γ·full + γ·V(노드+x)
 
-`--verify` 로 원본 greedy 와 1코어 후보 점수·순위가 일치하는지 확인할 수 있다.
+`--verify` 로 공통 엔진 greedy(`receding.solve`)와 1코어 후보 점수가 일치하는지 확인한다.
 
 ── 순위·전개 기준 (사용자 확정 2026-09-21) ──────────────────────────────────
 **1차 = mDPG(이 한 칸의 골드 효율), 동률일 때만 score(미래 할인합)** — 한국 서버 챌린저
@@ -39,11 +39,15 @@ import json
 import sys
 from math import sqrt
 
-from adc_sim.simulations import yunara as Y
+from adc_sim.simulations import receding, yunara as Y
 from adc_sim.simulations.yunara import (
     CANDIDATES_BY_SLOT, GAMMA, HORIZON, MixedSimCache, SHARD_SCENARIOS, SimCache,
-    _half_enabled_for_slot, sim_half, solve_greedy_half,
+    build_spec,
 )
+
+# 하프 탐색·greedy 는 2026-09 리팩터로 공통 엔진(`simulations/receding.py`)으로 옮겨졌다.
+# 이 도구는 같은 spec 을 써야 원본과 점수가 일치한다(--verify 가 그걸 검사한다).
+SPEC = build_spec()
 from adc_sim.data.items_data import ADC_PACKAGES_VIABLE, pen_rule_ok
 from adc_sim.simulations.target_archetypes import TARGET_ARCHETYPES
 
@@ -150,8 +154,8 @@ def _marginal(cache, prefix, item):
     d_prev, g_prev = cache.sim(tuple(prefix)) if prefix else (0.0, 0.0)
     half_dps = half_gold = None
     h_term = 0.0
-    if _half_enabled_for_slot(depth + 1, HORIZON):
-        half_dps, half_gold, _comps = sim_half(cache, tuple(prefix), item)
+    if receding.half_enabled_for_slot(SPEC, depth + 1):
+        half_dps, half_gold, _comps = receding.select_half(SPEC, cache, tuple(prefix), item)
         d_gold = half_gold - g_prev
         if d_gold > 0:
             h_term = (half_dps - d_prev) / (d_gold / 1000.0)
@@ -263,7 +267,7 @@ def verify(archetype="bruiser", tc=2):
     """원본 greedy(순열 전수)와 1코어 후보 점수가 일치하는지 확인."""
     Y.set_target_archetype(archetype)
     cache = _cache_for(tc)
-    ref = solve_greedy_half(cache, gamma=GAMMA)
+    ref = receding.solve(SPEC, cache)
     ref_alts = {a["item"]: a["score"] for a in ref["steps"][0]["alternatives"]}
     mine = {r["item"]: r["score"] for r in Explorer(cache).candidates(())}
     print(f"[verify] {archetype}/tc{tc} — greedy 1코어 궤적 {ref['trajectory'][0]}")
