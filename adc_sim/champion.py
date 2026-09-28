@@ -10,10 +10,26 @@ from adc_sim.growth import growth_at_level, stat_at_level
 # 다음 평타 간격(1/AS)을 이 값으로 상한 클리핑(초). Ashe·Yunara 공통.
 ANIM_CANCEL_CLIP = 0.33
 
-# 루난의 허리케인 '바람의 격노' 볼트 AD 계수 (다중 타겟 확산 계산용, 숫자의 단일 출처).
-# 2026-08-11 패치 버프: 0.55 → 0.65 (이속 4%→5% 는 DPS 모델에 반영되지 않음).
-# 소비처: Yunara.get_one_hit_damage 6-2 (루난 확산 대미지).
+# 루난의 허리케인 '바람의 분노' 볼트 AD 계수 (숫자의 단일 출처).
+# **0.65** — 2026-08-11 패치 버프(0.55 → 0.65, 이속 4%→5%). 사용자 재확인 2026-09-16.
+# ⚠️ `namu_wiki/item_legendary` §3.9 덤프는 "공격력 55%"로 적혀 있지만 **그 덤프가 버프 이전
+#    스냅샷**이다(같은 문서의 이동 속도가 4% = 버프 전 값). 위키 덤프를 근거로 이 상수를 내리지
+#    말 것 — 2026-09-16 에 한 번 그렇게 내렸다가 되돌렸다.
 RUNAAN_BOLT_AD_RATIO = 0.65
+
+# 유나라 Q(초월) 확산이 **루난 볼트에도 터져** 서브 타겟 → 메인 타겟으로 되돌아오는 비율
+# 사용자 확정 2026-09-16 (기본·온힛 둘 다 0.30).
+#   · 서브 타겟이 실제로 받는 피해(기본 55% + 온힛 100%)는 **이 모델의 집계 대상이 아니다** —
+#     이 시뮬은 어디까지나 메인 타겟에 꽂히는 DPS 만 잰다.
+#   · 되돌아오는 분량만 메인 타겟 피해에 가산한다:
+#       기본딜  = 볼트 65% × 확산 30%  = 서브당 +19.5% (치명타·유나라 패시브 적용)
+#       온힛   = 볼트 100% × 확산 30% = 서브당 +30%
+#   · 서브 타겟 수(최대 2)에 선형 비례한다고 가정한다.
+# ⚠️ 이 두 계수는 "적 몇 명부터 루난이냐"의 경계선을 직접 움직인다 — 3코어 루난−도미닉 차가
+#    온힛 계수 0.3 일 때 적2 −0.4%, 0.5 로 올리면 +1.7% 로 부호가 뒤집힌다. 건드리기 전에
+#    사용자 확인부터 받을 것(2026-09-16 에 0.5 로 올렸다가 되돌렸다).
+YUNARA_Q_SPLASH_BASE_RETURN = 0.30
+YUNARA_Q_SPLASH_ONHIT_RETURN = 0.30
 
 
 class Target:
@@ -972,14 +988,17 @@ class Yunara(Champion):
             if has_runaan:
                 sub_targets = min(2, self.target_count - 1)
 
-                # 기본(AD) 계열 증폭: 1 + (볼트 AD계수 * 0.3 * 서브타겟수)
-                # 볼트 AD계수는 모듈 상수 RUNAAN_BOLT_AD_RATIO(=0.65, 2026-08-11 버프 전 0.55).
-                ad_multiplier = 1.0 + (RUNAAN_BOLT_AD_RATIO * 0.3 * sub_targets)
+                # 서브 타겟에게 들어간 피해는 집계하지 않는다(이 시뮬 = 메인 타겟 DPS).
+                # 여기서 더하는 건 **Q 확산이 볼트에서 메인 타겟으로 되돌린 분량**뿐이다.
+                # 기본딜: 볼트 65% × 확산 30% = 서브당 +19.5%. p_base/m_base 를 곱하므로
+                #   치명타 기대값과 유나라 패시브가 그대로 실린다(사용자 확정 2026-09-16).
+                ad_multiplier = 1.0 + (RUNAAN_BOLT_AD_RATIO
+                                       * YUNARA_Q_SPLASH_BASE_RETURN * sub_targets)
                 p_base *= ad_multiplier
                 m_base *= ad_multiplier
 
-                # 온힛 계열 증폭: 1 + (1.0 * 0.3 * 서브타겟수)
-                onhit_multiplier = 1.0 + (1.0 * 0.3 * sub_targets)
+                # 온힛: 볼트가 온힛을 온전히(100%) 옮기고, 그중 확산 비율만 되돌아온다.
+                onhit_multiplier = 1.0 + (YUNARA_Q_SPLASH_ONHIT_RETURN * sub_targets)
                 p_onhit *= onhit_multiplier
                 m_onhit *= onhit_multiplier
 

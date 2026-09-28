@@ -1,0 +1,1094 @@
+<title>__TITLE__</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@500;700;900&amp;family=IBM+Plex+Sans+KR:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap">
+<style>
+  :root{
+    --bg:#f4f6f9; --panel:#ffffff; --panel-2:#eef1f6; --line:#dde3ec; --line-soft:#e9edf3;
+    --ink:#0e141c; --ink-2:#48525f; --muted:#5f6b7a;
+    --accent:#2a78d6; --accent-ink:#1c5cab;
+    --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100;
+    --bar:#9ec5f4; --bar-top:#2a78d6;
+    --good:#0ca30c; --crit:#d03b3b;
+    --shadow:0 1px 2px rgba(14,20,28,.06), 0 10px 28px rgba(14,20,28,.05);
+    --mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --body:"IBM Plex Sans KR", system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif;
+    --display:"Gothic A1", "IBM Plex Sans KR", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#101318; --panel:#171b21; --panel-2:#1d222a; --line:#2b323c; --line-soft:#232932;
+      --ink:#f1f4f8; --ink-2:#b7c0cc; --muted:#8892a0;
+      --accent:#3987e5; --accent-ink:#86b6ef;
+      --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
+      --bar:#256abf; --bar-top:#3987e5;
+      --good:#0ca30c; --crit:#e66767;
+      --shadow:0 1px 2px rgba(0,0,0,.45), 0 12px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#101318; --panel:#171b21; --panel-2:#1d222a; --line:#2b323c; --line-soft:#232932;
+    --ink:#f1f4f8; --ink-2:#b7c0cc; --muted:#8892a0;
+    --accent:#3987e5; --accent-ink:#86b6ef;
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
+    --bar:#256abf; --bar-top:#3987e5;
+    --good:#0ca30c; --crit:#e66767;
+    --shadow:0 1px 2px rgba(0,0,0,.45), 0 12px 30px rgba(0,0,0,.35);
+  }
+
+  body{background:var(--bg); color:var(--ink); font-family:var(--body); line-height:1.6;}
+  .wrap{max-width:1080px; margin:0 auto; padding-inline:18px; padding-block:28px 56px;
+        display:flex; flex-direction:column; gap:26px;}
+  h1,h2,h3{font-family:var(--display); text-wrap:balance; margin:0;}
+  h1{font-size:clamp(26px,5vw,40px); font-weight:900; letter-spacing:-.02em; line-height:1.15;}
+  h2{font-size:18px; font-weight:700; letter-spacing:-.01em;}
+  h3{font-size:14px; font-weight:700;}
+  p{margin:0;}
+  [hidden]{display:none !important;}   /* .sw-group 같은 display 규칙이 hidden 을 덮지 않게 */
+  .lede{color:var(--ink-2); font-size:15px; max-width:64ch;}
+  .eyebrow{font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted);
+           font-weight:600; font-family:var(--body);}
+
+  .meta{display:flex; flex-wrap:wrap; gap:6px;}
+  .chip{font-size:11.5px; color:var(--ink-2); background:var(--panel-2); border:1px solid var(--line-soft);
+        border-radius:999px; padding:3px 10px; font-variant-numeric:tabular-nums;}
+
+  .switch{display:flex; flex-wrap:wrap; gap:6px; background:var(--panel); border:1px solid var(--line);
+          border-radius:12px; padding:6px; box-shadow:var(--shadow);}
+  .switch button{flex:1 1 auto; min-width:84px; font-family:var(--body); font-size:13px; font-weight:600;
+          color:var(--ink-2); background:transparent; border:0; border-radius:8px; padding:9px 10px;
+          cursor:pointer; transition:background .15s, color .15s;}
+  .switch button:hover{background:var(--panel-2);}
+  .switch button[aria-pressed="true"]{background:var(--accent); color:#fff;}
+  .switch button:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+
+  .kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px;}
+  .kpi{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px 16px;
+       box-shadow:var(--shadow); display:flex; flex-direction:column; gap:3px;}
+  .kpi .k-label{font-size:11.5px; color:var(--muted); font-weight:600;}
+  .kpi .k-value{font-family:var(--mono); font-size:27px; font-weight:600; letter-spacing:-.02em;
+                font-variant-numeric:tabular-nums; line-height:1.2;}
+  .kpi .k-sub{font-size:12px; color:var(--ink-2);}
+  .kpi.lead{border-color:var(--accent); }
+  .kpi.lead .k-value{font-family:var(--display); font-size:19px; font-weight:700; letter-spacing:-.01em;}
+  .delta{font-family:var(--mono); font-weight:600; font-variant-numeric:tabular-nums;}
+  .delta.up{color:var(--good);} .delta.down{color:var(--crit);}
+
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:18px;
+        box-shadow:var(--shadow); display:flex; flex-direction:column; gap:12px;}
+  .card-head{display:flex; flex-wrap:wrap; align-items:baseline; gap:8px 14px; justify-content:space-between;}
+  .card-note{font-size:12px; color:var(--muted); max-width:60ch;}
+
+  .legend{display:flex; flex-wrap:wrap; gap:6px 16px;}
+  .lg{display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--ink-2);}
+  .lg i{width:12px; height:12px; border-radius:3px; display:inline-block; flex:none;}
+  .lg small{color:var(--muted); font-family:var(--mono); font-size:11px;}
+
+  .plot{position:relative;}
+  .plot svg{display:block; width:100%; height:auto;}
+  .tip{position:absolute; pointer-events:none; opacity:0; transform:translate(-50%,-115%);
+       background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:8px 10px;
+       box-shadow:var(--shadow); font-size:12px; color:var(--ink); white-space:nowrap; z-index:5;
+       transition:opacity .12s;}
+  .tip b{font-family:var(--display); font-weight:700; font-size:12.5px;}
+  .tip .row{font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--ink-2); font-size:11.5px;}
+
+  .bars{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:18px;}
+
+  /* 옆으로 더 있다는 표시 — 가장자리 그림자(내용이 끝나면 저절로 사라진다). */
+  .tablewrap{overflow-x:auto;
+    background:
+      linear-gradient(to right, var(--panel), rgba(127,127,127,0)) 0 0/20px 100% no-repeat,
+      linear-gradient(to left, var(--panel), rgba(127,127,127,0)) 100% 0/20px 100% no-repeat,
+      radial-gradient(farthest-side at 0 50%, rgba(15,23,32,.14), rgba(15,23,32,0)) 0 0/10px 100% no-repeat,
+      radial-gradient(farthest-side at 100% 50%, rgba(15,23,32,.14), rgba(15,23,32,0)) 100% 0/10px 100% no-repeat;
+    background-attachment:local, local, scroll, scroll;}
+  table{border-collapse:collapse; width:100%; min-width:1080px; font-size:12.5px;}
+  th,td{text-align:right; padding:7px 10px; border-bottom:1px solid var(--line-soft); white-space:nowrap;}
+  th:first-child, td:first-child{text-align:left; position:sticky; left:0; background:var(--panel);}
+  thead th{color:var(--muted); font-weight:600; font-size:11.5px; border-bottom:1px solid var(--line);}
+  thead th.on{color:var(--ink);}
+  tbody td{font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--ink-2);}
+  tbody td:first-child{font-family:var(--body); color:var(--ink);}
+  tr.half td{color:var(--muted);}
+  tr.core td{background:var(--panel-2);}
+  .swatch{width:9px; height:9px; border-radius:2px; display:inline-block; margin-right:7px;}
+
+  .guide{border-color:var(--accent);}
+  .rules{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:10px 18px;}
+  .rule-row{display:flex; gap:10px; align-items:flex-start;}
+  .rule-n{flex:none; font-family:var(--mono); font-size:11px; font-weight:600; color:var(--accent);
+          border:1px solid var(--accent); border-radius:6px; padding:1px 7px; margin-top:2px;}
+  .rule-row p{font-size:12.5px; color:var(--ink-2);}
+  .pick{background:var(--panel-2); border-radius:12px; padding:14px 16px; display:flex;
+        flex-direction:column; gap:10px;}
+  .pick .pick-head{font-size:12px; color:var(--muted);}
+  .chain-col{display:flex; flex-direction:column; gap:14px; min-width:0;}
+  .state{display:flex; flex-wrap:wrap; gap:6px 20px; padding:12px 14px; border-radius:12px;
+         background:var(--panel-2); border:1px solid var(--line-soft);}
+  .state div{display:flex; flex-direction:column; gap:2px;}
+  .state dt{font-size:11px; color:var(--muted);}
+  .state dd{margin:0; font-family:var(--mono); font-size:15px; font-weight:600;
+            font-variant-numeric:tabular-nums;}
+  .state .hint{font-size:12px; color:var(--muted); line-height:1.6; flex:1 1 180px;}
+  .chain{display:flex; flex-wrap:wrap; gap:6px; align-items:center;}
+  .chain .node{display:flex; flex-direction:column; gap:1px; background:var(--panel);
+        border:1px solid var(--line); border-radius:10px; padding:6px 11px;}
+  .chain .node b{font-family:var(--display); font-size:13.5px;}
+  .chain .node small{font-family:var(--mono); font-size:10.5px; color:var(--muted);}
+  .chain .arrow{color:var(--muted); font-size:13px;}
+  .pick .why{font-size:12.5px; color:var(--ink-2);}
+  #matrix{min-width:520px;}
+  #matrix td, #matrix th{text-align:center;}
+  #matrix td:first-child, #matrix th:first-child{text-align:left;}
+  #matrix tbody td{font-family:var(--body);}
+  .notes{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px;}
+  .note{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px 16px;
+        display:flex; flex-direction:column; gap:6px;}
+  .note p, .note li{font-size:12.5px; color:var(--ink-2); line-height:1.65;}
+  .note ul{margin:0; padding-left:17px; display:flex; flex-direction:column; gap:4px;}
+  .rule{height:1px; background:var(--line); border:0; margin:0;}
+  code{font-family:var(--mono); font-size:11.5px; background:var(--panel-2); padding:1px 5px;
+       border-radius:5px; color:var(--ink-2);}
+  @media (prefers-reduced-motion: reduce){ *{transition:none !important;} }
+
+  /* ── 탐색기 ───────────────────────────────────────────── */
+  .head{display:flex; flex-direction:column; gap:8px;}
+  .switches{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:12px;}
+  .sw-group{display:flex; flex-direction:column; gap:6px;}
+  .sw-label{font-size:11px; letter-spacing:.12em; text-transform:uppercase;
+            color:var(--muted); font-weight:600;}
+
+  .explorer{gap:16px;}
+  .board{display:grid; grid-template-columns:minmax(0,1fr) minmax(250px,300px); gap:16px;
+         align-items:start;}
+  @media (max-width:760px){ .board{grid-template-columns:minmax(0,1fr);} }
+
+  .chain-col{display:flex; flex-direction:column; gap:14px; min-width:0;}
+  .state{display:flex; flex-wrap:wrap; gap:6px 20px; padding:12px 14px; border-radius:12px;
+         background:var(--panel-2); border:1px solid var(--line-soft);}
+  .state div{display:flex; flex-direction:column; gap:2px;}
+  .state dt{font-size:11px; color:var(--muted);}
+  .state dd{margin:0; font-family:var(--mono); font-size:15px; font-weight:600;
+            font-variant-numeric:tabular-nums;}
+  .state .hint{font-size:12px; color:var(--muted); line-height:1.6; flex:1 1 180px;}
+  .chain{display:flex; flex-wrap:wrap; align-content:flex-start; gap:6px; align-items:stretch;}
+  .step{display:flex; align-items:center; gap:6px;}
+  .step-btn{display:flex; flex-direction:column; gap:1px; text-align:left; cursor:pointer;
+        background:var(--panel-2); border:1px solid var(--line); border-radius:10px;
+        padding:8px 12px; font-family:var(--body); color:var(--ink);
+        transition:border-color .15s, background .15s;}
+  .step-btn:hover{border-color:var(--accent);}
+  .step-btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+  .step-btn b{font-family:var(--display); font-size:14px; font-weight:700;}
+  .step-btn small{font-family:var(--mono); font-size:10.5px; color:var(--muted);
+        font-variant-numeric:tabular-nums;}
+  .step-btn.root{background:transparent; border-style:dashed;}
+  .step .sep{color:var(--muted); font-size:14px;}
+  .chain-empty{font-size:12.5px; color:var(--muted); align-self:center;}
+
+  .cands{display:flex; flex-direction:column; gap:8px;}
+  .cands-head{font-size:11px; letter-spacing:.12em; text-transform:uppercase;
+              color:var(--muted); font-weight:600;}
+  .cands-head .head-note{letter-spacing:0; text-transform:none; font-weight:400;
+              font-family:var(--mono); font-size:10.5px;}
+  .cand{display:grid; grid-template-columns:auto 1fr auto auto; gap:2px 10px; align-items:baseline;
+        width:100%; text-align:left; cursor:pointer; font-family:var(--body); color:var(--ink);
+        background:var(--panel); border:1px solid var(--line); border-radius:12px;
+        padding:10px 12px; transition:border-color .15s, box-shadow .15s, transform .08s;}
+  .cand:hover{border-color:var(--accent); transform:translateX(1px);}
+  .cand:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+  .cand.lead{border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset;}
+  .cand .rank{font-family:var(--mono); font-size:11px; color:var(--muted); grid-row:span 3;}
+  .cand .name{font-family:var(--display); font-size:15px; font-weight:700;}
+  .cand .score, .cand .mdpg{font-family:var(--mono); font-size:17px; font-weight:600;
+        letter-spacing:-.01em; font-variant-numeric:tabular-nums; text-align:right;}
+  .cand .mdpg{color:var(--ink-2);}
+  .cand .sub{grid-row:3; grid-column:2 / -1; font-family:var(--mono); font-size:11px;
+        color:var(--muted); font-variant-numeric:tabular-nums;}
+  .cand .unit{grid-row:2; font-family:var(--mono); font-size:10px; color:var(--muted);
+        text-align:right; letter-spacing:.04em;}
+  .cand .unit-score{grid-column:3;}
+  .cand .unit-mdpg{grid-column:4;}
+  .cand .rel{font-family:var(--mono); font-size:11px; margin-left:6px;
+        color:var(--muted); font-variant-numeric:tabular-nums; font-weight:400;}
+  @media (max-width:420px){
+    .cand{gap:2px 7px; padding:9px 10px;}
+    .cand .score, .cand .mdpg{font-size:15px;}
+  }
+  .foot{font-size:12px; line-height:1.75; color:var(--muted);
+        border-top:1px dashed var(--line); padding-top:10px;}
+  .foot-list{list-style:none; display:flex; flex-direction:column; gap:4px;}
+  .foot b{color:var(--ink-2); font-weight:600;}
+  .tie{display:inline-block; font-family:var(--mono); font-size:10.5px; color:var(--accent-ink);
+       border:1px solid var(--accent); border-radius:5px; padding:0 4px; margin-left:5px;}
+  .cands .done{border:1px dashed var(--line); border-radius:12px; padding:14px;
+       font-size:12.5px; color:var(--muted); text-align:center;}
+
+  .minor-title{margin-top:2px; color:var(--ink-2);}
+  .minor-title span{font-family:var(--mono); font-size:11.5px; color:var(--muted); font-weight:400;}
+  #minorTable{min-width:520px;}
+  #minorTable td, #minorTable th{text-align:right;}
+  #minorTable td:first-child, #minorTable th:first-child{text-align:left;}
+  #minorTable tbody td:first-child{font-family:var(--body);}
+  .unverified{font-family:var(--mono); font-size:10.5px; color:var(--muted);
+        border:1px dashed var(--line); border-radius:5px; padding:1px 5px;}
+
+  .rules{display:flex; flex-direction:column; gap:10px;}
+  .rule-item{display:grid; grid-template-columns:auto 1fr; gap:12px; align-items:start;}
+  .rule-tag{font-family:var(--mono); font-size:11px; font-weight:600; color:var(--accent);
+        border:1px solid var(--accent); border-radius:6px; padding:1px 8px; white-space:nowrap;}
+  .rule-item p{font-size:13px; color:var(--ink-2); line-height:1.7;}
+
+  /* ── 접이식 섹션 ──────────────────────────────────────── */
+  .fold{background:var(--panel); border:1px solid var(--line); border-radius:14px;
+        box-shadow:var(--shadow); overflow:hidden;}
+  .fold > summary{cursor:pointer; padding:14px 18px; display:flex; flex-wrap:wrap; gap:4px 10px;
+        align-items:baseline; font-family:var(--display); font-size:15px; color:var(--ink);
+        list-style:none;}
+  .fold > summary::-webkit-details-marker{display:none;}
+  .fold > summary::before{content:"▸"; color:var(--muted); font-size:11px; margin-right:2px;}
+  .fold[open] > summary::before{content:"▾";}
+  .fold > summary span{font-family:var(--body); font-size:12.5px; font-weight:400; color:var(--muted);}
+  .fold > summary:focus-visible{outline:2px solid var(--accent); outline-offset:-2px;}
+  .fold-body{padding:0 18px 18px; display:flex; flex-direction:column; gap:14px;}
+</style>
+<div class="wrap">
+
+  <noscript>
+    <p style="padding:14px 16px; border:1px solid var(--line); border-radius:12px;
+              background:var(--panel); font-size:13px; line-height:1.7;">
+      이 리포트는 표·그래프를 브라우저에서 그린다. <b>자바스크립트가 꺼져 있어 내용이 보이지 않는다.</b>
+      브라우저 설정에서 자바스크립트를 켜고 새로고침하면 된다.
+    </p>
+  </noscript>
+
+  <header class="head">
+    <span class="eyebrow" id="eyebrow"></span>
+    <h1 id="pageTitle"></h1>
+    <p class="lede" id="lede"></p>
+  </header>
+
+  <section class="switches">
+    <div class="sw-group">
+      <span class="sw-label">상대 타깃</span>
+      <div class="switch" id="archSwitch" role="group" aria-label="상대 타깃 선택"></div>
+    </div>
+    <div class="sw-group" id="scenGroup">
+      <span class="sw-label" id="scenLabel"></span>
+      <div class="switch" id="scenSwitch" role="group" aria-label="시나리오 선택"></div>
+    </div>
+  </section>
+
+  <section class="card explorer">
+    <div class="card-head">
+      <h2>경로</h2>
+      <p class="card-note" id="exNote"></p>
+    </div>
+
+    <div class="board">
+      <div class="chain-col">
+        <div class="chain" id="chain"></div>
+        <div class="state" id="stateBox"></div>
+      </div>
+      <div class="cands" id="cands"></div>
+    </div>
+
+    <div id="minorWrap">
+      <h3 class="minor-title">나머지 후보 <span id="minorCount"></span></h3>
+      <div class="tablewrap"><table id="minorTable"></table></div>
+    </div>
+
+    <ul class="foot foot-list">
+      <li><b>mDPG</b> — 현재 시점 이 아이템의 골드 효율. 늘어난 DPS ÷ 이 아이템에 쓴 골드(1000단위).
+        1코어는 앞 상태가 없어 시작 아이템(도란템·신발·룬) 값까지 분모에 들어가고, 그래서 DPG 와 같은 값이 된다.</li>
+      <li><b>score</b> — 현재 시점 이 아이템부터 5코어까지의 mDPG 합. 할인율 <span id="gammaFoot">γ</span>, 하위템 구간 포함.</li>
+      <li><b>순위</b> — mDPG 순. mDPG 차 0.5% 안이면 동률로 보고 그 묶음만 score 순.</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>타이밍별 규칙</h2>
+      <p class="card-note" id="rulesNote"></p>
+    </div>
+    <div class="rules" id="rules"></div>
+  </section>
+
+  <details class="fold">
+    <summary><b>KPI</b> <span>지금 1위 경로의 절대 파워와 골드효율</span></summary>
+    <div class="fold-body">
+      <div class="kpis" id="kpis"></div>
+      <p class="foot">지금 고른 상대·적 수에서 다섯 아이템을 다 갖췄을 때의 값이다.
+        DPS 는 절대 파워, DPG 는 골드 1000당 DPS.</p>
+    </div>
+  </details>
+
+  <details class="fold" id="foldCurves">
+    <summary><b>파워 곡선</b> <span>지금 1위 경로와 비교 트리의 누적 골드별 DPS·DPG</span></summary>
+    <div class="fold-body">
+      <div class="legend" id="legend1"></div>
+      <div class="plot" id="plotDps"><div class="tip" id="tipDps"></div></div>
+      <div class="legend" id="legend2"></div>
+      <div class="plot" id="plotDpg"><div class="tip" id="tipDpg"></div></div>
+      <p class="foot">가로축은 그 시점까지 쓴 누적 골드다. 위 그래프의 세로축 DPS 는 절대 파워,
+        아래 그래프의 DPG 는 골드 1000당 DPS 라 "같은 돈으로 얼마나 셌는가" 를 뜻한다.
+        점이 찍힌 곳이 하프·완성 시점이고, 그 사이는 직선으로 이었다.</p>
+    </div>
+  </details>
+
+  <details class="fold" id="foldBars">
+    <summary><b>5코어 시점 비교</b> <span>지금 1위 경로까지 포함한 완성 시점 DPS·DPG 순위</span></summary>
+    <div class="fold-body">
+      <div class="bars">
+        <div class="plot" id="barDps"><div class="tip" id="tipBarDps"></div></div>
+        <div class="plot" id="barDpg"><div class="tip" id="tipBarDpg"></div></div>
+      </div>
+      <p class="foot">다섯 아이템을 다 갖춘 시점만 잘라 세운 값이다. 왼쪽은 DPS(절대 파워),
+        오른쪽은 DPG(골드 1000당 DPS). 트리마다 총 골드가 달라 두 순위는 어긋날 수 있다.
+        여기 1위와 맨 위 "경로" 카드의 지금 1위가 다를 수 있는데, 경로 쪽은 매 칸의 mDPG 로
+        세우고 이 막대는 5코어 한 점만 보기 때문이다.
+        이 시점 값은 든 아이템 집합에만 달려 있어, 순서만 다른 트리는 한 줄로 합쳤다(막대에 올리면 목록이 뜬다).</p>
+    </div>
+  </details>
+
+  <details class="fold" id="foldTable">
+    <summary><b>수치 표</b> <span>하프 코어까지 포함한 구간별 DPS와 DPG</span></summary>
+    <div class="fold-body">
+      <div class="tablewrap"><table id="tbl"></table></div>
+      <p class="foot"><b>하프</b> 는 코어 사이 구간, 즉 다음 아이템의 하위템만 들고 있는 상태다
+        (목표 아이템 값의 절반 근처에서 가장 효율 좋은 하위템 조합을 골랐다).
+        DPG 는 DPS ÷ (누적 골드 ÷ 1000) 이다. <span id="halfNote"></span></p>
+    </div>
+  </details>
+
+  <details class="fold">
+    <summary><b>측정 조건과 한계</b> <span>무엇을 어떻게 쟀고, 어디까지 믿을 수 있는지</span></summary>
+    <div class="fold-body">
+      <div class="meta" id="meta"></div>
+      <div class="notes">
+        <div class="note">
+          <h3>두 지표</h3>
+          <p><b>score</b> 는 이 아이템을 사고 5코어까지 최적으로 이어갔을 때의 <b>γ-할인 마지널 DPG 합</b>이다(<span id="gammaNote">γ</span>, 하프 구간 √γ). 미래까지 본 값이지만 <b>정렬의 2차 키</b>다 — mDPG 가 0.5% 안쪽으로 붙은 묶음에서만 순서를 가른다.</p>
+          <p><b>mDPG</b> 는 이 한 칸의 값이다 — (늘어난 DPS) ÷ (이 칸에 쓴 골드/1000). 미래를 보지 않지만 <b>1차 정렬 기준</b>이다(실전 피드백 반영 — 계획대로 5코어까지 가는 판이 드물다). 둘이 엇갈리는 칸이 판단이 갈리는 지점이다 — 카드에 두 값을 나란히 둔 건 그 지점을 눈으로 잡으라는 뜻이다. 순서는 mDPG 가 정하므로, score 가 더 높은 후보가 2·3위에 있으면 그게 "지금은 손해, 뒤가 이득" 인 선택지다. 1코어만은 앞 상태가 없어 시작 아이템 값이 분모에 포함되고, 그 칸에서는 mDPG 와 DPG 가 같다.</p>
+          <p>아이템 사이 <b>하프 구간</b>(하위템만 든 상태)은 score 에 이미 녹아 있어 <b>후보 카드에는 따로 적지 않는다</b> — 구간별 값은 아래 파워 곡선과 수치 표에 있다. 목표 아이템 가격의 절반 근처에서 마지널 DPG 가 가장 높은 하위템 조합을 고른다. <span id="halfNote2"></span></p>
+        </div>
+        <div class="note">
+          <h3>상대 타깃</h3>
+          <p id="archNote"></p>
+          <div class="meta" id="archTiers"></div>
+          <p id="targetNote"></p>
+          <p>도미닉의 거인 학살자 증폭이 타깃 추가 체력(최대체력 − 1600)에 비례하므로, 물렁한 상대일수록 도미닉이 약해지고 무한·C44 가 유리해진다.</p>
+        </div>
+        <div class="note">
+          <h3>측정 방식</h3>
+          <div id="methodNote"></div>
+        </div>
+        <div class="note">
+          <h3>믿으면 안 되는 것</h3>
+          <ul id="caveats">
+            <li>K=2 처치 타이밍 양자화로 ±2%p 잡음이 있다. mDPG 차 0.5% 안쪽은 동률(<span class="tie">≈</span>)로 보고, 그 묶음만 <b>미래까지 본 score</b> 로 세운다.</li>
+            <li>각 노드에서 <b>mDPG 상위 3개 ∪ score 상위 3개 ∪ 고정 항목</b>만 다음 단계로 전개했다 — 순서는 mDPG 로 세우되, 뒤가 좋은 가지도 눌러 볼 수 있게 함께 편다. <span id="pinNote"></span> 나머지도 점수는 같은 방식으로 계산했고 그 뒤 가지만 <b>전개하지 않았다</b>.</li>
+            <li>라인 클리어·생존력·사거리 가치는 모델 밖이다.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </details>
+</div>
+
+<script type="application/json" id="curves">__CURVES_JSON__</script>
+<script type="application/json" id="explorer">__EXPLORER_JSON__</script>
+<script>
+(function(){
+  "use strict";
+  var DATA = JSON.parse(document.getElementById("curves").textContent);
+  // 곡선 JSON 은 선택 사항 — 없는 챔피언(카이사)은 탐색기·규칙·KPI 만 돈다.
+  var HAS_CURVES = !!(DATA && DATA.builds && DATA.builds.length);
+  var EX = JSON.parse(document.getElementById("explorer").textContent);
+  var ITEM = EX.items;
+  // 1차 지표는 mDPG(이 한 칸의 골드 효율). 차이가 이 % 안쪽이면 동률로 보고 score 로 세운다.
+  // rel 필드는 mDPG 1위 대비다.
+  var TIE = 0.5;
+
+  // 접이식 섹션(구 리포트)이 쓰는 고정 트리 — 탐색기와 달리 완성 트리 비교용이다.
+  var SHORT = {
+    opt_solo:"윤탈-무한-도미닉", opt_fight:"윤탈-크라켄-도미닉", opt_run3:"윤탈-크라켄-루난",
+    meta_yun:"윤탈-루난-무한", late_solo:"크라켄-윤탈-도미닉", late_run:"크라켄-윤탈-루난",
+    meta_krk:"크라켄-루난-무한"
+  };
+  var TAG = {meta_yun:"기존", meta_krk:"기존", dp_best:"지금 1위"};
+  function bestLabel(){ return state.path.length ? "고른 경로" : "지금 1위"; }
+  // 곡선은 4줄까지 — 탐색기 1위 + 기존 메타 둘 + 흔한 대안 하나.
+  var LINE_IDS = ["dp_best", "meta_krk", "meta_yun", "late_run"];
+  var SLOT = ["var(--s1)","var(--s2)","var(--s3)","var(--s4)"];
+  var BAR_IDS = ["dp_best","opt_solo","opt_fight","opt_run3","late_solo","late_run",
+                 "meta_krk","meta_yun"];
+  // 시나리오 라벨·설명은 챔피언 데이터(copy)에서 온다.
+  var COPY = EX.copy || {};
+  var SCEN_LABEL = {}, SCEN_NOTE = {};
+  Object.keys(COPY.scenarios || {}).forEach(function(k){
+    SCEN_LABEL[k] = COPY.scenarios[k].label;
+    SCEN_NOTE[k] = COPY.scenarios[k].note || "";
+  });
+
+  var byId = {};
+  if (HAS_CURVES) DATA.builds.forEach(function(b){ byId[b.id] = b; });
+  // 기본 시나리오: 혼합이 있으면 혼합, 없으면(단일 대상 챔피언) 첫 번째.
+  var state = {arch:"bruiser",
+               scen:(EX.scenarios.indexOf("mix") > -1 ? "mix" : EX.scenarios[0]),
+               path:[]};
+
+  function el(id){ return document.getElementById(id); }
+  function fmt(n, d){ return Number(n).toFixed(d === undefined ? 0 : d); }
+  function gold(g){ return (g/1000).toFixed(2).replace(/0$/,"") + "k"; }
+  // DPG 는 dps/gold 파생값이라 데이터에 싣지 않는다(파일 크기) — 쓸 때 계산한다.
+  function dpgOf(dps, g){ return g ? dps / (g / 1000) : 0; }
+  function pct(a, b){ return (a/b - 1) * 100; }
+  function deltaHtml(v){
+    return '<span class="delta ' + (v >= 0 ? "up" : "down") + '">' +
+      (v >= 0 ? "+" : "") + v.toFixed(1) + '%</span>';
+  }
+  function cssVar(name){
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+  function group(){ return {id:"all", ids:liveIds(LINE_IDS)}; }
+  function slotVar(id){
+    var i = liveIds(LINE_IDS).indexOf(id);
+    return i > -1 ? SLOT[i] : "var(--muted)";
+  }
+  function colorOf(id){ return cssVar(slotVar(id).slice(4, -1)); }
+  function tagHtml(id){
+    return TAG[id] ? ' <span style="font-size:10.5px; color:var(--muted);">' + TAG[id] + '</span>' : '';
+  }
+  // 탐색기 1위와 같은 트리가 고정 비교군에도 있으면 중복이라 뺀다.
+  function liveIds(ids){
+    var best = byId.dp_best;
+    return ids.filter(function(id){
+      if (id === "dp_best") return true;
+      if (!byId[id]) return false;                  // 곡선 데이터가 없는 챔피언
+      return !best || byId[id].name !== best.name;
+    });
+  }
+  function barIds(){ return liveIds(BAR_IDS); }
+  function stepOf(pts, step){
+    return pts.filter(function(p){ return p.step === step; })[0];
+  }
+  function pointAt(id, step){ return stepOf(byId[id].series[state.arch][state.scen], step); }
+  function arch(){
+    return EX.archetypes.filter(function(a){ return a.id === state.arch; })[0];
+  }
+
+  /* ---------- 챔피언별 문구(데이터에서) ---------- */
+  function fillCopy(){
+    el("eyebrow").textContent = "ADC DPS Calculator · " + (COPY.champion || "");
+    el("pageTitle").textContent = COPY.title || "코어 결정 탐색기";
+    el("lede").textContent = COPY.lede || "";
+    el("scenLabel").textContent = COPY.scenario_label || "시나리오";
+    el("targetNote").textContent = COPY.target_note || "";
+    el("halfNote").innerHTML = COPY.half_note || "";
+    el("halfNote2").innerHTML = COPY.half_note || "";
+    // 고정 전개(슬롯별로 순위와 무관하게 펴는 아이템)를 캐비엇에 적는다.
+    var pin = EX.meta.pinned || {};
+    var slots = Object.keys(pin).map(Number).sort(function(a, b){ return a - b; });
+    var groups = [];        // 같은 목록이 이어지는 슬롯은 "3~5코어" 로 묶는다
+    slots.forEach(function(sl){
+      var names = pin[sl].map(function(k){ return ITEM[k] || k; }).join("·");
+      var last = groups[groups.length - 1];
+      if (last && last.names === names && last.to === sl - 1) last.to = sl;
+      else groups.push({from:sl, to:sl, names:names});
+    });
+    var pinTxt = groups.map(function(g){
+      return (g.from === g.to ? g.from : g.from + "~" + g.to) + "코어 " + g.names;
+    }).join(" · ");
+    el("pinNote").innerHTML = pinTxt
+      ? "고정으로 편 것: <b>" + pinTxt + "</b>(순위와 무관하게 항상 전개)." : "";
+    el("methodNote").innerHTML = (COPY.method || [])
+      .map(function(t){ return "<p>" + t + "</p>"; }).join("");
+    var ul = el("caveats");
+    (COPY.caveats || []).slice().reverse().forEach(function(t){
+      var li = document.createElement("li");
+      li.innerHTML = t;
+      ul.insertBefore(li, ul.firstChild);      // 챔피언 캐비엇을 공통 캐비엇 앞에
+    });
+    // 시나리오가 하나뿐인 챔피언(단일 대상 시뮬)은 스위치를 감춘다.
+    if (EX.scenarios.length < 2) el("scenGroup").hidden = true;
+    // 곡선 JSON 이 없으면 완성 트리 비교 섹션들을 통째로 숨긴다.
+    if (!HAS_CURVES)
+      ["foldCurves", "foldBars", "foldTable"].forEach(function(id){ el(id).hidden = true; });
+  }
+
+  /* ---------- 스위치 ---------- */
+  function buildSwitch(host, options, key){
+    options.forEach(function(opt){
+      var b = document.createElement("button");
+      b.type = "button"; b.textContent = opt.label; b.dataset.value = opt.id;
+      b.setAttribute("aria-pressed", String(opt.id === state[key]));
+      b.addEventListener("click", function(){
+        state[key] = opt.id;
+        state.path = [];        // 상황이 바뀌면 경로는 처음부터
+        Array.prototype.forEach.call(host.children, function(c){
+          c.setAttribute("aria-pressed", String(c.dataset.value === state[key]));
+        });
+        render();
+      });
+      host.appendChild(b);
+    });
+  }
+  fillCopy();
+  buildSwitch(el("archSwitch"), EX.archetypes.map(function(a){
+    return {id:a.id, label:a.label};
+  }), "arch");
+  buildSwitch(el("scenSwitch"), EX.scenarios.map(function(s){
+    return {id:s, label:SCEN_LABEL[s]};
+  }), "scen");
+
+  /* ---------- 탐색기 ---------- */
+  function nodes(){ return EX.nodes[state.arch + "|" + state.scen] || {}; }
+  function nodeAt(path){ return nodes()[path.join("-")]; }
+
+  function renderChain(){
+    var host = el("chain"); host.innerHTML = "";
+    var root = document.createElement("div"); root.className = "step";
+    var rb = document.createElement("button");
+    rb.type = "button"; rb.className = "step-btn root";
+    rb.innerHTML = '<b>시작</b><small>0g</small>';
+    rb.title = "처음부터 다시 고르기";
+    rb.addEventListener("click", function(){ state.path = []; render(); });
+    root.appendChild(rb);
+    host.appendChild(root);
+
+    state.path.forEach(function(item, i){
+      var parent = nodeAt(state.path.slice(0, i));
+      var info = parent ? parent[item] : null;
+      var step = document.createElement("div"); step.className = "step";
+      var sep = document.createElement("span"); sep.className = "sep"; sep.textContent = "→";
+      var b = document.createElement("button");
+      b.type = "button"; b.className = "step-btn";
+      b.innerHTML = '<b>' + (ITEM[item] || item) + '</b><small>' +
+        (info ? info.gold + "g · " + fmt(info.dps) + " DPS" : "") + '</small>';
+      b.title = (i + 1) + "코어까지 되감기";
+      b.addEventListener("click", function(){ state.path = state.path.slice(0, i + 1); render(); });
+      step.appendChild(sep); step.appendChild(b);
+      host.appendChild(step);
+    });
+  }
+
+  function renderCandidates(){
+    var host = el("cands"); host.innerHTML = "";
+    var node = nodeAt(state.path);
+    var head = document.createElement("div");
+    head.className = "cands-head";
+    head.innerHTML = (state.path.length + 1) + '코어 후보' +
+      '<span class="head-note"> · mDPG 동률(' + TIE + '% 이내)은 score 순</span>';
+    if (!node || !Object.keys(node).length){
+      host.innerHTML = '<div class="done">다섯 코어를 다 채웠다.<br>경로의 아이템을 눌러 되감을 수 있다.</div>';
+      el("minorWrap").hidden = true;
+      return;
+    }
+    host.appendChild(head);
+    var rows = sortedRows(node);
+    var mains = orderRows(rows.filter(function(r){ return r.tier === "main"; }));
+    var minors = rows.filter(function(r){ return r.tier !== "main"; });
+    var tiedCount = mains.filter(function(r){ return r.rel > -TIE; }).length;
+
+    mains.forEach(function(r, i){
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "cand" + (i === 0 ? " lead" : "");
+      var inTie = tiedCount > 1 && r.rel > -TIE;
+      var badge = inTie ? '<span class="tie">≈ 동률</span>'
+        : '<span class="rel">' + (i === 0 ? "mDPG 1위" : fmt(r.rel, 1) + "%") + '</span>';
+      b.innerHTML =
+        '<span class="rank">' + (i + 1) + '</span>' +
+        '<span class="name">' + (ITEM[r.item] || r.item) + badge + '</span>' +
+        '<span class="score">' + fmt(r.mdpg, 1) + '</span>' +
+        '<span class="mdpg">' + fmt(r.score, 1) + '</span>' +
+        '<span class="sub">누적 ' + r.gold + 'g · DPS ' + fmt(r.dps) +
+          ' · DPG ' + fmt(dpgOf(r.dps, r.gold), 1) + '</span>' +
+        '<span class="unit unit-score">mDPG</span>' +
+        '<span class="unit unit-mdpg">score</span>';
+      b.addEventListener("click", function(){
+        state.path = state.path.concat([r.item]);
+        render();
+      });
+      host.appendChild(b);
+    });
+
+    el("minorWrap").hidden = minors.length === 0;
+    el("minorCount").textContent = minors.length ? "(" + minors.length + "종 · 전개 없음)" : "";
+    el("minorTable").innerHTML =
+      '<thead><tr><th>아이템</th><th>mDPG</th><th>최고 mDPG 대비</th><th>score</th>' +
+      '<th>DPS</th><th>DPG</th><th>상태</th></tr></thead><tbody>' +
+      minors.map(function(r){
+        return '<tr><td>' + (ITEM[r.item] || r.item) + '</td><td>' + fmt(r.mdpg, 1) + '</td>' +
+          '<td>' + fmt(r.rel, 1) + '%</td><td>' + fmt(r.score, 1) + '</td>' +
+          '<td>' + fmt(r.dps) + '</td><td>' + fmt(dpgOf(r.dps, r.gold), 1) + '</td>' +
+          '<td><span class="unverified">전개 안 함</span></td></tr>';
+      }).join("") + '</tbody>';
+  }
+
+  function renderState(){
+    var host = el("stateBox");
+    if (!state.path.length){
+      host.innerHTML = '<p class="hint">아직 아무것도 안 샀다. 1코어 후보에서 하나를 고르면 ' +
+        '그 선택을 전제로 다음 칸 후보가 다시 계산된다.</p>';
+      return;
+    }
+    var parent = nodeAt(state.path.slice(0, -1));
+    var cur = parent ? parent[state.path[state.path.length - 1]] : null;
+    if (!cur){ host.innerHTML = ""; return; }
+    host.innerHTML =
+      '<div><dt>' + state.path.length + '코어 시점 DPS</dt><dd>' + fmt(cur.dps) + '</dd></div>' +
+      '<div><dt>누적 골드</dt><dd>' + cur.gold + '</dd></div>' +
+      '<div><dt>DPG</dt><dd>' + fmt(dpgOf(cur.dps, cur.gold), 1) + '</dd></div>' +
+      '<div><dt>이 칸의 mDPG</dt><dd>' + fmt(cur.mdpg, 1) + '</dd></div>' +
+      '<p class="hint">이 칸에 ' + cur.cost + '골드를 써서 DPS 가 ' + fmt(cur.ddps, 1) +
+      ' 늘었다.</p>';
+  }
+
+  function renderExplorerNote(){
+    el("exNote").textContent = arch().label + " 상대 · " + SCEN_LABEL[state.scen] +
+      " — " + SCEN_NOTE[state.scen] + " 후보를 누르면 그다음 칸으로 넘어간다.";
+  }
+
+  /* ---------- 타이밍별 규칙 (현재 스위치의 데이터에서 생성) ---------- */
+  function sortedRows(node){
+    return Object.keys(node).map(function(k){ var r = node[k]; r.item = k; return r; })
+      .sort(function(a, b){ return b.mdpg - a.mdpg; });
+  }
+  // mDPG 가 TIE 안쪽이면 동률로 보고, 그 묶음만 미래 가치(score)로 세운다.
+  function orderRows(rows){
+    var tied = rows.filter(function(r){ return r.rel > -TIE; })
+      .sort(function(a, b){ return b.score - a.score; });
+    return tied.concat(rows.filter(function(r){ return r.rel <= -TIE; }));
+  }
+  function mainRows(node){
+    return orderRows(sortedRows(node).filter(function(r){ return r.tier === "main"; }));
+  }
+  function bestPathFrom(prefix){
+    var p = prefix.slice();
+    for (;;){
+      var n = nodeAt(p);
+      if (!n || !Object.keys(n).length) return p;
+      p.push(mainRows(n)[0].item);
+    }
+  }
+  function finalSet(prefix){
+    return bestPathFrom(prefix).slice().sort().join("+");
+  }
+  function nm(item){ return ITEM[item] || item; }
+  // 받침 유무로 조사 선택 — "윤탈이" / "구인수가".
+  function josa(word, withJong, noJong){
+    var ch = word.charCodeAt(word.length - 1), has;
+    if (ch >= 0xAC00 && ch <= 0xD7A3) has = ((ch - 0xAC00) % 28) !== 0;
+    else if (ch >= 0x30 && ch <= 0x39) has = "0136780".indexOf(word.slice(-1)) > -1;
+    else has = false;
+    return word + (has ? withJong : noJong);
+  }
+  function subj(item){ return josa(nm(item), "이", "가"); }
+
+  function renderRules(){
+    var host = el("rules"); host.innerHTML = "";
+    el("rulesNote").textContent = arch().label + " 상대 · " + SCEN_LABEL[state.scen] +
+      " 기준. 고른 칸은 그대로 따라가고 나머지는 매 칸 mDPG 1위로 채운 경로에서, " +
+      "같은 칸의 형제 후보끼리만 비교한다.";
+    var path = [];
+    for (var d = 0; d < 5; d++){
+      var node = nodeAt(path);
+      if (!node || !Object.keys(node).length) break;
+      var rows = mainRows(node);
+      var picked = null;
+      if (state.path[d]){
+        picked = rows.filter(function(r){ return r.item === state.path[d]; })[0];
+        if (!picked && node[state.path[d]]){          // 혹시 상위 3개 밖을 고른 경우
+          picked = node[state.path[d]]; picked.item = state.path[d];
+        }
+      }
+      var a = picked || rows[0];
+      var rest = rows.filter(function(r){ return r.item !== a.item; });
+      var b = rest[0], c = rest[1];
+      var lead = rows[0].item !== a.item ? rows[0] : null;   // 고른 칸이 1위가 아닐 때
+      var pre = d ? path.map(nm).join("-") + " 뒤, " : "";
+      var txt = pre + (lead ? "고른 " : "") + "<b>" + nm(a.item) + " mDPG " + fmt(a.mdpg, 1) + "</b>";
+      if (lead){
+        txt += " — 이 칸 1위는 " + nm(lead.item) + " " + fmt(lead.mdpg, 1) +
+               " (" + fmt(Math.abs(lead.mdpg / a.mdpg - 1) * 100, 1) + "% 위). " +
+               "score 는 " + nm(a.item) + " " + fmt(a.score, 1) + " vs " +
+               nm(lead.item) + " " + fmt(lead.score, 1) + ".";
+      } else if (b){
+        var gapAB = Math.abs(a.mdpg / b.mdpg - 1) * 100, tied = a.rel > -TIE && b.rel > -TIE;
+        txt += (tied ? " ≈ " : " > ") + nm(b.item) + " " + fmt(b.mdpg, 1) +
+               " (" + fmt(gapAB, 1) + "% 차)";
+        if (c && Math.abs(c.rel - b.rel) < TIE)
+          txt += " (3위 " + nm(c.item) + " " + fmt(c.mdpg, 1) + " 는 2위와 동률)";
+        txt += ". ";
+        if (tied){
+          txt += "이 칸 효율이 동률이라 미래까지 본 score 로 갈랐다 — " + nm(a.item) + " " +
+                 fmt(a.score, 1) + " > " + nm(b.item) + " " + fmt(b.score, 1) + ".";
+        } else if (b.score > a.score){
+          txt += "score 는 " + nm(b.item) + " " + fmt(b.score, 1) + " > " +
+                 nm(a.item) + " " + fmt(a.score, 1) +
+                 " — 뒤까지 보면 " + subj(b.item) + " 낫다는 뜻이다.";
+        } else {
+          txt += "score 도 " + subj(a.item) + " " + fmt(a.score, 1) + " 로 앞선다.";
+        }
+        if (tied && finalSet(path.concat([a.item])) === finalSet(path.concat([b.item])))
+          txt += " 두 경로는 5코어에서 같은 집합으로 만나므로 갈리는 건 순서뿐이다.";
+      } else if (!lead){
+        txt += ". 이 칸엔 다른 후보가 없다.";
+      }
+      var row = document.createElement("div"); row.className = "rule-item";
+      row.innerHTML = '<span class="rule-tag">' + (d + 1) + '코어</span><p>' + txt + '</p>';
+      host.appendChild(row);
+      path.push(a.item);
+    }
+  }
+
+  /* ---------- 탐색기 1위 경로 → 아래 섹션들이 쓰는 시리즈 ---------- */
+  // 접이식 섹션이 보던 고정 7트리에는 "지금 조건의 1위" 가 없어 KPI 와 탐색기가 어긋났다.
+  // 탐색기 노드에서 같은 모양의 시리즈를 만들어 비교군 맨 앞에 넣는다.
+  function buildDpBest(){
+    // 고른 칸이 있으면 그 경로를 이어서 최적으로 채운다 — 아래 섹션이 위 선택과 어긋나지 않게.
+    var path = bestPathFrom(state.path), prefix = [], pts = [];
+    path.forEach(function(item, i){
+      var info = nodeAt(prefix)[item], tier = i + 1;
+      if (info.half_dps && info.half_gold)
+        pts.push({step:tier + "C-half", tier:tier - 0.5, gold:info.half_gold,
+                  dps:info.half_dps, dpg:dpgOf(info.half_dps, info.half_gold),
+                  label:tier + "코어 하프", comps:[]});
+      pts.push({step:tier + "C", tier:tier, gold:info.gold, dps:info.dps,
+                dpg:dpgOf(info.dps, info.gold),
+                label:tier + "코어 " + nm(item), comps:[]});
+      prefix.push(item);
+    });
+    var ko = path.map(nm), full = ko.join("-"), series = {};
+    series[state.arch] = {}; series[state.arch][state.scen] = pts;
+    byId.dp_best = {id:"dp_best", name:full, kind:"dp", group:"dp",
+                    path_ko:ko, series:series};
+    TAG.dp_best = bestLabel();
+    // 앞 3개가 고정 트리와 겹치면(같은 트리는 아닌데) 한 칸 더 보여 구분한다.
+    var taken = !HAS_CURVES ? [] : BAR_IDS.filter(function(id){
+      return id !== "dp_best" && byId[id] && byId[id].name !== full;
+    }).map(function(id){ return SHORT[id]; });
+    var n = 3, label = ko.slice(0, 3).join("-");
+    while (taken.indexOf(label) > -1 && n < ko.length){ n++; label = ko.slice(0, n).join("-"); }
+    SHORT.dp_best = label;
+  }
+
+  /* ---------- γ 표기(데이터에서) ---------- */
+  el("gammaFoot").textContent = "γ=" + EX.meta.gamma;
+  el("gammaNote").textContent = "γ=" + EX.meta.gamma;
+
+  /* ---------- 측정 조건 칩 ---------- */
+  [EX.meta.package, EX.meta.rune, "파편 " + EX.meta.shard,
+   "K=2 지속딜", "γ=" + EX.meta.gamma,
+   EX.meta.expand || ("상위 " + EX.meta.main_top_n + "개만 전개")]
+    .forEach(function(t){
+      var s = document.createElement("span"); s.className = "chip"; s.textContent = t;
+      el("meta").appendChild(s);
+    });
+
+  /* ---------- svg helpers ---------- */
+  var NS = "http://www.w3.org/2000/svg";
+  function svgEl(tag, attrs){
+    var n = document.createElementNS(NS, tag);
+    for (var k in attrs) n.setAttribute(k, attrs[k]);
+    return n;
+  }
+  function niceTicks(lo, hi, count){
+    var raw = (hi - lo) / count, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    var step = [1, 2, 2.5, 5, 10].map(function(m){ return m * mag; })
+      .filter(function(s){ return s >= raw; })[0] || 10 * mag;
+    var start = Math.floor(lo / step) * step, out = [];
+    for (var v = start; v <= hi + step * 0.5; v += step) out.push(Math.round(v * 100) / 100);
+    return out;
+  }
+
+  function drawLines(host, tip, key, unit){
+    host.querySelectorAll("svg").forEach(function(n){ n.remove(); });
+    var W = Math.max(300, host.clientWidth || 640);
+    var compact = W < 560;
+    var H = compact ? 300 : 360;
+    var padL = compact ? 40 : 48, padR = compact ? 12 : 152, padT = 14, padB = 34;
+    var series = group().ids.map(function(id){
+      return {id:id, name:SHORT[id], color:colorOf(id), pts:byId[id].series[state.arch][state.scen]};
+    });
+    var gx = [], gy = [];
+    series.forEach(function(s){ s.pts.forEach(function(p){ gx.push(p.gold); gy.push(p[key]); }); });
+    var x0 = Math.min.apply(null, gx), x1 = Math.max.apply(null, gx);
+    var lo = Math.min.apply(null, gy), hi = Math.max.apply(null, gy);
+    // DPS 는 0 기준(절대 파워), DPG 는 비율 지표라 값 구간만 확대한다.
+    var y0 = key === "dps" ? 0 : Math.max(0, lo - (hi - lo) * 0.35);
+    var y1 = hi + (hi - y0) * 0.06;
+    var ticks = niceTicks(y0, y1, compact ? 4 : 5);
+    y0 = ticks[0]; y1 = Math.max(y1, ticks[ticks.length - 1]);
+    var X = function(v){ return padL + (v - x0) / (x1 - x0) * (W - padL - padR); };
+    var Y = function(v){ return H - padB - (v - y0) / (y1 - y0) * (H - padT - padB); };
+
+    var svg = svgEl("svg", {viewBox:"0 0 " + W + " " + H, role:"img",
+      "aria-label":"빌드별 누적 골드 대비 " + unit + " 곡선"});
+    var ink2 = cssVar("--ink-2"), muted = cssVar("--muted"), grid = cssVar("--line");
+    var surface = cssVar("--panel");
+
+    ticks.forEach(function(t){
+      svg.appendChild(svgEl("line", {x1:padL, x2:W - padR, y1:Y(t), y2:Y(t),
+        stroke:grid, "stroke-width":1}));
+      svg.appendChild(Object.assign(svgEl("text", {x:padL - 7, y:Y(t) + 4, "text-anchor":"end",
+        "font-size":compact ? 10 : 11, fill:muted, "font-family":"var(--mono)"}),
+        {textContent:fmt(t)}));
+    });
+    [x0, (x0 + x1) / 2, x1].forEach(function(g){
+      svg.appendChild(Object.assign(svgEl("text", {x:X(g), y:H - 12, "text-anchor":"middle",
+        "font-size":compact ? 10 : 11, fill:muted, "font-family":"var(--mono)"}),
+        {textContent:gold(g)}));
+    });
+    svg.appendChild(Object.assign(svgEl("text", {x:0, y:11, "font-size":10.5, fill:muted,
+      "font-family":"var(--mono)"}), {textContent:unit}));
+
+    var hits = [], endLabels = [];
+    series.forEach(function(s){
+      var d = s.pts.map(function(p, i){ return (i ? "L" : "M") + X(p.gold) + " " + Y(p[key]); }).join(" ");
+      svg.appendChild(svgEl("path", {d:d, fill:"none", stroke:s.color, "stroke-width":2,
+        "stroke-linejoin":"round", "stroke-linecap":"round"}));
+      s.pts.forEach(function(p){
+        var isHalf = p.step.indexOf("half") > -1;
+        svg.appendChild(svgEl("circle", {cx:X(p.gold), cy:Y(p[key]), r:isHalf ? 4 : 5,
+          fill:isHalf ? surface : s.color, stroke:isHalf ? s.color : surface, "stroke-width":2}));
+        hits.push({x:X(p.gold), y:Y(p[key]), s:s, p:p});
+      });
+      var last = s.pts[s.pts.length - 1];
+      endLabels.push({y:Y(last[key]), name:s.name, color:s.color});
+    });
+
+    if (!compact){
+      endLabels.sort(function(a, b){ return a.y - b.y; });
+      var gap = 16;
+      for (var i = 1; i < endLabels.length; i++){
+        if (endLabels[i].y - endLabels[i - 1].y < gap) endLabels[i].y = endLabels[i - 1].y + gap;
+      }
+      var over = endLabels[endLabels.length - 1].y - (H - padB);
+      if (over > 0) endLabels.forEach(function(l){ l.y -= over; });
+      endLabels.forEach(function(l){
+        svg.appendChild(svgEl("rect", {x:W - padR + 8, y:l.y - 5, width:9, height:9, rx:2, fill:l.color}));
+        svg.appendChild(Object.assign(svgEl("text", {x:W - padR + 21, y:l.y + 4,
+          "font-size":11, fill:ink2, "font-family":"var(--body)"}), {textContent:l.name}));
+      });
+    }
+
+    function onMove(ev){
+      var pt = (ev.touches && ev.touches[0]) ? ev.touches[0] : ev;
+      var r = svg.getBoundingClientRect(), sc = W / r.width;
+      var mx = (pt.clientX - r.left) * sc, my = (pt.clientY - r.top) * sc;
+      var best = null, bd = 1e9;
+      hits.forEach(function(h){
+        var d = Math.pow(h.x - mx, 2) + Math.pow(h.y - my, 2);
+        if (d < bd){ bd = d; best = h; }
+      });
+      if (best && bd < 900){
+        tip.innerHTML = '<b>' + best.s.name + '</b> · ' + best.p.label +
+          '<div class="row">' + unit + ' ' + fmt(best.p[key], 1) + ' · 누적 ' + best.p.gold + 'g</div>' +
+          (best.p.comps && best.p.comps.length ? '<div class="row">' + best.p.comps.join(" + ") + '</div>' : '');
+        tip.style.left = (best.x / sc) + "px";
+        tip.style.top = (best.y / sc) + "px";
+        tip.style.opacity = 1;
+      } else { tip.style.opacity = 0; }
+    }
+    svg.addEventListener("mousemove", onMove);
+    // 터치 기기엔 hover 가 없다 — 같은 핸들러를 탭에도 물린다.
+    svg.addEventListener("touchstart", onMove, {passive:true});
+    svg.addEventListener("touchmove", onMove, {passive:true});
+    svg.addEventListener("mouseleave", function(){ tip.style.opacity = 0; });
+    host.appendChild(svg);
+  }
+
+  function drawBars(host, tip, key, title, unit){
+    host.querySelectorAll("svg").forEach(function(n){ n.remove(); });
+    // 5코어 시점 값은 "장착 집합" 에만 달렸다 — 순서만 다른 트리는 한 줄로 합친다.
+    var bySet = {}, order = [];
+    barIds().forEach(function(id){
+      var k = byId[id].path_ko.slice().sort().join("+");
+      if (!bySet[k]){ bySet[k] = []; order.push(k); }
+      bySet[k].push(id);
+    });
+    var rows = order.map(function(k){
+      var ids = bySet[k];
+      var rep = ids.indexOf("dp_best") > -1 ? "dp_best" : ids[0];
+      var pts = byId[rep].series[state.arch][state.scen];
+      var last = pts[pts.length - 1];
+      return {id:rep, name:SHORT[rep], full:byId[rep].name, v:last[key], gold:last.gold,
+              alts:ids.filter(function(x){ return x !== rep; })};
+    }).sort(function(a, b){ return b.v - a.v; });
+    var W = Math.max(280, host.clientWidth || 460);
+    var rowH = 34, padT = 34, padB = 10, padR = 54;
+    var fsLab = W < 420 ? 10.5 : 11.5;
+    rows.forEach(function(r){
+      r.label = r.name + (TAG[r.id] ? " (" + TAG[r.id] + ")" : "");
+    });
+    // 라벨 칸은 가장 긴 이름에 맞추되(한글 1 : 영숫자 0.55 폭 근사), 좁으면 글자를 줄이고
+    // 그래도 넘치면 뒤를 자른다 — 전체 경로는 막대 툴팁에 있다.
+    function textW(t, fs){
+      var w = 0;
+      for (var i = 0; i < t.length; i++) w += t.charCodeAt(i) > 0x2000 ? 1 : 0.55;
+      return w * fs;
+    }
+    var cap = Math.max(96, W * 0.52);
+    var widest = Math.max.apply(null, rows.map(function(r){ return textW(r.label, fsLab); }));
+    if (widest > cap) fsLab = Math.max(9, fsLab * cap / widest);
+    rows.forEach(function(r){
+      while (textW(r.label, fsLab) > cap - 6 && r.label.length > 6)
+        r.label = r.label.slice(0, -2) + "…";
+    });
+    var padL = Math.min(cap, Math.max(96,
+      Math.max.apply(null, rows.map(function(r){ return textW(r.label, fsLab); })) + 10));
+    var H = padT + rows.length * rowH + padB;
+    var max = Math.max.apply(null, rows.map(function(r){ return r.v; })) * 1.12;
+    var muted = cssVar("--muted"), ink = cssVar("--ink"), ink2 = cssVar("--ink-2");
+    var barC = cssVar("--bar"), topC = cssVar("--bar-top");
+    var svg = svgEl("svg", {viewBox:"0 0 " + W + " " + H, role:"img",
+      "aria-label":title + " 빌드별 비교"});
+    svg.appendChild(Object.assign(svgEl("text", {x:0, y:14, "font-size":12.5, fill:ink,
+      "font-family":"var(--display)", "font-weight":"700"}), {textContent:title}));
+    svg.appendChild(Object.assign(svgEl("text", {x:0, y:29, "font-size":11, fill:muted}),
+      {textContent:"5코어 완성 시점 · " + unit}));
+
+    rows.forEach(function(r, i){
+      var y = padT + i * rowH + 6, h = 16;
+      var w = Math.max(2, r.v / max * (W - padL - padR));
+      svg.appendChild(Object.assign(svgEl("text", {x:0, y:y + 12,
+        "font-size":fsLab, fill:ink2, "font-family":"var(--body)"}),
+        {textContent:r.label}));
+      svg.appendChild(svgEl("rect", {x:padL, y:y, width:w, height:h, rx:4,
+        fill:i === 0 ? topC : barC}));
+      svg.appendChild(Object.assign(svgEl("text", {x:padL + w + 8, y:y + 12, "font-size":12,
+        fill:i === 0 ? ink : ink2, "font-family":"var(--mono)",
+        "font-weight":i === 0 ? "600" : "400"}), {textContent:fmt(r.v, key === "dpg" ? 1 : 0)}));
+      var hit = svgEl("rect", {x:0, y:y - 6, width:W, height:rowH - 2, fill:"transparent"});
+      function onBar(ev){
+        var pt = (ev.touches && ev.touches[0]) ? ev.touches[0] : ev;
+        var rect = svg.getBoundingClientRect(), sc = W / rect.width;
+        tip.innerHTML = '<b>' + r.name + '</b><div class="row">' + r.full + '</div>' +
+          '<div class="row">' + unit + ' ' + fmt(r.v, 1) + ' · ' + r.gold + 'g</div>' +
+          (r.alts.length ? '<div class="row">같은 집합 · 순서만 다름: ' +
+            r.alts.map(function(x){ return byId[x].name; }).join(", ") + '</div>' : '');
+        tip.style.left = ((pt.clientX - rect.left)) + "px";
+        tip.style.top = ((y + 8) / sc) + "px";
+        tip.style.opacity = 1;
+      }
+      hit.addEventListener("mousemove", onBar);
+      hit.addEventListener("touchstart", onBar, {passive:true});
+      hit.addEventListener("mouseleave", function(){ tip.style.opacity = 0; });
+      svg.appendChild(hit);
+    });
+    host.appendChild(svg);
+  }
+
+  function renderLegend(host){
+    host.innerHTML = "";
+    group().ids.forEach(function(id){
+      var b = byId[id];
+      var d = document.createElement("span"); d.className = "lg";
+      var shown = SHORT[id].split("-").length;
+      d.innerHTML = '<i style="background:' + slotVar(id) + '"></i>' + SHORT[id] + tagHtml(id) +
+        ' <small>→' + b.path_ko.slice(shown).join("-") + '</small>';
+      host.appendChild(d);
+    });
+  }
+
+  function renderKpis(){
+    var host = el("kpis"); host.innerHTML = "";
+    var base = HAS_CURVES ? byId.meta_krk.series[state.arch][state.scen] : null;
+    var baseEnd = base ? base[base.length - 1] : null;
+    var baseMid = base ? stepOf(base, "3C") : null;
+    var pts = byId.dp_best.series[state.arch][state.scen];
+    var end = pts[pts.length - 1], mid = stepOf(pts, "3C");
+    function tile(label, value, sub, lead){
+      var d = document.createElement("div");
+      d.className = "kpi" + (lead ? " lead" : "");
+      d.innerHTML = '<span class="k-label">' + label + '</span><span class="k-value">' + value +
+        '</span><span class="k-sub">' + sub + '</span>';
+      host.appendChild(d);
+    }
+    function vs(now, was){
+      return base ? SHORT.meta_krk + " 대비 " + deltaHtml(pct(now, was)) : "누적 " + fmt(end.gold) + "g";
+    }
+    tile(bestLabel() + " 트리", SHORT.dp_best,
+         "전체 " + byId.dp_best.path_ko.join(" → "), true);
+    tile("5코어 DPS", fmt(end.dps), vs(end.dps, baseEnd && baseEnd.dps));
+    tile("5코어 DPG", fmt(end.dpg, 1), vs(end.dpg, baseEnd && baseEnd.dpg));
+    tile("3코어 DPS", fmt(mid.dps),
+         base ? SHORT.meta_krk + " 대비 " + deltaHtml(pct(mid.dps, baseMid.dps))
+              : "누적 " + fmt(mid.gold) + "g");
+  }
+
+  function renderTable(){
+    var t = el("tbl");
+    var pts = byId.meta_krk.series[state.arch][state.scen];
+    var ids = barIds();
+    var head = '<thead><tr><th>구간</th>' + ids.map(function(id){
+      var inGroup = group().ids.indexOf(id) > -1;
+      var c = inGroup ? '<span class="swatch" style="background:' + slotVar(id) + '"></span>' : '';
+      return '<th' + (inGroup ? ' class="on"' : '') + '>' + c + SHORT[id] + tagHtml(id) + '</th>';
+    }).join("") + '</tr></thead>';
+    var rows = pts.map(function(_, i){
+      var isHalf = pts[i].step.indexOf("half") > -1;
+      var cells = ids.map(function(id){
+        var p = pointAt(id, pts[i].step);
+        if (!p) return "<td>—</td>";
+        return "<td>" + fmt(p.dps) + " <span style='color:var(--muted)'>/ " + fmt(p.dpg, 1) + "</span></td>";
+      }).join("");
+      var lab = isHalf ? (Math.ceil(pts[i].tier) + "코어 하프") : (pts[i].tier + "코어 완성");
+      return '<tr class="' + (isHalf ? "half" : "core") + '"><td>' + lab + "</td>" + cells + "</tr>";
+    }).join("");
+    t.innerHTML = head + "<tbody>" + rows + "</tbody>" +
+      '<tfoot><tr><td colspan="' + (ids.length + 1) + '" style="text-align:left; color:var(--muted); font-size:11.5px; border:0; padding-top:10px;">각 칸 = DPS / DPG. 빌드마다 같은 구간이라도 아이템이 달라 누적 골드가 다르다 — 정확한 골드는 곡선 위 점에 올려 확인.</td></tr></tfoot>';
+  }
+
+
+
+  function renderArchNote(){
+    var a = arch();
+    el("archNote").textContent = a.desc;
+    el("archTiers").innerHTML = ["1","2","3","4","5"].map(function(t){
+      var v = a.tiers[t];
+      return '<span class="chip">' + t + '코어 ' + v[0] + 'HP · 방' + v[1] + ' · 마저' + v[2] + '</span>';
+    }).join("");
+  }
+
+  function render(){
+    buildDpBest();
+    renderExplorerNote();
+    renderChain();
+    renderState();
+    renderCandidates();
+    renderRules();
+    renderArchNote();
+    renderKpis();
+    if (!HAS_CURVES) return;
+    renderLegend(el("legend1"));
+    renderLegend(el("legend2"));
+    drawLines(el("plotDps"), el("tipDps"), "dps", "DPS");
+    drawLines(el("plotDpg"), el("tipDpg"), "dpg", "DPG");
+    drawBars(el("barDps"), el("tipBarDps"), "dps", "DPS", "DPS");
+    drawBars(el("barDpg"), el("tipBarDpg"), "dpg", "DPG", "DPG");
+    renderTable();
+  }
+
+  // 인쇄·PDF 저장: 접힌 섹션이 통째로 빠지지 않게 펼치고 다시 그린다.
+  window.addEventListener("beforeprint", function(){
+    document.querySelectorAll("details.fold").forEach(function(d){ d.open = true; });
+    render();
+  });
+
+  var rt;
+  window.addEventListener("resize", function(){
+    clearTimeout(rt); rt = setTimeout(render, 160);
+  });
+  if (window.matchMedia){
+    var mq = window.matchMedia("(prefers-color-scheme: dark)");
+    if (mq.addEventListener) mq.addEventListener("change", render);
+  }
+  document.querySelectorAll("details.fold").forEach(function(d){
+    d.addEventListener("toggle", function(){ if (d.open) render(); });
+  });
+  render();
+})();
+</script>
