@@ -26,7 +26,8 @@ import json
 import sys
 from math import sqrt
 
-from adc_sim.simulations import kaisa as K
+from adc_sim.champion import KaiSa
+from adc_sim.simulations import ehp as EHP, kaisa as K
 from adc_sim.simulations.kaisa import (
     CANDIDATES_BY_SLOT, GAMMA, HORIZON, KAISA_SHARD_SCENARIOS, SimCache,
     _kaisa_two_core_stats_ok, kaisa_sim_half, solve_greedy_half_kaisa,
@@ -38,6 +39,22 @@ from adc_sim.simulations.target_archetypes import TARGET_ARCHETYPES
 PKG = [p for p in ADC_PACKAGES if p["key"] == "A"][0]   # Bld+Zerk = 도란검+광전사+핏빛길
 SHARD = KAISA_SHARD_SCENARIOS["AS10%+AD5.4"]
 MAIN_TOP_N = 3            # 자식 노드로 전개할 상위 후보 수 (나머지는 minor)
+# 생존성 축 가중 — 물리 : 마법 : 체력(고정피해) = 1:1:1 (사용자 확정 2026-09-28).
+SURV_AXES = ("physical", "magic", "true")
+
+
+def _survivability(cache, items_tuple, tier):
+    """이 상태의 생존성 = 세 축 (EHP + 피흡 환산)의 평균 — 유나라 도구와 같은 정의."""
+    t = max(1, min(5, tier))
+    keys = [k for k in (PKG["doran"], PKG["boots"]) if k] + list(items_tuple)
+    ehp_all = EHP.core_timing_ehp(
+        lambda level: KaiSa(level=level, q_level=5, w_level=5,
+                            e_level=K.get_e_level_for_core(t), r_level=3),
+        K.CORE_LEVELS[t]["level"], keys, yuntal_crit=0.25)
+    surv = EHP.survivability(ehp_all, cache.healing(items_tuple))
+    axes = {a: surv[a] for a in SURV_AXES}
+    axes["mean"] = sum(axes.values()) / len(SURV_AXES)
+    return axes
 MDPG_TIE_PCT = 0.5        # mDPG 차가 이 % 안쪽이면 동률 — 그 묶음만 score 로 세운다
 
 ITEM_KO = {
@@ -111,9 +128,11 @@ def _main_items(rows, slot):
     """
     by_m = sorted(rows, key=lambda r: -r["mdpg"])[:MAIN_TOP_N]
     by_s = sorted(rows, key=lambda r: -r["score"])[:MAIN_TOP_N]
+    by_v = sorted(rows, key=lambda r: -r["msurv"])[:MAIN_TOP_N]   # 생존성 축
     here = {r["item"] for r in rows}
     pinned = {k for k in PINNED_BY_SLOT.get(slot, ()) if k in here}
-    return {r["item"] for r in by_m} | {r["item"] for r in by_s} | pinned
+    return ({r["item"] for r in by_m} | {r["item"] for r in by_s}
+            | {r["item"] for r in by_v} | pinned)
 
 
 def _legal_next(prefix, depth):
@@ -189,13 +208,20 @@ class Explorer:
         if key in self._cand:
             return self._cand[key]
         prev_dps, prev_gold = self.cache.sim(tuple(prefix)) if prefix else (0.0, 0.0)
+        prev_surv = (_survivability(self.cache, tuple(prefix), len(prefix))["mean"]
+                     if prefix else 0.0)
         rows = []
         for item in _legal_next(prefix, len(prefix)):
             h, f, dps, gold, h_dps, h_gold = _marginal(self.cache, prefix, item)
             score = h + self.root_gamma * f + self.gamma * self.value(tuple(prefix) + (item,))
             cost = gold - prev_gold
             ddps = dps - prev_dps
+            surv = _survivability(self.cache, tuple(prefix) + (item,), len(prefix) + 1)
+            dsurv = surv["mean"] - prev_surv
             rows.append({
+                "surv": surv["mean"], "surv_p": surv["physical"], "surv_m": surv["magic"],
+                "surv_t": surv["true"], "dsurv": dsurv,
+                "msurv": (dsurv / (cost / 1000.0)) if cost > 0 else 0.0,
                 "item": item, "score": score, "gold": gold, "dps": dps,
                 "dpg": dps / (gold / 1000.0) if gold else 0.0,
                 "cost": cost, "ddps": ddps,
@@ -242,6 +268,10 @@ class Explorer:
                 "cost": r["cost"],
                 "ddps": round(r["ddps"], 1),
                 "mdpg": round(r["mdpg"], 1),
+                "surv": round(r["surv"], 1),
+                "surv_p": round(r["surv_p"], 1),
+                "surv_m": round(r["surv_m"], 1),
+                "msurv": round(r["msurv"], 1),
                 "half_dps": round(r["half_dps"], 1) if r["half_dps"] else None,
                 "half_gold": int(r["half_gold"]) if r["half_gold"] else None,
                 "rel": round(100.0 * (r["mdpg"] / best_m - 1.0), 1) if best_m else 0.0,
@@ -291,7 +321,8 @@ def build():
             "shard": "공속10% + 적응형AD 5.4",
             "rune": "치명적 속도 + 체력차 극복",
             "order": f"1차 mDPG, 차이 {MDPG_TIE_PCT}% 안쪽이면 동률로 보고 score 로 세운다.",
-            "expand": f"전개 = mDPG 상위 {MAIN_TOP_N} ∪ score 상위 {MAIN_TOP_N} ∪ 고정",
+            "expand": f"전개 = mDPG·score·생존성 각 상위 {MAIN_TOP_N} 의 합집합 ∪ 고정",
+            "surv": "생존성 = (물리 EHP + 마법 EHP + 체력)/3, 피흡은 축별 (100+저항)/100 배로 환산해 가산.",
             "pinned": {str(k): list(v) for k, v in PINNED_BY_SLOT.items()},
             "mdpg_tie_pct": MDPG_TIE_PCT,
             "score": "γ-할인 마지널 DPG 합(하프 √γ, 코어 γ). 카이사는 5코어 하프도 센다.",

@@ -57,13 +57,17 @@ adc_sim/                  ← 소스 패키지 (코어 모듈끼리는 서로 im
 tools/ ─ 리포트·데이터 생성 도구(`python -m tools.<모듈>`, repo 루트에서 실행)
   yunara_report_data.py ─ 곡선 데이터 생성(시뮬 ≈2분) → docs/reports/yunara_curves.json
   yunara_explorer_data.py · kaisa_explorer_data.py ─ 탐색기 노드 JSON(+챔피언 문구 `COPY`).
-      **순위 = 1차 mDPG, 0.5% 동률이면 score**. **전개 = mDPG 상위 3 ∪ score 상위 3 ∪
-      `PINNED_BY_SLOT`**(두 챔피언 공통: 1코어 c44, 3~5코어 runaan·terminus·ldr — 순위와
+      **지표 3종 = mDPG · score · m생존**(생존성 = (물리 EHP + 마법 EHP + 체력)/3, 피흡은
+      축별 (100+저항)/100 로 환산해 가산 — `simulations/ehp.py`, 사용자 확정 2026-09-28).
+      순위는 리포트 정렬 스위치가 고른 지표 1차·0.5% 동률이면 다음 지표.
+      **전개 = 세 지표 각 상위 3의 합집합 ∪ `PINNED_BY_SLOT`**(두 챔피언 공통: 1코어 c44, 3~5코어 runaan·terminus·ldr — 순위와
       무관하게 항상 전개, 사용자 지정 2026-09-28. 그 칸에 **합법일 때만** — 이미 보유·관통
       배타·완주 불가(카이사 2코어 스탯 하한)면 애초에 후보가 아니다. 카이사 풀엔 runaan 이
       없고 1코어 c44 는 하한에 걸려 실질 대상은 terminus·ldr 뿐). 불변식은
       `tests/test_explorer_pins.py` 가 배포 JSON 으로 검사한다. `--verify` 로 원본 greedy 와 대조.
-      dpg/half_dpg 는 dps·gold 파생이라 JSON 에 없다(리포트가 계산)
+      dpg/half_dpg 는 dps·gold 파생이라 JSON 에 없다(리포트가 계산).
+      ⚠️ **탐색기 JSON 은 추적하지 않는다**(생성물 — 유나라 50MB / 노드 22,979). 로컬에서
+      `python -m tools.<champ>_explorer_data docs/reports/<champ>_explorer.json` 으로 만든다
   build_explorer_report.py ─ 공용 템플릿+JSON → 배포용 HTML(`all|yunara|kaisa`, 산출물 git 제외)
 docs/reports/ ─ 코어 결정 탐색기 리포트: **챔피언 중립 템플릿**(explorer.template.html) +
   챔피언별 데이터(<champ>_explorer.json, 선택적 <champ>_curves.json). **편집 대상은 템플릿**,
@@ -164,10 +168,11 @@ _to_delete/ ─ 교체돼 쓰이지 않는 코드 보관(어디서도 import 안
   `m_half = (D(S+재료)−D(S)) / (재료비/1000)`, `m_full = (D(S+x)−D(S+재료)) / ((가격−재료비)/1000)`.
   **스텝마다 기준을 직전 상태로 갱신**한다(타 챔프 `_score_combo`의 앵커 누적과 다름 — 그쪽은
   첫 아이템 기여가 모든 항에 중복 계상된다). 하프 스텝 할인 √γ.
-  **유나라 γ=0.7**(사용자 확정 2026-09-20, 챌린저 원딜 피드백 — 지금 칸의 마지널 DPG 비중↑).
-  프로젝트 기본은 `settings.DEFAULT_DISCOUNT_GAMMA=0.8` 이고 예외는 **`settings.RANKING_GAMMA_OVERRIDES`
-  가 단일 출처**다(모듈에 숫자를 박으면 `tests/test_ranking_scoring.py` 가 잡는다). 챔피언 간
-  비교(power_compare)는 이 시간 선호 차이를 감안해서 읽을 것.
+  **γ = 0.8 (전 챔피언 공통)**. 유나라만 0.7 로 내렸던 예외는 되돌렸다(사용자 확정 2026-09-28) —
+  순위 1차 지표가 mDPG 로 바뀌면서 γ 는 동률 판정용 2차 키로 내려갔고, 챔피언마다 시간 선호를
+  다르게 두면 power_compare 비교가 또 어긋난다. 예외가 다시 필요하면
+  **`settings.RANKING_GAMMA_OVERRIDES` 가 단일 출처**다(모듈에 숫자를 박으면
+  `tests/test_ranking_scoring.py` 가 잡는다).
 - **하프 코어 규칙** [사용자 확정 2026-09-15]: 목표 아이템 x 의 **하위템만**, 조합 트리를 재귀로
   내려가 부분 보유 상태를 전수 열거(`data/recipe_states.py`). 예산창 `[ceil100(가격/2), +100]`,
   창이 비면 **하단만** 100씩 완화(상단은 절대 안 넘김 — 라바돈 1200, 공허 1250 처럼 크게 밑돌 수 있음).
@@ -213,7 +218,7 @@ _to_delete/ ─ 교체돼 쓰이지 않는 코드 보관(어디서도 import 안
   바뀌었고, 도미닉이 3코어로 남는 건 적1 단독 시나리오뿐이다.
 - **순위 기준 = 1차 mDPG, 동률(0.5%)일 때만 score** [사용자 확정 2026-09-21, 한국 서버 챌린저
   원딜 피드백]. 탐색기 데이터(`tools/yunara_explorer_data.py`)의 전개·정렬과 리포트 표시가 같은
-  규칙을 쓴다. γ 는 유나라만 0.7(`settings.RANKING_GAMMA_OVERRIDES`).
+  규칙을 쓴다. γ 는 **0.8**(전 챔피언 공통 — 유나라 0.7 예외는 2026-09-28 철회).
 - **결론 템트리** [2026-09-21 재스윕 — 아키타입 3 × 시나리오 4, 1:1:1 혼합, mDPG 1차]:
 
   | | 적1 | 적2 | 적3 | 혼합 |

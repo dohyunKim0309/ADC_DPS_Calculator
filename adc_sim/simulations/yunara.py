@@ -451,16 +451,27 @@ class SimCache:
         """하프 티어(next_key 의 하위템 comp_names 보유) DPS·총 골드."""
         return simulate_yunara_half_tier(list(done_tuple), next_key, comp_names, **self.kw)
 
-    def sim(self, items_tuple):
-        """완성 코어 경로의 현재 티어 DPS와 총 골드를 반환한다."""
+    def _run(self, items_tuple):
+        """(dps, gold, 누적회복) 한 벌을 메모이즈 — 시뮬은 상태당 한 번만 돈다."""
         key = self._key(items_tuple)
         if key in self.cache:
             self.hits += 1
             return self.cache[key]
         self.misses += 1
-        result = simulate_yunara_core_path(list(items_tuple), len(items_tuple), **self.kw)
+        dps, gold, sustain = simulate_yunara_core_path(
+            list(items_tuple), len(items_tuple), return_sustain=True, **self.kw)
+        result = (dps, gold, float(sustain.get("total_healing", 0.0)))
         self.cache[key] = result
         return result
+
+    def sim(self, items_tuple):
+        """완성 코어 경로의 현재 티어 DPS와 총 골드를 반환한다."""
+        dps, gold, _healing = self._run(items_tuple)
+        return dps, gold
+
+    def healing(self, items_tuple):
+        """같은 상태의 기준 전투(K=2) 누적 회복량 — 생존성(EHP 환산)에 쓴다."""
+        return self._run(items_tuple)[2]
 
 
 class MixedSimCache:
@@ -496,6 +507,10 @@ class MixedSimCache:
         self.hits = sum(c.hits for c in self.caches.values())
         self.misses = sum(c.misses for c in self.caches.values())
         return dps, gold
+
+    def healing(self, items_tuple):
+        """회복량도 DPS 와 같은 가중으로 섞는다(적 수마다 전투 길이·피흡이 다르다)."""
+        return sum(w * self.caches[tc].healing(items_tuple) for tc, w in self.mix)
 
 
 # ── 하프 티어(코어 사이 하위템 구간) — 사용자 확정 2026-08-31 ─────────────────

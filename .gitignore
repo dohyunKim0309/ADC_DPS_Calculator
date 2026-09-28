@@ -34,6 +34,12 @@ patch_data/
 # 둘을 합친 결과물은 제외한다(150KB 데이터가 박혀 diff 가 리뷰 불가능해진다).
 # 만들려면: python -m tools.build_explorer_report [all|yunara|kaisa]
 docs/reports/*_report.html
+# 탐색기 노드 JSON 도 생성물이다 — 세 지표(mDPG·score·m생존) 합집합 전개로 유나라가 50MB 를
+# 넘겨 히스토리에 남기지 않는다. 로컬에서 만들 것:
+#   python -m tools.yunara_explorer_data docs/reports/yunara_explorer.json   (약 20분)
+#   python -m tools.kaisa_explorer_data  docs/reports/kaisa_explorer.json    (약 10분)
+# 곡선 데이터(yunara_curves.json, 160KB)는 계속 추적한다.
+docs/reports/*_explorer.json
 
 # ── 에이전트 로컬 설정 ─────────────────────
 # Claude Code 의 머신별 권한/설정. 저장소에 공유할 내용이 아니다.

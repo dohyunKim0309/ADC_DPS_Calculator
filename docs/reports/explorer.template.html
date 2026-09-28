@@ -276,6 +276,10 @@
       <span class="sw-label" id="scenLabel"></span>
       <div class="switch" id="scenSwitch" role="group" aria-label="시나리오 선택"></div>
     </div>
+    <div class="sw-group" id="sortGroup">
+      <span class="sw-label">정렬 기준</span>
+      <div class="switch" id="sortSwitch" role="group" aria-label="정렬 기준 선택"></div>
+    </div>
   </section>
 
   <section class="card explorer">
@@ -301,7 +305,9 @@
       <li><b>mDPG</b> — 현재 시점 이 아이템의 골드 효율. 늘어난 DPS ÷ 이 아이템에 쓴 골드(1000단위).
         1코어는 앞 상태가 없어 시작 아이템(도란템·신발·룬) 값까지 분모에 들어가고, 그래서 DPG 와 같은 값이 된다.</li>
       <li><b>score</b> — 현재 시점 이 아이템부터 5코어까지의 mDPG 합. 할인율 <span id="gammaFoot">γ</span>, 하위템 구간 포함.</li>
-      <li><b>순위</b> — mDPG 순. mDPG 차 0.5% 안이면 동률로 보고 그 묶음만 score 순.</li>
+      <li><b>생존성</b> — (물리 EHP + 마법 EHP + 체력) ÷ 3. EHP(축) = 체력 × (100+저항)/100 이고,
+        피흡 회복도 같은 배수를 곱해 더한다. <b>m생존</b> 은 이 칸 1000골드당 늘어난 생존성이다.</li>
+      <li><b>순위</b> — 위 정렬 기준 스위치의 지표 순. 차이가 0.5% 안이면 동률로 보고 그 묶음만 다음 지표 순.</li>
     </ul>
   </section>
 
@@ -366,9 +372,10 @@
       <div class="meta" id="meta"></div>
       <div class="notes">
         <div class="note">
-          <h3>두 지표</h3>
+          <h3>세 지표</h3>
           <p><b>score</b> 는 이 아이템을 사고 5코어까지 최적으로 이어갔을 때의 <b>γ-할인 마지널 DPG 합</b>이다(<span id="gammaNote">γ</span>, 하프 구간 √γ). 미래까지 본 값이지만 <b>정렬의 2차 키</b>다 — mDPG 가 0.5% 안쪽으로 붙은 묶음에서만 순서를 가른다.</p>
           <p><b>mDPG</b> 는 이 한 칸의 값이다 — (늘어난 DPS) ÷ (이 칸에 쓴 골드/1000). 미래를 보지 않지만 <b>1차 정렬 기준</b>이다(실전 피드백 반영 — 계획대로 5코어까지 가는 판이 드물다). 둘이 엇갈리는 칸이 판단이 갈리는 지점이다 — 카드에 두 값을 나란히 둔 건 그 지점을 눈으로 잡으라는 뜻이다. 순서는 mDPG 가 정하므로, score 가 더 높은 후보가 2·3위에 있으면 그게 "지금은 손해, 뒤가 이득" 인 선택지다. 1코어만은 앞 상태가 없어 시작 아이템 값이 분모에 포함되고, 그 칸에서는 mDPG 와 DPG 가 같다.</p>
+          <p><b>생존성</b> 은 방어 쪽 지표다 — 저항을 감안해 "이만큼의 원시 피해를 더 받아야 죽는다" 를 뜻하고, 피흡 회복도 같은 환산으로 더한다(물리·마법·체력 세 축의 평균). 경계(Terminus)의 빛 스택은 지속 전투 관례대로 풀스택으로 본다.</p>
           <p>아이템 사이 <b>하프 구간</b>(하위템만 든 상태)은 score 에 이미 녹아 있어 <b>후보 카드에는 따로 적지 않는다</b> — 구간별 값은 아래 파워 곡선과 수치 표에 있다. 목표 아이템 가격의 절반 근처에서 마지널 DPG 가 가장 높은 하위템 조합을 고른다. <span id="halfNote2"></span></p>
         </div>
         <div class="note">
@@ -386,7 +393,7 @@
           <h3>믿으면 안 되는 것</h3>
           <ul id="caveats">
             <li>K=2 처치 타이밍 양자화로 ±2%p 잡음이 있다. mDPG 차 0.5% 안쪽은 동률(<span class="tie">≈</span>)로 보고, 그 묶음만 <b>미래까지 본 score</b> 로 세운다.</li>
-            <li>각 노드에서 <b>mDPG 상위 3개 ∪ score 상위 3개 ∪ 고정 항목</b>만 다음 단계로 전개했다 — 순서는 mDPG 로 세우되, 뒤가 좋은 가지도 눌러 볼 수 있게 함께 편다. <span id="pinNote"></span> 나머지도 점수는 같은 방식으로 계산했고 그 뒤 가지만 <b>전개하지 않았다</b>.</li>
+            <li>각 노드에서 <b>mDPG·score·m생존 각 상위 3개의 합집합 ∪ 고정 항목</b>만 다음 단계로 전개했다 — 어느 축에서든 상위면 눌러 볼 수 있다. <span id="pinNote"></span> 나머지도 점수는 같은 방식으로 계산했고 그 뒤 가지만 <b>전개하지 않았다</b>.</li>
             <li>라인 클리어·생존력·사거리 가치는 모델 밖이다.</li>
           </ul>
         </div>
@@ -433,7 +440,28 @@
   var byId = {};
   if (HAS_CURVES) DATA.builds.forEach(function(b){ byId[b.id] = b; });
   // 기본 시나리오: 혼합이 있으면 혼합, 없으면(단일 대상 챔피언) 첫 번째.
-  var state = {arch:"bruiser",
+  // 세 지표 — 하나를 1차 정렬 기준으로 고르고, 동률(TIE%)이면 다음 지표로 가른다.
+  var METRICS = [
+    {id:"mdpg", label:"mDPG", get:function(r){ return r.mdpg; }, digits:1,
+     note:"이 한 칸의 골드 효율"},
+    {id:"score", label:"score", get:function(r){ return r.score; }, digits:1,
+     note:"5코어까지 본 γ-할인 합"},
+    {id:"msurv", label:"m생존", get:function(r){ return r.msurv || 0; }, digits:1,
+     note:"이 칸 1000골드당 늘어난 생존성(EHP+피흡)"}
+  ];
+  function metric(id){
+    return METRICS.filter(function(m){ return m.id === (id || state.sort); })[0] || METRICS[0];
+  }
+  function others(){
+    return METRICS.filter(function(m){ return m.id !== state.sort; });
+  }
+  // 1차 지표 1위 대비 %(데이터의 rel 은 mDPG 기준이라 화면에서 다시 계산한다).
+  function relOf(r, rows, m){
+    m = m || metric();
+    var best = Math.max.apply(null, rows.map(m.get));
+    return best ? (m.get(r) / best - 1) * 100 : 0;
+  }
+  var state = {arch:"bruiser", sort:"mdpg",
                scen:(EX.scenarios.indexOf("mix") > -1 ? "mix" : EX.scenarios[0]),
                path:[]};
 
@@ -517,14 +545,14 @@
   }
 
   /* ---------- 스위치 ---------- */
-  function buildSwitch(host, options, key){
+  function buildSwitch(host, options, key, keepPath){
     options.forEach(function(opt){
       var b = document.createElement("button");
       b.type = "button"; b.textContent = opt.label; b.dataset.value = opt.id;
       b.setAttribute("aria-pressed", String(opt.id === state[key]));
       b.addEventListener("click", function(){
         state[key] = opt.id;
-        state.path = [];        // 상황이 바뀌면 경로는 처음부터
+        if (!keepPath) state.path = [];   // 상황이 바뀌면 경로는 처음부터(정렬 변경은 유지)
         Array.prototype.forEach.call(host.children, function(c){
           c.setAttribute("aria-pressed", String(c.dataset.value === state[key]));
         });
@@ -540,6 +568,11 @@
   buildSwitch(el("scenSwitch"), EX.scenarios.map(function(s){
     return {id:s, label:SCEN_LABEL[s]};
   }), "scen");
+  buildSwitch(el("sortSwitch"), METRICS.map(function(mm){
+    return {id:mm.id, label:mm.label};
+  }), "sort", true);
+  // 생존성 데이터가 없는(옛) JSON 이면 정렬 스위치를 감춘다.
+  if (!EX.meta.surv) el("sortGroup").hidden = true;
 
   /* ---------- 탐색기 ---------- */
   function nodes(){ return EX.nodes[state.arch + "|" + state.scen] || {}; }
@@ -578,7 +611,8 @@
     var head = document.createElement("div");
     head.className = "cands-head";
     head.innerHTML = (state.path.length + 1) + '코어 후보' +
-      '<span class="head-note"> · mDPG 동률(' + TIE + '% 이내)은 score 순</span>';
+      '<span class="head-note"> · ' + metric().label + ' 동률(' + TIE + '% 이내)은 ' +
+      others()[0].label + ' 순</span>';
     if (!node || !Object.keys(node).length){
       host.innerHTML = '<div class="done">다섯 코어를 다 채웠다.<br>경로의 아이템을 눌러 되감을 수 있다.</div>';
       el("minorWrap").hidden = true;
@@ -588,24 +622,28 @@
     var rows = sortedRows(node);
     var mains = orderRows(rows.filter(function(r){ return r.tier === "main"; }));
     var minors = rows.filter(function(r){ return r.tier !== "main"; });
-    var tiedCount = mains.filter(function(r){ return r.rel > -TIE; }).length;
+    var m = metric(), rest = others();
+    var tiedCount = mains.filter(function(r){ return relOf(r, mains, m) > -TIE; }).length;
 
     mains.forEach(function(r, i){
       var b = document.createElement("button");
       b.type = "button";
       b.className = "cand" + (i === 0 ? " lead" : "");
-      var inTie = tiedCount > 1 && r.rel > -TIE;
+      var rel = relOf(r, mains, m);
+      var inTie = tiedCount > 1 && rel > -TIE;
       var badge = inTie ? '<span class="tie">≈ 동률</span>'
-        : '<span class="rel">' + (i === 0 ? "mDPG 1위" : fmt(r.rel, 1) + "%") + '</span>';
+        : '<span class="rel">' + (i === 0 ? m.label + " 1위" : fmt(rel, 1) + "%") + '</span>';
       b.innerHTML =
         '<span class="rank">' + (i + 1) + '</span>' +
         '<span class="name">' + (ITEM[r.item] || r.item) + badge + '</span>' +
-        '<span class="score">' + fmt(r.mdpg, 1) + '</span>' +
-        '<span class="mdpg">' + fmt(r.score, 1) + '</span>' +
-        '<span class="sub">누적 ' + r.gold + 'g · DPS ' + fmt(r.dps) +
-          ' · DPG ' + fmt(dpgOf(r.dps, r.gold), 1) + '</span>' +
-        '<span class="unit unit-score">mDPG</span>' +
-        '<span class="unit unit-mdpg">score</span>';
+        '<span class="score">' + fmt(m.get(r), m.digits) + '</span>' +
+        '<span class="mdpg">' + fmt(rest[0].get(r), rest[0].digits) + '</span>' +
+        '<span class="sub">' + rest[1].label + ' ' + fmt(rest[1].get(r), rest[1].digits) +
+          ' · 누적 ' + r.gold + 'g · DPS ' + fmt(r.dps) +
+          ' · DPG ' + fmt(dpgOf(r.dps, r.gold), 1) +
+          (r.surv ? ' · 생존성 ' + fmt(r.surv) : '') + '</span>' +
+        '<span class="unit unit-score">' + m.label + '</span>' +
+        '<span class="unit unit-mdpg">' + rest[0].label + '</span>';
       b.addEventListener("click", function(){
         state.path = state.path.concat([r.item]);
         render();
@@ -616,11 +654,15 @@
     el("minorWrap").hidden = minors.length === 0;
     el("minorCount").textContent = minors.length ? "(" + minors.length + "종 · 전개 없음)" : "";
     el("minorTable").innerHTML =
-      '<thead><tr><th>아이템</th><th>mDPG</th><th>최고 mDPG 대비</th><th>score</th>' +
+      '<thead><tr><th>아이템</th><th>' + m.label + '</th><th>최고 ' + m.label + ' 대비</th>' +
+      '<th>' + rest[0].label + '</th><th>' + rest[1].label + '</th>' +
       '<th>DPS</th><th>DPG</th><th>상태</th></tr></thead><tbody>' +
       minors.map(function(r){
-        return '<tr><td>' + (ITEM[r.item] || r.item) + '</td><td>' + fmt(r.mdpg, 1) + '</td>' +
-          '<td>' + fmt(r.rel, 1) + '%</td><td>' + fmt(r.score, 1) + '</td>' +
+        return '<tr><td>' + (ITEM[r.item] || r.item) + '</td>' +
+          '<td>' + fmt(m.get(r), m.digits) + '</td>' +
+          '<td>' + fmt(relOf(r, minors.concat(mains), m), 1) + '%</td>' +
+          '<td>' + fmt(rest[0].get(r), rest[0].digits) + '</td>' +
+          '<td>' + fmt(rest[1].get(r), rest[1].digits) + '</td>' +
           '<td>' + fmt(r.dps) + '</td><td>' + fmt(dpgOf(r.dps, r.gold), 1) + '</td>' +
           '<td><span class="unverified">전개 안 함</span></td></tr>';
       }).join("") + '</tbody>';
@@ -652,14 +694,17 @@
 
   /* ---------- 타이밍별 규칙 (현재 스위치의 데이터에서 생성) ---------- */
   function sortedRows(node){
+    var m = metric();
     return Object.keys(node).map(function(k){ var r = node[k]; r.item = k; return r; })
-      .sort(function(a, b){ return b.mdpg - a.mdpg; });
+      .sort(function(a, b){ return m.get(b) - m.get(a); });
   }
-  // mDPG 가 TIE 안쪽이면 동률로 보고, 그 묶음만 미래 가치(score)로 세운다.
+  // 1차 지표가 TIE 안쪽이면 동률로 보고, 그 묶음만 2차 지표로 세운다.
   function orderRows(rows){
-    var tied = rows.filter(function(r){ return r.rel > -TIE; })
-      .sort(function(a, b){ return b.score - a.score; });
-    return tied.concat(rows.filter(function(r){ return r.rel <= -TIE; }));
+    var m = metric(), second = others()[0];
+    var tied = rows.filter(function(r){ return relOf(r, rows, m) > -TIE; })
+      .sort(function(a, b){ return second.get(b) - second.get(a); });
+    return tied.concat(rows.filter(function(r){ return relOf(r, rows, m) <= -TIE; })
+      .sort(function(a, b){ return m.get(b) - m.get(a); }));
   }
   function mainRows(node){
     return orderRows(sortedRows(node).filter(function(r){ return r.tier === "main"; }));
@@ -689,8 +734,8 @@
   function renderRules(){
     var host = el("rules"); host.innerHTML = "";
     el("rulesNote").textContent = arch().label + " 상대 · " + SCEN_LABEL[state.scen] +
-      " 기준. 고른 칸은 그대로 따라가고 나머지는 매 칸 mDPG 1위로 채운 경로에서, " +
-      "같은 칸의 형제 후보끼리만 비교한다.";
+      " 기준. 고른 칸은 그대로 따라가고 나머지는 매 칸 " + metric().label +
+      " 1위로 채운 경로에서, 같은 칸의 형제 후보끼리만 비교한다.";
     var path = [];
     for (var d = 0; d < 5; d++){
       var node = nodeAt(path);
@@ -708,28 +753,34 @@
       var b = rest[0], c = rest[1];
       var lead = rows[0].item !== a.item ? rows[0] : null;   // 고른 칸이 1위가 아닐 때
       var pre = d ? path.map(nm).join("-") + " 뒤, " : "";
-      var txt = pre + (lead ? "고른 " : "") + "<b>" + nm(a.item) + " mDPG " + fmt(a.mdpg, 1) + "</b>";
+      var m = metric(), second = others()[0];
+      var txt = pre + (lead ? "고른 " : "") + "<b>" + nm(a.item) + " " + m.label + " " +
+                fmt(m.get(a), m.digits) + "</b>";
       if (lead){
-        txt += " — 이 칸 1위는 " + nm(lead.item) + " " + fmt(lead.mdpg, 1) +
-               " (" + fmt(Math.abs(lead.mdpg / a.mdpg - 1) * 100, 1) + "% 위). " +
-               "score 는 " + nm(a.item) + " " + fmt(a.score, 1) + " vs " +
-               nm(lead.item) + " " + fmt(lead.score, 1) + ".";
+        txt += " — 이 칸 1위는 " + nm(lead.item) + " " + fmt(m.get(lead), m.digits) +
+               " (" + fmt(Math.abs(m.get(lead) / m.get(a) - 1) * 100, 1) + "% 위). " +
+               second.label + " 는 " + nm(a.item) + " " + fmt(second.get(a), second.digits) +
+               " vs " + nm(lead.item) + " " + fmt(second.get(lead), second.digits) + ".";
       } else if (b){
-        var gapAB = Math.abs(a.mdpg / b.mdpg - 1) * 100, tied = a.rel > -TIE && b.rel > -TIE;
-        txt += (tied ? " ≈ " : " > ") + nm(b.item) + " " + fmt(b.mdpg, 1) +
+        var relA = relOf(a, rows, m), relB = relOf(b, rows, m);
+        var gapAB = Math.abs(m.get(a) / m.get(b) - 1) * 100;
+        var tied = relA > -TIE && relB > -TIE;
+        txt += (tied ? " ≈ " : " > ") + nm(b.item) + " " + fmt(m.get(b), m.digits) +
                " (" + fmt(gapAB, 1) + "% 차)";
-        if (c && Math.abs(c.rel - b.rel) < TIE)
-          txt += " (3위 " + nm(c.item) + " " + fmt(c.mdpg, 1) + " 는 2위와 동률)";
+        if (c && Math.abs(relOf(c, rows, m) - relB) < TIE)
+          txt += " (3위 " + nm(c.item) + " " + fmt(m.get(c), m.digits) + " 는 2위와 동률)";
         txt += ". ";
         if (tied){
-          txt += "이 칸 효율이 동률이라 미래까지 본 score 로 갈랐다 — " + nm(a.item) + " " +
-                 fmt(a.score, 1) + " > " + nm(b.item) + " " + fmt(b.score, 1) + ".";
-        } else if (b.score > a.score){
-          txt += "score 는 " + nm(b.item) + " " + fmt(b.score, 1) + " > " +
-                 nm(a.item) + " " + fmt(a.score, 1) +
-                 " — 뒤까지 보면 " + subj(b.item) + " 낫다는 뜻이다.";
+          txt += m.label + " 가 동률이라 " + second.label + " 로 갈랐다 — " + nm(a.item) + " " +
+                 fmt(second.get(a), second.digits) + " > " + nm(b.item) + " " +
+                 fmt(second.get(b), second.digits) + ".";
+        } else if (second.get(b) > second.get(a)){
+          txt += second.label + " 는 " + nm(b.item) + " " + fmt(second.get(b), second.digits) +
+                 " > " + nm(a.item) + " " + fmt(second.get(a), second.digits) +
+                 " — 그 축으로는 " + subj(b.item) + " 낫다는 뜻이다.";
         } else {
-          txt += "score 도 " + subj(a.item) + " " + fmt(a.score, 1) + " 로 앞선다.";
+          txt += second.label + " 도 " + subj(a.item) + " " +
+                 fmt(second.get(a), second.digits) + " 로 앞선다.";
         }
         if (tied && finalSet(path.concat([a.item])) === finalSet(path.concat([b.item])))
           txt += " 두 경로는 5코어에서 같은 집합으로 만나므로 갈리는 건 순서뿐이다.";

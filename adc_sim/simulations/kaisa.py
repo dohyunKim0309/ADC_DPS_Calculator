@@ -801,19 +801,28 @@ class SimCache:
         yuntal_last = bool(items_tuple) and "yuntal" in sorted_items and items_tuple[-1] == "yuntal"
         return sorted_items, yuntal_last
 
-    def sim(self, items_tuple):
-        """주어진 순서의 완성 코어들을 장착한 DPS와 총 골드를 반환한다."""
+    def _run(self, items_tuple):
+        """(dps, gold, 누적회복) 한 벌을 메모이즈 — 시뮬은 상태당 한 번만 돈다."""
         key = self._key(items_tuple)
         if key in self.cache:
             self.hits += 1
             return self.cache[key]
         self.misses += 1
-        dps, gold, _w_cast_count = simulate_kaisa_core_path(
-            list(items_tuple), len(items_tuple), **self.kw,
+        dps, gold, _w_cast_count, sustain = simulate_kaisa_core_path(
+            list(items_tuple), len(items_tuple), return_sustain=True, **self.kw,
         )
-        result = dps, gold
+        result = (dps, gold, float(sustain.get("total_healing", 0.0)))
         self.cache[key] = result
         return result
+
+    def sim(self, items_tuple):
+        """주어진 순서의 완성 코어들을 장착한 DPS와 총 골드를 반환한다."""
+        dps, gold, _healing = self._run(items_tuple)
+        return dps, gold
+
+    def healing(self, items_tuple):
+        """같은 상태의 기준 전투(K=2) 누적 회복량 — 생존성(EHP 환산)에 쓴다."""
+        return self._run(items_tuple)[2]
 
 
 def _kaisa_two_core_stats_ok(item_keys):
