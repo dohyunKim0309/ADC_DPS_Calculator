@@ -89,6 +89,19 @@ def _order_rows(rows):
     return tied + rest
 
 
+def _main_items(rows):
+    """자식으로 전개할 아이템 집합 — **mDPG 상위 N ∪ score 상위 N**(사용자 확정 2026-09-28).
+
+    mDPG 순으로만 자르면 "지금은 밋밋한데 뒤가 좋은" 가지(유나라 1코어 C44·윤탈·무한)가
+    통째로 사라진다 — 실제로 브루저·적1 에서 잘린 C44-윤탈-무한-경계 가 표시 1위 경로보다
+    4코어 시점 DPS +17% / DPG +11.5% 였다. 무엇을 **보여줄지**(mDPG)와 어디를 **파고들지**
+    (미래 가치 score)는 다른 질문이라 두 기준의 합집합을 전개한다(최대 2N 갈래).
+    """
+    by_m = sorted(rows, key=lambda r: -r["mdpg"])[:MAIN_TOP_N]
+    by_s = sorted(rows, key=lambda r: -r["score"])[:MAIN_TOP_N]
+    return {r["item"] for r in by_m} | {r["item"] for r in by_s}
+
+
 def _legal_next(prefix, depth):
     """다음 슬롯(depth+1) 후보 — 슬롯 제약 + 관통 배타 + 카이사 2코어 스탯 하한.
 
@@ -207,6 +220,7 @@ class Explorer:
             return out          # 5코어 도달 — 노드를 만들지 않는다
         best_m = max(r["mdpg"] for r in rows) or 0.0
         best_s = max(r["score"] for r in rows) or 0.0
+        main = _main_items(rows)
         out[node_id] = {
             r["item"]: {
                 "score": round(r["score"], 2),
@@ -221,12 +235,13 @@ class Explorer:
                 "half_dpg": round(r["half_dpg"], 1) if r["half_dpg"] else None,
                 "rel": round(100.0 * (r["mdpg"] / best_m - 1.0), 1) if best_m else 0.0,
                 "rel_score": round(100.0 * (r["score"] / best_s - 1.0), 1) if best_s else 0.0,
-                "tier": "main" if i < MAIN_TOP_N else "minor",
+                "tier": "main" if r["item"] in main else "minor",
             }
-            for i, r in enumerate(rows)
+            for r in rows
         }
-        for r in rows[:MAIN_TOP_N]:
-            self.walk(tuple(prefix) + (r["item"],), out)
+        for r in rows:
+            if r["item"] in main:
+                self.walk(tuple(prefix) + (r["item"],), out)
         return out
 
 
@@ -266,6 +281,7 @@ def build():
             "shard": "공속10% + 적응형AD 5.4",
             "rune": "치명적 속도 + 체력차 극복",
             "order": f"1차 mDPG, 차이 {MDPG_TIE_PCT}% 안쪽이면 동률로 보고 score 로 세운다.",
+            "expand": f"자식 전개 = mDPG 상위 {MAIN_TOP_N} ∪ score 상위 {MAIN_TOP_N}.",
             "mdpg_tie_pct": MDPG_TIE_PCT,
             "score": "γ-할인 마지널 DPG 합(하프 √γ, 코어 γ). 카이사는 5코어 하프도 센다.",
             "mdpg": "이 한 칸의 마지널 DPG — (늘어난 DPS) / (이 칸에 쓴 골드/1000).",

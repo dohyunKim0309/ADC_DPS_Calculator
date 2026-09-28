@@ -102,6 +102,33 @@ ITEM_KO = {
 }
 
 
+# 슬롯별 **강제 전개** — 두 기준 상위권에 못 들어도 자식 노드를 만든다(사용자 지정 2026-09-28).
+# 근거: 1코어 C44 는 mDPG·score 둘 다 4위라 합집합에도 안 걸리는데, 실제로 C44-윤탈-무한-경계
+# 가 브루저·적1 에서 표시 1위 경로보다 4코어 DPS +17% 였다. 3코어부터의 루난·경계·도미닉은
+# "한타/탱커 대응" 분기라 항상 눌러 볼 수 있어야 한다.
+PINNED_BY_SLOT = {
+    1: ("c44",),
+    3: ("runaan", "terminus", "ldr"),
+    4: ("runaan", "terminus", "ldr"),
+    5: ("runaan", "terminus", "ldr"),
+}
+
+
+def _main_items(rows, slot):
+    """자식으로 전개할 아이템 집합 — **mDPG 상위 N ∪ score 상위 N**(사용자 확정 2026-09-28).
+
+    mDPG 순으로만 자르면 "지금은 밋밋한데 뒤가 좋은" 가지(유나라 1코어 C44·윤탈·무한)가
+    통째로 사라진다 — 실제로 브루저·적1 에서 잘린 C44-윤탈-무한-경계 가 표시 1위 경로보다
+    4코어 시점 DPS +17% / DPG +11.5% 였다. 무엇을 **보여줄지**(mDPG)와 어디를 **파고들지**
+    (미래 가치 score)는 다른 질문이라 두 기준의 합집합을 전개한다(최대 2N 갈래).
+    """
+    by_m = sorted(rows, key=lambda r: -r["mdpg"])[:MAIN_TOP_N]
+    by_s = sorted(rows, key=lambda r: -r["score"])[:MAIN_TOP_N]
+    here = {r["item"] for r in rows}
+    pinned = {k for k in PINNED_BY_SLOT.get(slot, ()) if k in here}
+    return {r["item"] for r in by_m} | {r["item"] for r in by_s} | pinned
+
+
 def _legal_next(prefix, depth):
     """다음 슬롯(depth+1)에서 살 수 있는 아이템 — 슬롯 제약 + 관통 배타."""
     slot = depth + 1
@@ -202,28 +229,26 @@ class Explorer:
         if not rows:
             return out          # 5코어 도달 — 노드를 만들지 않는다(탐색기가 "후보 없음"으로 처리)
         best_m = max(r["mdpg"] for r in rows) or 0.0
-        best_s = max(r["score"] for r in rows) or 0.0
+        main = _main_items(rows, len(prefix) + 1)
         out[node_id] = {
             r["item"]: {
                 "score": round(r["score"], 2),
                 "gold": r["gold"],
                 "dps": round(r["dps"], 1),
-                "dpg": round(r["dpg"], 1),
                 "cost": r["cost"],
                 "ddps": round(r["ddps"], 1),
                 "mdpg": round(r["mdpg"], 1),
                 "half_dps": round(r["half_dps"], 1) if r["half_dps"] else None,
                 "half_gold": int(r["half_gold"]) if r["half_gold"] else None,
-                "half_dpg": round(r["half_dpg"], 1) if r["half_dpg"] else None,
-                # rel = 1차 지표(mDPG) 1위 대비. score 대비는 rel_score 로 따로 싣는다.
+                # rel = 1차 지표(mDPG) 1위 대비. DPG 류는 dps/gold 에서 파생되므로 싣지 않는다.
                 "rel": round(100.0 * (r["mdpg"] / best_m - 1.0), 1) if best_m else 0.0,
-                "rel_score": round(100.0 * (r["score"] / best_s - 1.0), 1) if best_s else 0.0,
-                "tier": "main" if i < MAIN_TOP_N else "minor",
+                "tier": "main" if r["item"] in main else "minor",
             }
-            for i, r in enumerate(rows)
+            for r in rows
         }
-        for r in rows[:MAIN_TOP_N]:
-            self.walk(tuple(prefix) + (r["item"],), out)
+        for r in rows:
+            if r["item"] in main:
+                self.walk(tuple(prefix) + (r["item"],), out)
         return out
 
 
@@ -260,6 +285,8 @@ def build():
             "shard": "공속10% + 적응형AD 5.4",
             "rune": "치명적 속도 + 체력차 극복",
             "order": f"1차 mDPG, 차이 {MDPG_TIE_PCT}% 안쪽이면 동률로 보고 score 로 세운다.",
+            "expand": f"전개 = mDPG 상위 {MAIN_TOP_N} ∪ score 상위 {MAIN_TOP_N} ∪ 고정",
+            "pinned": {str(k): list(v) for k, v in PINNED_BY_SLOT.items()},
             "mdpg_tie_pct": MDPG_TIE_PCT,
             "score": "γ-할인 마지널 DPG 합(하프 √γ, 코어 γ). 미래 코어까지 본 값. 하프는 점수에만 반영.",
             "mdpg": "이 한 칸의 마지널 DPG — (늘어난 DPS) / (이 칸에 쓴 골드/1000). 미래를 보지 않는 즉시 효율.",

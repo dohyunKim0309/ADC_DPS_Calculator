@@ -368,7 +368,7 @@
         <div class="note">
           <h3>두 지표</h3>
           <p><b>score</b> 는 이 아이템을 사고 5코어까지 최적으로 이어갔을 때의 <b>γ-할인 마지널 DPG 합</b>이다(<span id="gammaNote">γ</span>, 하프 구간 √γ). 미래까지 본 값이지만 <b>정렬의 2차 키</b>다 — mDPG 가 0.5% 안쪽으로 붙은 묶음에서만 순서를 가른다.</p>
-          <p><b>mDPG</b> 는 이 한 칸의 값이다 — (늘어난 DPS) ÷ (이 칸에 쓴 골드/1000). 미래를 보지 않지만 <b>1차 정렬 기준</b>이다(실전 피드백 반영 — 계획대로 5코어까지 가는 판이 드물다). 둘이 엇갈리는 칸이 판단이 갈리는 지점이다. 1코어만은 앞 상태가 없어 시작 아이템 값이 분모에 포함되고, 그 칸에서는 mDPG 와 DPG 가 같다.</p>
+          <p><b>mDPG</b> 는 이 한 칸의 값이다 — (늘어난 DPS) ÷ (이 칸에 쓴 골드/1000). 미래를 보지 않지만 <b>1차 정렬 기준</b>이다(실전 피드백 반영 — 계획대로 5코어까지 가는 판이 드물다). 둘이 엇갈리는 칸이 판단이 갈리는 지점이다 — 카드에 두 값을 나란히 둔 건 그 지점을 눈으로 잡으라는 뜻이다. 순서는 mDPG 가 정하므로, score 가 더 높은 후보가 2·3위에 있으면 그게 "지금은 손해, 뒤가 이득" 인 선택지다. 1코어만은 앞 상태가 없어 시작 아이템 값이 분모에 포함되고, 그 칸에서는 mDPG 와 DPG 가 같다.</p>
           <p>아이템 사이 <b>하프 구간</b>(하위템만 든 상태)은 score 에 이미 녹아 있어 <b>후보 카드에는 따로 적지 않는다</b> — 구간별 값은 아래 파워 곡선과 수치 표에 있다. 목표 아이템 가격의 절반 근처에서 마지널 DPG 가 가장 높은 하위템 조합을 고른다. <span id="halfNote2"></span></p>
         </div>
         <div class="note">
@@ -386,7 +386,7 @@
           <h3>믿으면 안 되는 것</h3>
           <ul id="caveats">
             <li>K=2 처치 타이밍 양자화로 ±2%p 잡음이 있다. mDPG 차 0.5% 안쪽은 동률(<span class="tie">≈</span>)로 보고, 그 묶음만 <b>미래까지 본 score</b> 로 세운다.</li>
-            <li>각 노드에서 <b>mDPG 상위 3개만</b> 다음 단계로 전개했다. 나머지도 점수는 같은 방식으로 계산했고, 그 뒤 가지만 <b>전개하지 않았다</b>.</li>
+            <li>각 노드에서 <b>mDPG 상위 3개 ∪ score 상위 3개 ∪ 고정 항목</b>만 다음 단계로 전개했다 — 순서는 mDPG 로 세우되, 뒤가 좋은 가지도 눌러 볼 수 있게 함께 편다. <span id="pinNote"></span> 나머지도 점수는 같은 방식으로 계산했고 그 뒤 가지만 <b>전개하지 않았다</b>.</li>
             <li>라인 클리어·생존력·사거리 가치는 모델 밖이다.</li>
           </ul>
         </div>
@@ -406,7 +406,7 @@
   var EX = JSON.parse(document.getElementById("explorer").textContent);
   var ITEM = EX.items;
   // 1차 지표는 mDPG(이 한 칸의 골드 효율). 차이가 이 % 안쪽이면 동률로 보고 score 로 세운다.
-  // rel 필드도 mDPG 1위 대비이고, score 1위 대비는 rel_score 로 따로 들어 있다.
+  // rel 필드는 mDPG 1위 대비다.
   var TIE = 0.5;
 
   // 접이식 섹션(구 리포트)이 쓰는 고정 트리 — 탐색기와 달리 완성 트리 비교용이다.
@@ -440,6 +440,8 @@
   function el(id){ return document.getElementById(id); }
   function fmt(n, d){ return Number(n).toFixed(d === undefined ? 0 : d); }
   function gold(g){ return (g/1000).toFixed(2).replace(/0$/,"") + "k"; }
+  // DPG 는 dps/gold 파생값이라 데이터에 싣지 않는다(파일 크기) — 쓸 때 계산한다.
+  function dpgOf(dps, g){ return g ? dps / (g / 1000) : 0; }
   function pct(a, b){ return (a/b - 1) * 100; }
   function deltaHtml(v){
     return '<span class="delta ' + (v >= 0 ? "up" : "down") + '">' +
@@ -484,6 +486,21 @@
     el("targetNote").textContent = COPY.target_note || "";
     el("halfNote").innerHTML = COPY.half_note || "";
     el("halfNote2").innerHTML = COPY.half_note || "";
+    // 고정 전개(슬롯별로 순위와 무관하게 펴는 아이템)를 캐비엇에 적는다.
+    var pin = EX.meta.pinned || {};
+    var slots = Object.keys(pin).map(Number).sort(function(a, b){ return a - b; });
+    var groups = [];        // 같은 목록이 이어지는 슬롯은 "3~5코어" 로 묶는다
+    slots.forEach(function(sl){
+      var names = pin[sl].map(function(k){ return ITEM[k] || k; }).join("·");
+      var last = groups[groups.length - 1];
+      if (last && last.names === names && last.to === sl - 1) last.to = sl;
+      else groups.push({from:sl, to:sl, names:names});
+    });
+    var pinTxt = groups.map(function(g){
+      return (g.from === g.to ? g.from : g.from + "~" + g.to) + "코어 " + g.names;
+    }).join(" · ");
+    el("pinNote").innerHTML = pinTxt
+      ? "고정으로 편 것: <b>" + pinTxt + "</b>(순위와 무관하게 항상 전개)." : "";
     el("methodNote").innerHTML = (COPY.method || [])
       .map(function(t){ return "<p>" + t + "</p>"; }).join("");
     var ul = el("caveats");
@@ -586,7 +603,7 @@
         '<span class="score">' + fmt(r.mdpg, 1) + '</span>' +
         '<span class="mdpg">' + fmt(r.score, 1) + '</span>' +
         '<span class="sub">누적 ' + r.gold + 'g · DPS ' + fmt(r.dps) +
-          ' · DPG ' + fmt(r.dpg, 1) + '</span>' +
+          ' · DPG ' + fmt(dpgOf(r.dps, r.gold), 1) + '</span>' +
         '<span class="unit unit-score">mDPG</span>' +
         '<span class="unit unit-mdpg">score</span>';
       b.addEventListener("click", function(){
@@ -604,7 +621,7 @@
       minors.map(function(r){
         return '<tr><td>' + (ITEM[r.item] || r.item) + '</td><td>' + fmt(r.mdpg, 1) + '</td>' +
           '<td>' + fmt(r.rel, 1) + '%</td><td>' + fmt(r.score, 1) + '</td>' +
-          '<td>' + fmt(r.dps) + '</td><td>' + fmt(r.dpg, 1) + '</td>' +
+          '<td>' + fmt(r.dps) + '</td><td>' + fmt(dpgOf(r.dps, r.gold), 1) + '</td>' +
           '<td><span class="unverified">전개 안 함</span></td></tr>';
       }).join("") + '</tbody>';
   }
@@ -622,7 +639,7 @@
     host.innerHTML =
       '<div><dt>' + state.path.length + '코어 시점 DPS</dt><dd>' + fmt(cur.dps) + '</dd></div>' +
       '<div><dt>누적 골드</dt><dd>' + cur.gold + '</dd></div>' +
-      '<div><dt>DPG</dt><dd>' + fmt(cur.dpg, 1) + '</dd></div>' +
+      '<div><dt>DPG</dt><dd>' + fmt(dpgOf(cur.dps, cur.gold), 1) + '</dd></div>' +
       '<div><dt>이 칸의 mDPG</dt><dd>' + fmt(cur.mdpg, 1) + '</dd></div>' +
       '<p class="hint">이 칸에 ' + cur.cost + '골드를 써서 DPS 가 ' + fmt(cur.ddps, 1) +
       ' 늘었다.</p>';
@@ -736,8 +753,10 @@
       var info = nodeAt(prefix)[item], tier = i + 1;
       if (info.half_dps && info.half_gold)
         pts.push({step:tier + "C-half", tier:tier - 0.5, gold:info.half_gold,
-                  dps:info.half_dps, dpg:info.half_dpg, label:tier + "코어 하프", comps:[]});
-      pts.push({step:tier + "C", tier:tier, gold:info.gold, dps:info.dps, dpg:info.dpg,
+                  dps:info.half_dps, dpg:dpgOf(info.half_dps, info.half_gold),
+                  label:tier + "코어 하프", comps:[]});
+      pts.push({step:tier + "C", tier:tier, gold:info.gold, dps:info.dps,
+                dpg:dpgOf(info.dps, info.gold),
                 label:tier + "코어 " + nm(item), comps:[]});
       prefix.push(item);
     });
@@ -761,7 +780,8 @@
 
   /* ---------- 측정 조건 칩 ---------- */
   [EX.meta.package, EX.meta.rune, "파편 " + EX.meta.shard,
-   "K=2 지속딜", "γ=" + EX.meta.gamma, "상위 " + EX.meta.main_top_n + "개만 전개"]
+   "K=2 지속딜", "γ=" + EX.meta.gamma,
+   EX.meta.expand || ("상위 " + EX.meta.main_top_n + "개만 전개")]
     .forEach(function(t){
       var s = document.createElement("span"); s.className = "chip"; s.textContent = t;
       el("meta").appendChild(s);
