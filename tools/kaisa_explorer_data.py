@@ -39,6 +39,11 @@ from adc_sim.simulations.target_archetypes import TARGET_ARCHETYPES
 PKG = [p for p in ADC_PACKAGES if p["key"] == "A"][0]   # Bld+Zerk = 도란검+광전사+핏빛길
 SHARD = KAISA_SHARD_SCENARIOS["AS10%+AD5.4"]
 MAIN_TOP_N = 3            # 자식 노드로 전개할 상위 후보 수 (나머지는 minor)
+# 2코어 스탯 하한(AD 75·공속 65%)을 탐색기에서는 끈다 — 사용자 확정 2026-09-30.
+# 그 하한은 진화 타이밍용 프루닝 휴리스틱이라, 내셔·스태틱·C44 처럼 AD 가 낮은
+# 아이템이 2코어 후보에서 통째로 사라졌다(1코어 풀과 실질적으로 달라짐). 끄면
+# 후보는 1코어 풀과 같아지고, 진화가 늦어 손해라면 DPS 가 점수로 깎는다.
+TWO_CORE_FLOOR = False
 # 생존성 축 가중 — 물리 : 마법 : 체력(고정피해) = 1:1:1 (사용자 확정 2026-09-28).
 SURV_AXES = ("physical", "magic", "true")
 
@@ -154,7 +159,7 @@ def _legal_next(prefix, depth):
         path = tuple(prefix) + (key,)
         if not pen_rule_ok(path):
             continue
-        if not _kaisa_two_core_stats_ok(path):
+        if not _kaisa_two_core_stats_ok(path, TWO_CORE_FLOOR):
             continue
         if slot < HORIZON and not _next_exists(path, slot):
             continue
@@ -168,7 +173,7 @@ def _next_exists(path, slot):
         if key in path:
             continue
         nxt = tuple(path) + (key,)
-        if pen_rule_ok(nxt) and _kaisa_two_core_stats_ok(nxt):
+        if pen_rule_ok(nxt) and _kaisa_two_core_stats_ok(nxt, TWO_CORE_FLOOR):
             return True
     return False
 
@@ -297,7 +302,7 @@ def verify():
     """원본 greedy(순열 전수)와 1코어 후보 score 가 같은지 확인한다."""
     K.set_target_archetype("bruiser")
     cache = _cache()
-    ref = solve_greedy_half_kaisa(cache, gamma=GAMMA)
+    ref = solve_greedy_half_kaisa(cache, gamma=GAMMA, two_core_floor=TWO_CORE_FLOOR)
     ref_alts = {a["item"]: a["score"] for a in ref["steps"][0]["alternatives"]}
     mine = {r["item"]: r["score"] for r in Explorer(cache).candidates(())}
     ok = True

@@ -825,8 +825,19 @@ class SimCache:
         return self._run(items_tuple)[2]
 
 
-def _kaisa_two_core_stats_ok(item_keys):
+# 2코어 스탯 하한을 강제할지 — 기본 True(기존 랭킹 동작 보존).
+# 이 하한은 물리 법칙이 아니라 탐색 프루닝용 휴리스틱이다: 진화 조건(Q 추가AD 100 /
+# E 추가공속 100%)을 제때 채우게 하려고 둔 것. 끄면 내셔·스태틱·C44 같은 저AD 조합도
+# 2코어 후보로 살아남고, 진화가 늦어 손해라면 DPS 모델이 알아서 점수로 깎는다.
+TWO_CORE_STAT_FLOOR = True
+
+
+def _kaisa_two_core_stats_ok(item_keys, enforce=None):
     """카이사 기존 후보 필터인 2코어 AD 75·공속 65% 하한 충족 여부를 반환한다."""
+    if enforce is None:
+        enforce = TWO_CORE_STAT_FLOOR
+    if not enforce:
+        return True
     if len(item_keys) < 2:
         return True
     first_two = item_keys[:2]
@@ -835,7 +846,7 @@ def _kaisa_two_core_stats_ok(item_keys):
     return total_ad >= 75.0 and total_as >= 0.65
 
 
-def _enumerate_future_combos(fixed, from_slot, horizon=HORIZON):
+def _enumerate_future_combos(fixed, from_slot, horizon=HORIZON, two_core_floor=None):
     """확정 코어 뒤에서 중복·관통·카이사 2코어 제약을 만족하는 미래 조합을 생성한다."""
     remaining = list(range(from_slot, horizon + 1))
 
@@ -851,7 +862,7 @@ def _enumerate_future_combos(fixed, from_slot, horizon=HORIZON):
             candidate_path = tuple(fixed) + tuple(current) + (item_key,)
             if not pen_rule_ok(candidate_path):
                 continue
-            if not _kaisa_two_core_stats_ok(candidate_path):
+            if not _kaisa_two_core_stats_ok(candidate_path, two_core_floor):
                 continue
             current.append(item_key)
             yield from rec(index + 1, current)
@@ -2055,7 +2066,8 @@ def _score_combo_half(cache, fixed, combo, from_slot, dps_prev, gold_prev, gamma
     return score
 
 
-def solve_greedy_half_kaisa(cache, gamma=None, horizon=HORIZON, top_alt=3):
+def solve_greedy_half_kaisa(cache, gamma=None, horizon=HORIZON, top_alt=3,
+                            two_core_floor=None):
     """하프 티어 포함 카이사 receding-horizon (유나라 solve_greedy_half 미러)."""
     if gamma is None:
         gamma = GAMMA
@@ -2064,7 +2076,7 @@ def solve_greedy_half_kaisa(cache, gamma=None, horizon=HORIZON, top_alt=3):
     for slot in range(1, horizon + 1):
         best_score, best_combo = None, None
         alternatives_by_item, alternatives_path = {}, {}
-        for combo in _enumerate_future_combos(fixed, slot, horizon):
+        for combo in _enumerate_future_combos(fixed, slot, horizon, two_core_floor):
             score = _score_combo_half(cache, fixed, combo, slot, dps_prev, gold_prev, gamma, horizon)
             item_key = combo[0]
             if item_key not in alternatives_by_item or score > alternatives_by_item[item_key]:
