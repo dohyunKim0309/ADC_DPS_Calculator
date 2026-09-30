@@ -44,6 +44,18 @@ PLATFORM = {"kr": "kr", "na": "na1", "euw": "euw1", "eun": "eun1", "jp": "jp1"}
 ROUTE = {"kr": "asia", "na": "americas", "euw": "europe", "eun": "europe", "jp": "asia"}
 AXES = ("physical", "magic", "true")
 
+# Riot API 는 Cloudflare 뒤에 있고, `Python-urllib/3.x` 기본 User-Agent 는
+# "error code: 1010" 으로 차단당한다(키와 무관 — curl 은 통과). Riot 개발자 포털
+# 예시가 쓰는 헤더 세트를 그대로 보낸다.
+BROWSER_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                   "AppleWebKit/537.36 (KHTML, like Gecko) "
+                   "Chrome/126.0.0.0 Safari/537.36"),
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Charset": "application/x-www-form-urlencoded; charset=UTF-8",
+    "Origin": "https://developer.riotgames.com",
+}
+
 
 class RiotAuthError(RuntimeError):
     """401/403 — 재시도로 안 풀린다. 진단 메시지를 그대로 들고 다닌다."""
@@ -64,7 +76,7 @@ class Riot:
         wait = self.sleep - (time.time() - self.last)
         if wait > 0:
             time.sleep(wait)
-        req = Request(url, headers={"X-Riot-Token": self.key})
+        req = Request(url, headers={**BROWSER_HEADERS, "X-Riot-Token": self.key})
         for attempt in range(5):
             try:
                 with urlopen(req, timeout=20) as resp:
@@ -143,6 +155,12 @@ def _auth_error_message(url, code, key, err=None):
             raw = ""
         if raw:
             body = f"  응답 본문: {raw[:300]}\n"
+            if "1010" in raw:
+                # 키와 무관한 Cloudflare 차단 — 키 만료 안내를 띄우면 오진으로 이끈다.
+                return (f"\n[{tag}] Cloudflare 가 요청을 차단했다 (error code: 1010) — 키 문제 아니다.\n"
+                        f"  호출: {url}\n{body}"
+                        "  원인: User-Agent 등 클라이언트 헤더가 막힌 것. 같은 키로 curl 은 200 이 나온다.\n"
+                        "  확인: BROWSER_HEADERS 가 요청에 실리는지 — 이 스크립트 최신 버전인지 `git pull`.\n")
     return (
         f"\n[{tag}] Riot API 가 키를 거부했다.\n"
         f"  호출: {url}\n"
