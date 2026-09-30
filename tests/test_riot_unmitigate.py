@@ -92,3 +92,27 @@ class TestUnmitigate(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestLethalityAssumption(unittest.TestCase):
+    """armorPen 필드가 실측상 항상 0 — 가정 리썰리티로 민감도를 볼 수 있어야 한다."""
+
+    def test_assumed_lethality_lowers_physical_estimate(self):
+        from tools.riot_damage_mix import _unmitigate_death_damage as un
+        base, _ = un(_timeline(0.35, 0), VICTIM)
+        with_pen, _ = un(_timeline(0.35, 0), VICTIM, assume_lethality=18)
+        self.assertAlmostEqual(base["physical"], 1000 * 1.39)      # eff 방어력 39
+        self.assertAlmostEqual(with_pen["physical"], 1000 * 1.21)  # 39 - 18 = 21
+        self.assertLess(with_pen["physical"], base["physical"])
+
+    def test_observed_flat_pen_wins_over_assumption(self):
+        from tools.riot_damage_mix import _unmitigate_death_damage as un
+        raw, _ = un(_timeline(0.35, 18), VICTIM, assume_lethality=40)
+        self.assertAlmostEqual(raw["physical"], 1000 * 1.21)       # 관측 18 을 쓴다
+
+    def test_assumption_does_not_apply_to_minion_damage(self):
+        from tools.riot_damage_mix import _unmitigate_death_damage as un
+        tl = _timeline(0.0, 0)
+        tl["info"]["frames"][0]["events"][0]["victimDamageReceived"][0]["participantId"] = 0
+        raw, _ = un(tl, VICTIM, assume_lethality=30)
+        self.assertAlmostEqual(raw["physical"], 1000 * 1.60)       # 방어력 60 전부

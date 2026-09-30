@@ -185,7 +185,8 @@ def _share(counts):
     return {a: counts[a] / total for a in AXES}
 
 
-def collect_match(match, timeline=None, champion=None, min_minutes=15):
+def collect_match(match, timeline=None, champion=None, min_minutes=15,
+                  assume_lethality=0.0):
     """매치 하나에서 A/B/C 세 관점의 (물리, 마법, 고정) 절대값을 뽑는다."""
     info = match["info"]
     if info.get("gameDuration", 0) < min_minutes * 60:
@@ -219,7 +220,8 @@ def collect_match(match, timeline=None, champion=None, min_minutes=15):
         }
         if timeline is not None:
             row["death_damage"] = _death_damage(timeline, p["participantId"])   # C
-            raw, eff = _unmitigate_death_damage(timeline, p["participantId"])   # D
+            raw, eff = _unmitigate_death_damage(timeline, p["participantId"],
+                                                assume_lethality)               # D
             row["death_damage_raw"] = raw
             row["eff_resist"] = eff
         rows.append(row)
@@ -280,7 +282,7 @@ def _stats_at(timeline, participant_id, timestamp):
     return best
 
 
-def _unmitigate_death_damage(timeline, participant_id):
+def _unmitigate_death_damage(timeline, participant_id, assume_lethality=0.0):
     """C 와 같은 표본을 가해자 관통까지 반영해 경감 전 값으로 되돌린다."""
     out = {a: 0.0 for a in AXES}
     eff_used = {"armor": [], "mr": []}
@@ -299,8 +301,11 @@ def _unmitigate_death_damage(timeline, participant_id):
                 atk = _stats_at(timeline, src, ts) if src else None
                 atk = atk or {}
                 if phys:
-                    eff = _effective_resist(victim.get("armor"),
-                                            atk.get("armorPen"), atk.get("armorPenPercent"))
+                    # armorPen 은 실측상 항상 0 — 리썰리티가 안 실린다. 챔피언 출처면
+                    # 가정값으로 보정할 수 있게 한다(고정 관통으로 취급).
+                    flat = atk.get("armorPen") or (assume_lethality if src else 0.0)
+                    eff = _effective_resist(victim.get("armor"), flat,
+                                            atk.get("armorPenPercent"))
                     out["physical"] += phys * (100.0 + eff) / 100.0
                     eff_used["armor"].append(eff)
                 if magic:
@@ -311,21 +316,84 @@ def _unmitigate_death_damage(timeline, participant_id):
     return out, eff_used
 
 
-def dump_stats(cache_files, limit=3):
-    """championStats 의 관통·저항 필드 실측 — %표기 판별용 진단."""
-    keys = ("armor", "magicResist", "armorPen", "armorPenPercent",
+def _item_names():
+    """DDragon 아이템 id→이름 (한 번 받아 캐시; 실패하면 빈 표 → id 그대로 출력)."""
+    cached = CACHE / "_items.json"
+    if cached.exists():
+        return json.loads(cached.read_text(encoding="utf-8"))
+    try:
+        def fetch(url):
+            req = Request(url, headers=BROWSER_HEADERS)
+            with urlopen(req, timeout=20) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        ver = fetch("https://ddragon.leagueoflegends.com/api/versions.json")[0]
+        data = fetch(f"https://ddragon.leagueoflegends.com/cdn/{ver}/data/en_US/item.json")
+        names = {k: v["name"] for k, v in data["data"].items()}
+    except Exception as err:
+        print(f"  (아이템 이름표 없음: {err} — id 로 출력)", file=sys.stderr)
+        return {}
+    CACHE.mkdir(parents=True, exist_ok=True)
+    cached.write_text(json.dumps(names), encoding="utf-8")
+    return names
+
+
+def _items_held(timeline, participant_id, until_ts):
+    """해당 시각까지의 ITEM_PURCHASED/DESTROYED/UNDO 를 따라간 보유 아이템 id 목록."""
+    held = []
+    for frame in _frames(timeline):
+        for ev in frame.get("events", []):
+            if ev.get("timestamp", 0) > until_ts:
+                return held
+            if ev.get("participantId") != participant_id:
+                continue
+            kind, item = ev.get("type"), ev.get("itemId")
+            if kind == "ITEM_PURCHASED":
+                held.append(item)
+            elif kind in ("ITEM_DESTROYED", "ITEM_SOLD") and item in held:
+                held.remove(item)
+            elif kind == "ITEM_UNDO":
+                before = ev.get("beforeId")
+                if before in held:
+                    held.remove(before)
+    return held
+
+
+PEN_KEYS = ("armor", "magicResist", "armorPen", "armorPenPercent",
             "bonusArmorPenPercent", "magicPen", "magicPenPercent",
             "bonusMagicPenPercent")
-    seen = {k: [] for k in keys}
+
+
+def dump_stats(cache_files, limit=3, correlate=("armorPenPercent", "magicPen",
+                                                "magicPenPercent")):
+    """championStats 관통·저항 필드 실측 + 0 아닌 관통값이 어떤 아이템과 함께 나오는지.
+
+    %표기 판별(값>1 이면 퍼센트)과, 리썰리티가 %필드에 잘못 실렸는지 판별이 목적이다.
+    """
+    seen = {k: [] for k in PEN_KEYS}
+    witness = {k: {} for k in correlate}      # 값 → {(챔프, 아이템들): 횟수}
     shown = 0
     for f in cache_files:
         tl = json.loads(f.read_text(encoding="utf-8"))
+        match_file = CACHE / f.name.replace("_tl.json", ".json")
+        champs = {}
+        if match_file.exists():
+            m = json.loads(match_file.read_text(encoding="utf-8"))
+            champs = {p["participantId"]: p.get("championName")
+                      for p in m["info"]["participants"]}
         for frame in _frames(tl):
-            for pf in (frame.get("participantFrames") or {}).values():
+            for pid, pf in (frame.get("participantFrames") or {}).items():
                 cs = pf.get("championStats") or {}
-                for k in keys:
+                for k in PEN_KEYS:
                     if k in cs:
                         seen[k].append(cs[k])
+                for k in correlate:
+                    val = cs.get(k) or 0
+                    if not val:
+                        continue
+                    items = _items_held(tl, int(pid), frame.get("timestamp", 0))
+                    key = (champs.get(int(pid), f"pid{pid}"), tuple(sorted(items)))
+                    witness[k].setdefault(val, {}).setdefault(key, 0)
+                    witness[k][val][key] += 1
         shown += 1
         if shown >= limit:
             break
@@ -333,15 +401,25 @@ def dump_stats(cache_files, limit=3):
         print(f"타임라인 캐시가 없다 — `--timeline` 으로 수집해야 한다. ({CACHE})")
         return
     print(f"\nchampionStats 실측 ({shown} 판 타임라인)")
-    for k in keys:
+    for k in PEN_KEYS:
         vals = seen[k]
         if not vals:
             print(f"  {k:24s} (필드 없음)")
             continue
         nz = [v for v in vals if v]
         print(f"  {k:24s} n={len(vals):6d}  0 아닌 값 {len(nz):6d}  "
-              f"min={min(vals)}  max={max(vals)}  예시={nz[:6]}")
-    print("\n  → *PenPercent 의 max 가 1 이하면 분수(0.18=18%), 1 초과면 퍼센트 표기다.\n")
+              f"min={min(vals)}  max={max(vals)}  값 종류={sorted(set(nz))[:12]}")
+    names = _item_names()
+    for k in correlate:
+        if not witness[k]:
+            continue
+        print(f"\n  {k} = 0 아닌 프레임의 보유 아이템 (값별 최빈 1건)")
+        for val in sorted(witness[k]):
+            (champ, items), cnt = max(witness[k][val].items(), key=lambda kv: kv[1])
+            shown_items = ", ".join(names.get(str(i), str(i)) for i in items) or "(없음)"
+            print(f"    {k}={val:<4g} {champ:12s} n={cnt:<4d} {shown_items[:150]}")
+    print("\n  → %필드 값이 리썰리티 수치(10/18 등)와 아이템이 일치하면 표기가 섞인 것이다.")
+    print("     방관 %아이템(도미닉 35% 등)과 일치하면 진짜 퍼센트다.\n")
 
 
 def summarize(rows):
@@ -384,6 +462,8 @@ def print_summary(rows):
     print("  ⚠️ A·B·C 는 경감 후 수치다 — 내 방어 아이템이 비중을 이미 왜곡한다.")
     print("     D 는 그 왜곡을 되돌린 추정이다(가해자 관통 반영). 남는 오차:")
     print("       · 방어력 감소(검은도끼 등)는 프레임 armor 에 이미 반영됐다고 가정")
+    print("       · armorPen(고정 방관) 필드가 실측상 항상 0 — 리썰리티가 안 잡힌다.")
+    print("         → D 의 물리는 과대 추정이다. `--lethality 18` 등으로 민감도를 봐라.")
     print("       · bonusArmorPenPercent(추가방어력 한정)는 미반영")
     print("       · 프레임은 분 단위 — 교전 중 스탯 변화는 최근접 프레임으로 근사")
     print("     편향 없는 근거는 챔피언별 피해 타입 프로파일(2단계)이다.\n")
@@ -400,6 +480,9 @@ def main():
     ap.add_argument("--champion", default=None, help="특정 챔프만(예: Kaisa)")
     ap.add_argument("--timeline", action="store_true", help="C 관점(죽을 때 피해)도 수집 — 호출 2배")
     ap.add_argument("--report", action="store_true", help="캐시만 집계")
+    ap.add_argument("--lethality", type=float, default=0.0,
+                    help="D 역산에서 가정할 적 고정 방어구 관통 "
+                         "(armorPen 필드가 실측상 항상 0 — 기본 0 은 물리 과대 추정)")
     ap.add_argument("--dump-stats", action="store_true",
                     help="championStats 관통·저항 필드 실측(%표기 판별)")
     args = ap.parse_args()
@@ -417,7 +500,8 @@ def main():
             tl = CACHE / f"{match['metadata']['matchId']}_tl.json"
             rows += collect_match(match,
                                   json.loads(tl.read_text(encoding="utf-8")) if tl.exists() else None,
-                                  champion=args.champion)
+                                  champion=args.champion,
+                                  assume_lethality=args.lethality)
         print_summary(rows)
         return
 
@@ -453,7 +537,8 @@ def main():
             seen.add(match_id)
             match = api.match(match_id)
             tl = api.timeline(match_id) if args.timeline else None
-            rows += collect_match(match, tl, champion=args.champion)
+            rows += collect_match(match, tl, champion=args.champion,
+                                  assume_lethality=args.lethality)
             if len(seen) % 25 == 0:
                 print(f"  {len(seen)}/{args.count} 판 · 원딜 표본 {len(rows)}")
     print(f"[3/3] API 호출 {api.calls}회 · 캐시 {CACHE}")
