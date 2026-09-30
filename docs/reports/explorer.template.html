@@ -276,6 +276,10 @@
       <span class="sw-label" id="scenLabel"></span>
       <div class="switch" id="scenSwitch" role="group" aria-label="시나리오 선택"></div>
     </div>
+    <div class="sw-group" id="mixGroup">
+      <span class="sw-label">적 딜 구성</span>
+      <div class="switch" id="mixSwitch" role="group" aria-label="적 딜 구성 선택"></div>
+    </div>
     <div class="sw-group" id="sortGroup">
       <span class="sw-label">정렬 기준</span>
       <div class="switch" id="sortSwitch" role="group" aria-label="정렬 기준 선택"></div>
@@ -440,13 +444,46 @@
   var byId = {};
   if (HAS_CURVES) DATA.builds.forEach(function(b){ byId[b.id] = b; });
   // 기본 시나리오: 혼합이 있으면 혼합, 없으면(단일 대상 챔피언) 첫 번째.
+  // 적이 때리는 피해 구성 — 생존성 세 축(물리/마법/고정)을 섞는 비율.
+  // 데이터에 세 축이 다 들어 있어 **화면에서** 계산한다(프리셋을 늘려도 파일은 그대로).
+  // ⚠️ 균등 외 값은 실측 전 임시치다 [Hypothesis] — 매치 통계가 나오면 교체한다.
+  var DMG_MIX = [
+    {id:"even", label:"균등", w:[1, 1, 1]},
+    {id:"ad",   label:"AD 위주", w:[6, 3, 1]},
+    {id:"mixed", label:"혼합", w:[4.5, 4.5, 1]},
+    {id:"ap",   label:"AP 위주", w:[3, 6, 1]}
+  ];
+  function mixW(){
+    var m = DMG_MIX.filter(function(x){ return x.id === state.mix; })[0] || DMG_MIX[0];
+    return m.w;
+  }
+  // 고정(true) 축은 데이터에 따로 안 싣는다 — 평균×3 − 물리 − 마법 으로 정확히 복원된다.
+  function survOf(r){
+    if (!r || r.surv === undefined) return 0;
+    var t = 3 * r.surv - r.surv_p - r.surv_m, w = mixW();
+    return (w[0] * r.surv_p + w[1] * r.surv_m + w[2] * t) / (w[0] + w[1] + w[2]);
+  }
+  // 현재 가중에서 이 칸의 마지널 생존성 — 직전 상태(부모 노드의 고른 아이템) 대비.
+  function decorate(rows, path){
+    var prev = 0;
+    if (path && path.length){
+      var parent = nodeAt(path.slice(0, -1));
+      prev = survOf(parent && parent[path[path.length - 1]]);
+    }
+    rows.forEach(function(r){
+      r._surv = survOf(r);
+      r._msurv = r.cost > 0 ? (r._surv - prev) / (r.cost / 1000) : 0;
+    });
+    return rows;
+  }
+
   // 세 지표 — 하나를 1차 정렬 기준으로 고르고, 동률(TIE%)이면 다음 지표로 가른다.
   var METRICS = [
     {id:"mdpg", label:"mDPG", get:function(r){ return r.mdpg; }, digits:1,
      note:"이 한 칸의 골드 효율"},
     {id:"score", label:"score", get:function(r){ return r.score; }, digits:1,
      note:"5코어까지 본 γ-할인 합"},
-    {id:"msurv", label:"m생존", get:function(r){ return r.msurv || 0; }, digits:1,
+    {id:"msurv", label:"m생존", get:function(r){ return r._msurv || 0; }, digits:1,
      note:"이 칸 1000골드당 늘어난 생존성(EHP+피흡)"}
   ];
   function metric(id){
@@ -461,7 +498,7 @@
     var best = Math.max.apply(null, rows.map(m.get));
     return best ? (m.get(r) / best - 1) * 100 : 0;
   }
-  var state = {arch:"bruiser", sort:"mdpg",
+  var state = {arch:"bruiser", sort:"mdpg", mix:"even",
                scen:(EX.scenarios.indexOf("mix") > -1 ? "mix" : EX.scenarios[0]),
                path:[]};
 
@@ -568,11 +605,14 @@
   buildSwitch(el("scenSwitch"), EX.scenarios.map(function(s){
     return {id:s, label:SCEN_LABEL[s]};
   }), "scen");
+  buildSwitch(el("mixSwitch"), DMG_MIX.map(function(mm){
+    return {id:mm.id, label:mm.label};
+  }), "mix", true);
   buildSwitch(el("sortSwitch"), METRICS.map(function(mm){
     return {id:mm.id, label:mm.label};
   }), "sort", true);
   // 생존성 데이터가 없는(옛) JSON 이면 정렬 스위치를 감춘다.
-  if (!EX.meta.surv) el("sortGroup").hidden = true;
+  if (!EX.meta.surv){ el("sortGroup").hidden = true; el("mixGroup").hidden = true; }
 
   /* ---------- 탐색기 ---------- */
   function nodes(){ return EX.nodes[state.arch + "|" + state.scen] || {}; }
@@ -619,7 +659,7 @@
       return;
     }
     host.appendChild(head);
-    var rows = sortedRows(node);
+    var rows = sortedRows(node, state.path);
     var mains = orderRows(rows.filter(function(r){ return r.tier === "main"; }));
     var minors = rows.filter(function(r){ return r.tier !== "main"; });
     var m = metric(), rest = others();
@@ -641,7 +681,7 @@
         '<span class="sub">' + rest[1].label + ' ' + fmt(rest[1].get(r), rest[1].digits) +
           ' · 누적 ' + r.gold + 'g · DPS ' + fmt(r.dps) +
           ' · DPG ' + fmt(dpgOf(r.dps, r.gold), 1) +
-          (r.surv ? ' · 생존성 ' + fmt(r.surv) : '') + '</span>' +
+          (r.surv ? ' · 생존성 ' + fmt(r._surv) : '') + '</span>' +
         '<span class="unit unit-score">' + m.label + '</span>' +
         '<span class="unit unit-mdpg">' + rest[0].label + '</span>';
       b.addEventListener("click", function(){
@@ -693,10 +733,12 @@
   }
 
   /* ---------- 타이밍별 규칙 (현재 스위치의 데이터에서 생성) ---------- */
-  function sortedRows(node){
+  function sortedRows(node, path){
     var m = metric();
-    return Object.keys(node).map(function(k){ var r = node[k]; r.item = k; return r; })
-      .sort(function(a, b){ return m.get(b) - m.get(a); });
+    var rows = decorate(Object.keys(node).map(function(k){
+      var r = node[k]; r.item = k; return r;
+    }), path);
+    return rows.sort(function(a, b){ return m.get(b) - m.get(a); });
   }
   // 1차 지표가 TIE 안쪽이면 동률로 보고, 그 묶음만 2차 지표로 세운다.
   function orderRows(rows){
@@ -706,15 +748,15 @@
     return tied.concat(rows.filter(function(r){ return relOf(r, rows, m) <= -TIE; })
       .sort(function(a, b){ return m.get(b) - m.get(a); }));
   }
-  function mainRows(node){
-    return orderRows(sortedRows(node).filter(function(r){ return r.tier === "main"; }));
+  function mainRows(node, path){
+    return orderRows(sortedRows(node, path).filter(function(r){ return r.tier === "main"; }));
   }
   function bestPathFrom(prefix){
     var p = prefix.slice();
     for (;;){
       var n = nodeAt(p);
       if (!n || !Object.keys(n).length) return p;
-      p.push(mainRows(n)[0].item);
+      p.push(mainRows(n, p)[0].item);
     }
   }
   function finalSet(prefix){
@@ -740,7 +782,7 @@
     for (var d = 0; d < 5; d++){
       var node = nodeAt(path);
       if (!node || !Object.keys(node).length) break;
-      var rows = mainRows(node);
+      var rows = mainRows(node, path);
       var picked = null;
       if (state.path[d]){
         picked = rows.filter(function(r){ return r.item === state.path[d]; })[0];

@@ -66,6 +66,11 @@ tools/ ─ 리포트·데이터 생성 도구(`python -m tools.<모듈>`, repo �
       없고 1코어 c44 는 하한에 걸려 실질 대상은 terminus·ldr 뿐). 불변식은
       `tests/test_explorer_pins.py` 가 배포 JSON 으로 검사한다. `--verify` 로 원본 greedy 와 대조.
       dpg/half_dpg 는 dps·gold 파생이라 JSON 에 없다(리포트가 계산).
+      생존성 세 축 가중은 리포트의 **적 딜 구성 스위치**가 화면에서 곱한다(데이터 불변).
+      실측 근거는 `tools/riot_damage_mix.py`(라이엇 매치 API, 로컬 실행 — 키 필요):
+      A 받은 피해 전체(미니언·포탑 포함) / B 적 팀이 챔피언에 가한 피해 / C 죽을 때 맞은
+      피해 세 관점을 같이 뽑는다. **셋 다 경감 후 수치라 내 방어템이 비중을 왜곡한다** —
+      편향 없는 근거는 챔피언별 피해 타입 프로파일(2단계, 미착수).
       ⚠️ **탐색기 JSON 은 추적하지 않는다**(생성물 — 유나라 50MB / 노드 22,979). 로컬에서
       `python -m tools.<champ>_explorer_data docs/reports/<champ>_explorer.json` 으로 만든다
   build_explorer_report.py ─ 공용 템플릿+JSON → 배포용 HTML(`all|yunara|kaisa`, 산출물 git 제외)
