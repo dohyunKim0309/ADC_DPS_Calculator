@@ -45,6 +45,10 @@ ROUTE = {"kr": "asia", "na": "americas", "euw": "europe", "eun": "europe", "jp":
 AXES = ("physical", "magic", "true")
 
 
+class RiotAuthError(RuntimeError):
+    """401/403 — 재시도로 안 풀린다. 진단 메시지를 그대로 들고 다닌다."""
+
+
 class Riot:
     """레이트리밋을 스스로 지키는 얇은 API 래퍼(캐시 우선)."""
 
@@ -77,7 +81,8 @@ class Riot:
                     time.sleep(2 ** attempt)
                     continue
                 if err.code in (401, 403):
-                    raise SystemExit(_auth_error_message(url, err.code, self.key))
+                    raise RiotAuthError(
+                        _auth_error_message(url, err.code, self.key, err)) from None
                 raise
         raise RuntimeError(f"요청 실패: {url}")
 
@@ -127,13 +132,22 @@ def _mask(key):
     return f"{key[:9]}…({len(key)}자)"
 
 
-def _auth_error_message(url, code, key):
+def _auth_error_message(url, code, key, err=None):
     """401/403 은 재시도해도 안 풀린다 — 원인과 확인 방법을 바로 알려준다."""
     tag = "401 Unauthorized" if code == 401 else "403 Forbidden"
+    body = ""
+    if err is not None:
+        try:
+            raw = err.read().decode("utf-8", "replace").strip()
+        except Exception:
+            raw = ""
+        if raw:
+            body = f"  응답 본문: {raw[:300]}\n"
     return (
         f"\n[{tag}] Riot API 가 키를 거부했다.\n"
         f"  호출: {url}\n"
         f"  RIOT_API_KEY: {_mask(key)}\n"
+        + body +
         "  가장 흔한 원인 순서:\n"
         "   1) 개발 키 만료 — 발급 후 24시간이면 죽는다. "
         "https://developer.riotgames.com 에서 REGENERATE API KEY 후 다시 export.\n"
@@ -289,6 +303,8 @@ def main():
         try:
             puuid = entry.get("puuid") or api.puuid_by_summoner(entry["summonerId"])
             ids = api.match_ids(puuid, args.queue, args.per_player)
+        except RiotAuthError:                        # 키 거부는 건너뛸 게 아니라 중단
+            raise
         except Exception as err:                     # 탈퇴·비공개 계정 등은 건너뛴다
             print(f"  건너뜀: {err}", file=sys.stderr)
             continue
@@ -306,4 +322,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except RiotAuthError as err:
+        raise SystemExit(str(err))
