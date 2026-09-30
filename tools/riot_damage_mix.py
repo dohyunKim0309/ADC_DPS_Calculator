@@ -76,6 +76,8 @@ class Riot:
                 if err.code in (500, 502, 503, 504):
                     time.sleep(2 ** attempt)
                     continue
+                if err.code in (401, 403):
+                    raise SystemExit(_auth_error_message(url, err.code, self.key))
                 raise
         raise RuntimeError(f"요청 실패: {url}")
 
@@ -115,6 +117,32 @@ class Riot:
         CACHE.mkdir(parents=True, exist_ok=True)
         cached.write_text(json.dumps(data), encoding="utf-8")
         return data
+
+
+
+def _mask(key):
+    """키를 로그에 남겨도 되는 형태로 — 앞 9자 + 길이만."""
+    if not key:
+        return "(빈 값)"
+    return f"{key[:9]}…({len(key)}자)"
+
+
+def _auth_error_message(url, code, key):
+    """401/403 은 재시도해도 안 풀린다 — 원인과 확인 방법을 바로 알려준다."""
+    tag = "401 Unauthorized" if code == 401 else "403 Forbidden"
+    return (
+        f"\n[{tag}] Riot API 가 키를 거부했다.\n"
+        f"  호출: {url}\n"
+        f"  RIOT_API_KEY: {_mask(key)}\n"
+        "  가장 흔한 원인 순서:\n"
+        "   1) 개발 키 만료 — 발급 후 24시간이면 죽는다. "
+        "https://developer.riotgames.com 에서 REGENERATE API KEY 후 다시 export.\n"
+        "   2) 셸에 export 가 안 됐거나 옛 값이 남아 있음 — "
+        "`echo $RIOT_API_KEY` 로 위 마스크와 같은지 확인.\n"
+        "   3) 키 종류가 이 엔드포인트/리전에 권한 없음(개발 키는 league-v4·match-v5 전부 허용).\n"
+        "  한 줄 확인:\n"
+        f"   curl -s -o /dev/null -w '%{{http_code}}\\n' -H \"X-Riot-Token: $RIOT_API_KEY\" '{url}'\n"
+    )
 
 
 def _share(counts):
@@ -197,6 +225,12 @@ def summarize(rows):
 
 
 def print_summary(rows):
+    if not rows:
+        print(f"\n표본 0 — 집계할 매치가 없다. 캐시: {CACHE} "
+              f"({len(list(CACHE.glob('*.json'))) if CACHE.exists() else 0} 파일)\n"
+              "  수집을 먼저 돌려야 한다(--report 없이). "
+              "--champion 필터를 걸었다면 철자도 확인.")
+        return
     print(f"\n표본 {len(rows)} 판 · 평균 {sum(r['minutes'] for r in rows)/max(1,len(rows)):.1f}분")
     for view, agg in summarize(rows).items():
         ratio = " : ".join(f"{agg[a]*100:.1f}" for a in AXES)
@@ -234,11 +268,16 @@ def main():
         print_summary(rows)
         return
 
-    key = os.environ.get("RIOT_API_KEY")
+    key = (os.environ.get("RIOT_API_KEY") or "").strip()
     if not key:
         raise SystemExit("RIOT_API_KEY 환경변수가 없다 — https://developer.riotgames.com 에서 발급")
+    if not key.startswith("RGAPI-"):
+        print(f"  ⚠️ RIOT_API_KEY 가 'RGAPI-' 로 시작하지 않는다({_mask(key)}) — "
+              "값이 잘못 들어갔을 수 있다.", file=sys.stderr)
 
     api = Riot(key, args.region)
+    # 수집 루프 전에 값싼 호출로 키를 먼저 검증 — 403 을 300판 돌기 직전이 아니라 지금 잡는다.
+    api._get(f"{PLATFORM[args.region]}.api.riotgames.com", "lol/status/v4/platform-data")
     print(f"[1/3] {args.region} {args.tier} {args.division} 플레이어 수집")
     entries = api.league_entries(args.tier, args.division)
     print(f"      {len(entries)} 명")
