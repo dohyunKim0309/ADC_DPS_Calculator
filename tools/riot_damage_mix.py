@@ -219,6 +219,9 @@ def collect_match(match, timeline=None, champion=None, min_minutes=15):
         }
         if timeline is not None:
             row["death_damage"] = _death_damage(timeline, p["participantId"])   # C
+            raw, eff = _unmitigate_death_damage(timeline, p["participantId"])   # D
+            row["death_damage_raw"] = raw
+            row["eff_resist"] = eff
         rows.append(row)
     return rows
 
@@ -239,12 +242,115 @@ def _death_damage(timeline, participant_id):
     return out
 
 
+
+# ── 경감 역산 (view D) ────────────────────────────────────────────────────
+# 엔진 calculate_mitigation 의 역: eff = resist*(1-%pen) - flat_pen (음수 클램프),
+# post = raw * 100/(100+eff)  →  raw = post * (100+eff)/100.
+# 고정 피해는 경감을 받지 않으므로 그대로 둔다.
+# [Hypothesis H-RIOT-PEN-1] 타임라인 championStats 의 %관통 필드가 0~1 분수인지
+# 0~100 퍼센트인지 문서에 명시가 없다 — `--dump-stats` 로 실측해 판별한다(아래 _pct).
+
+def _pct(value):
+    """%관통 필드 → 0~1 분수. 1 보다 크면 퍼센트 표기로 본다."""
+    try:
+        v = float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    return v / 100.0 if v > 1.0 else max(0.0, v)
+
+
+def _effective_resist(resist, flat_pen, pct_pen):
+    return max(0.0, float(resist or 0) * (1.0 - _pct(pct_pen)) - float(flat_pen or 0))
+
+
+def _frames(timeline):
+    return timeline["info"].get("frames", []) or []
+
+
+def _stats_at(timeline, participant_id, timestamp):
+    """해당 시각에 가장 가까운 프레임의 championStats(없으면 None)."""
+    best, best_gap = None, None
+    for frame in _frames(timeline):
+        pf = (frame.get("participantFrames") or {}).get(str(participant_id))
+        if not pf:
+            continue
+        gap = abs(frame.get("timestamp", 0) - timestamp)
+        if best_gap is None or gap < best_gap:
+            best, best_gap = pf.get("championStats") or {}, gap
+    return best
+
+
+def _unmitigate_death_damage(timeline, participant_id):
+    """C 와 같은 표본을 가해자 관통까지 반영해 경감 전 값으로 되돌린다."""
+    out = {a: 0.0 for a in AXES}
+    eff_used = {"armor": [], "mr": []}
+    for frame in _frames(timeline):
+        for ev in frame.get("events", []):
+            if ev.get("type") != "CHAMPION_KILL" or ev.get("victimId") != participant_id:
+                continue
+            ts = ev.get("timestamp", frame.get("timestamp", 0))
+            victim = _stats_at(timeline, participant_id, ts) or {}
+            for d in ev.get("victimDamageReceived", []) or []:
+                phys = d.get("physicalDamage", 0) or 0
+                magic = d.get("magicDamage", 0) or 0
+                out["true"] += d.get("trueDamage", 0) or 0
+                # 가해자가 챔피언이면 그 시점 관통을, 미니언·포탑·몬스터면 관통 0.
+                src = d.get("participantId") or 0
+                atk = _stats_at(timeline, src, ts) if src else None
+                atk = atk or {}
+                if phys:
+                    eff = _effective_resist(victim.get("armor"),
+                                            atk.get("armorPen"), atk.get("armorPenPercent"))
+                    out["physical"] += phys * (100.0 + eff) / 100.0
+                    eff_used["armor"].append(eff)
+                if magic:
+                    eff = _effective_resist(victim.get("magicResist"),
+                                            atk.get("magicPen"), atk.get("magicPenPercent"))
+                    out["magic"] += magic * (100.0 + eff) / 100.0
+                    eff_used["mr"].append(eff)
+    return out, eff_used
+
+
+def dump_stats(cache_files, limit=3):
+    """championStats 의 관통·저항 필드 실측 — %표기 판별용 진단."""
+    keys = ("armor", "magicResist", "armorPen", "armorPenPercent",
+            "bonusArmorPenPercent", "magicPen", "magicPenPercent",
+            "bonusMagicPenPercent")
+    seen = {k: [] for k in keys}
+    shown = 0
+    for f in cache_files:
+        tl = json.loads(f.read_text(encoding="utf-8"))
+        for frame in _frames(tl):
+            for pf in (frame.get("participantFrames") or {}).values():
+                cs = pf.get("championStats") or {}
+                for k in keys:
+                    if k in cs:
+                        seen[k].append(cs[k])
+        shown += 1
+        if shown >= limit:
+            break
+    if not shown:
+        print(f"타임라인 캐시가 없다 — `--timeline` 으로 수집해야 한다. ({CACHE})")
+        return
+    print(f"\nchampionStats 실측 ({shown} 판 타임라인)")
+    for k in keys:
+        vals = seen[k]
+        if not vals:
+            print(f"  {k:24s} (필드 없음)")
+            continue
+        nz = [v for v in vals if v]
+        print(f"  {k:24s} n={len(vals):6d}  0 아닌 값 {len(nz):6d}  "
+              f"min={min(vals)}  max={max(vals)}  예시={nz[:6]}")
+    print("\n  → *PenPercent 의 max 가 1 이하면 분수(0.18=18%), 1 초과면 퍼센트 표기다.\n")
+
+
 def summarize(rows):
     """관점별 평균 비중 — 판마다 비중을 내고 평균(대형 판이 표본을 지배하지 않게)."""
     out = {}
     for view, key in (("A 받은 피해 전체(미니언·포탑 포함)", "taken_all"),
                       ("B 적 팀이 챔피언에 가한 피해", "enemy_dealt_champ"),
-                      ("C 내가 죽을 때 맞은 피해", "death_damage")):
+                      ("C 내가 죽을 때 맞은 피해", "death_damage"),
+                      ("D C를 경감 역산(관통 반영)", "death_damage_raw")):
         shares = [_share(r[key]) for r in rows if key in r]
         shares = [s for s in shares if s]
         if not shares:
@@ -269,8 +375,17 @@ def print_summary(rows):
         rel = [agg[a] / agg["true"] if agg["true"] else 0 for a in AXES]
         print(f"  {view:34s} n={agg['n']:4d}  물리:마법:고정 = {ratio}"
               f"   (고정=1 기준 {rel[0]:.1f} : {rel[1]:.1f} : 1)")
+    arm = [v for r in rows for v in r.get("eff_resist", {}).get("armor", [])]
+    mr = [v for r in rows for v in r.get("eff_resist", {}).get("mr", [])]
+    if arm or mr:
+        print(f"  역산에 쓴 평균 유효저항: 방어력 {sum(arm)/len(arm):.1f} (n={len(arm)}) · "
+              f"마저 {sum(mr)/len(mr):.1f} (n={len(mr)})" if arm and mr else "")
     print("\n  → 리포트 DMG_MIX 프리셋에 넣을 값은 위 '고정=1 기준' 비율이다.")
-    print("  ⚠️ 셋 다 경감 후 수치다 — 내 방어 아이템이 비중을 이미 왜곡한다.")
+    print("  ⚠️ A·B·C 는 경감 후 수치다 — 내 방어 아이템이 비중을 이미 왜곡한다.")
+    print("     D 는 그 왜곡을 되돌린 추정이다(가해자 관통 반영). 남는 오차:")
+    print("       · 방어력 감소(검은도끼 등)는 프레임 armor 에 이미 반영됐다고 가정")
+    print("       · bonusArmorPenPercent(추가방어력 한정)는 미반영")
+    print("       · 프레임은 분 단위 — 교전 중 스탯 변화는 최근접 프레임으로 근사")
     print("     편향 없는 근거는 챔피언별 피해 타입 프로파일(2단계)이다.\n")
 
 
@@ -285,7 +400,13 @@ def main():
     ap.add_argument("--champion", default=None, help="특정 챔프만(예: Kaisa)")
     ap.add_argument("--timeline", action="store_true", help="C 관점(죽을 때 피해)도 수집 — 호출 2배")
     ap.add_argument("--report", action="store_true", help="캐시만 집계")
+    ap.add_argument("--dump-stats", action="store_true",
+                    help="championStats 관통·저항 필드 실측(%표기 판별)")
     args = ap.parse_args()
+
+    if args.dump_stats:
+        dump_stats(sorted(CACHE.glob("*_tl.json")) if CACHE.exists() else [])
+        return
 
     if args.report:
         rows = []
